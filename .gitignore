@@ -4,3 +4,7 @@
 target/
 *callgrind.out*
 .ipynb_checkpoints
+
+# intellij
+.idea
+*.iml
