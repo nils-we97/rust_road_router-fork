@@ -235,6 +235,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "cooperative"
+version = "0.1.0"
+dependencies = [
+ "rust_road_router",
+]
+
+[[package]]
 name = "core_affinity"
 version = "0.5.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
