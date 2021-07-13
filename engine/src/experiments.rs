@@ -9,7 +9,6 @@ use time::Duration;
 
 use crate::{algo::*, datastr::graph::*, report::*};
 
-pub mod a_star;
 pub mod catchup;
 pub mod chpot;
 
@@ -25,7 +24,7 @@ pub fn run_random_queries(
         server,
         Some(reporting_context),
         |_, _, _| (),
-        |_| (),
+        // |_| (),
         |_, _| None,
     );
 }
@@ -43,7 +42,7 @@ pub fn run_random_queries_with_pre_callback<S: QueryServer>(
         server,
         Some(reporting_context),
         pre_query,
-        |_| (),
+        // |_| (),
         |_, _| None,
     );
 }
@@ -55,7 +54,7 @@ pub fn run_random_queries_with_callbacks<S: QueryServer>(
     reporting_context: &mut CollectionContextGuard,
     num_queries: usize,
     pre_query: impl FnMut(NodeId, NodeId, &mut S),
-    with_result: impl for<'a> FnMut(Option<&mut QueryResult<S::P<'a>, Weight>>),
+    // with_result: impl for<'a> FnMut(Option<&mut QueryResult<S::P<'a>, Weight>>),
     ground_truth: impl FnMut(NodeId, NodeId) -> Option<Option<Weight>>,
 ) {
     run_queries(
@@ -63,7 +62,7 @@ pub fn run_random_queries_with_callbacks<S: QueryServer>(
         server,
         Some(reporting_context),
         pre_query,
-        with_result,
+        // with_result,
         ground_truth,
     );
 }
@@ -73,7 +72,7 @@ pub fn run_queries<S: QueryServer>(
     server: &mut S,
     mut reporting_context: Option<&mut CollectionContextGuard>,
     mut pre_query: impl FnMut(NodeId, NodeId, &mut S),
-    mut with_result: impl for<'a> FnMut(Option<&mut QueryResult<S::P<'a>, Weight>>),
+    // mut with_result: impl for<'a> FnMut(Option<&mut QueryResult<S::P<'a>, Weight>>),
     mut ground_truth: impl FnMut(NodeId, NodeId) -> Option<Option<Weight>>,
 ) {
     let core_ids = core_affinity::get_core_ids().unwrap();
@@ -82,7 +81,7 @@ pub fn run_queries<S: QueryServer>(
     let mut total_query_time = Duration::zero();
     let mut num_queries = 0;
 
-    for (from, to) in query_iter.take(num_queries) {
+    for (from, to) in query_iter {
         num_queries += 1;
         let _query_ctxt = reporting_context.as_mut().map(|ctxt| ctxt.push_collection_item());
 
@@ -91,7 +90,7 @@ pub fn run_queries<S: QueryServer>(
 
         pre_query(from, to, server);
 
-        let (mut res, time) = measure(|| server.query(Query { from, to }));
+        let (res, time) = measure(|| server.query(Query { from, to }));
         report!("running_time_ms", time.to_std().unwrap().as_nanos() as f64 / 1_000_000.0);
         let dist = res.as_ref().map(|res| res.distance());
         report!("result", dist);
@@ -100,7 +99,7 @@ pub fn run_queries<S: QueryServer>(
             assert_eq!(dist, gt);
         }
 
-        with_result(res.as_mut());
+        // with_result(res.as_mut());
 
         total_query_time = total_query_time + time;
     }
