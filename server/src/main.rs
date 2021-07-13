@@ -172,11 +172,13 @@ fn customize(updates: Json<Vec<(u64, bool, SerializedWeight)>>, state: State<Mut
 fn main() -> Result<(), Box<dyn Error>> {
     let (tx_query, rx_query) = mpsc::channel::<Request>();
 
-    let mut args = env::args();
+    /*let mut args = env::args();
     args.next();
 
     let arg = &args.next().ok_or(CliErr("No directory arg given"))?;
-    let path = Path::new(arg);
+    let path = Path::new(arg);*/
+
+    let path = Path::new("C:\\Users\\User\\Desktop\\Uni\\Masterarbeit\\graphs\\germany");
 
     let first_out = Vec::load_from(path.join("first_out"))?;
     let head = Vec::load_from(path.join("head"))?;

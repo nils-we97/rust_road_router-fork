@@ -1,5 +1,6 @@
-use rust_road_router::datastr::graph::{EdgeId, NodeId, Weight, Graph};
+use rust_road_router::datastr::graph::{EdgeId, NodeId, Weight, Graph, LinkIterable, Link};
 use rust_road_router::io::{Deconstruct, Store};
+use rust_road_router::util::SlcsIdx;
 
 pub type Capacity = u32;
 
@@ -46,6 +47,18 @@ impl CapacityGraph {
     /// Decompose the graph into its three seperate data containers
     pub fn decompose(self) -> (Vec<EdgeId>, Vec<NodeId>, Vec<Weight>) {
         (self.first_out, self.head, self.weight)
+    }
+
+    pub fn get_edge_id(&self, start: NodeId, end: NodeId) -> Option<EdgeId> {
+        let start = start as usize;
+
+        for i in self.first_out[start]..self.first_out[start + 1] {
+            if self.head[i as usize] == end {
+                return Some(i);
+            }
+        }
+
+        None
     }
 }
 
@@ -109,5 +122,20 @@ impl Deconstruct for CapacityGraph {
         store("weights", &self.freeflow_weight)?;
         store("capacity", &self.max_capacity)?;
         Ok(())
+    }
+}
+
+impl LinkIterable<Link> for CapacityGraph {
+
+    #[allow(clippy::type_complexity)]
+    type Iter<'a> = std::iter::Map<std::iter::Zip<std::slice::Iter<'a, NodeId>, std::slice::Iter<'a, Weight>>, fn((&NodeId, &Weight)) -> Link>;
+
+    #[inline]
+    fn link_iter(&self, node: NodeId) -> Self::Iter<'_> {
+        let range = SlcsIdx(&self.first_out).range(node as usize);
+        self.head[range.clone()]
+            .iter()
+            .zip(self.weight[range].iter())
+            .map(|(&neighbor, &weight)| Link { node: neighbor, weight })
     }
 }
