@@ -8,7 +8,7 @@ use cooperative::graph::capacity_graph::{CapacityGraph};
 use rust_road_router::algo::{GenQuery, Query};
 use rust_road_router::io::{Load};
 use rust_road_router::report::measure;
-use cooperative::graph::weight_functions::dummy_weight_function;
+use cooperative::graph::weight_functions::{bpr_traffic_function};
 use cooperative::dijkstra::server::CapacityServer;
 use cooperative::visualization::generate_visualization_data;
 
@@ -61,7 +61,7 @@ fn load_graph(graph_directory: &Path) -> Result<CapacityGraph, Box<dyn Error>> {
     let weight = Vec::load_from(graph_directory.join("travel_time"))?;
     let capacity = vec![5; weight.len()];
 
-    Ok(CapacityGraph::new(first_out, head, weight, capacity, dummy_weight_function))
+    Ok(CapacityGraph::new(first_out, head, weight, capacity, bpr_traffic_function))
 }
 
 fn load_coords(graph_directory: &Path) -> Result<(Vec<f32>, Vec<f32>), Box<dyn Error>> {
