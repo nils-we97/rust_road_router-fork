@@ -1,6 +1,7 @@
 use rust_road_router::datastr::graph::{EdgeId, NodeId, Weight, Graph, LinkIterable, Link};
 use rust_road_router::io::{Deconstruct, Store};
 use rust_road_router::util::SlcsIdx;
+use crate::graph::ModifiableWeight;
 
 pub type Capacity = u32;
 
@@ -14,12 +15,6 @@ pub struct CapacityGraph {
     used_capacity: Vec<Weight>,
 
     weight_function: fn(Weight, Capacity, Capacity) -> Weight,
-}
-
-pub trait ModifiableWeight<PathContainer> {
-    fn increase_weights(&mut self, path: PathContainer);
-    fn decrease_weights(&mut self, path: PathContainer);
-    fn reset_weights(&mut self);
 }
 
 impl CapacityGraph {

@@ -248,6 +248,7 @@ dependencies = [
 name = "cooperative"
 version = "0.1.0"
 dependencies = [
+ "conversion",
  "itertools",
  "rust_road_router",
 ]

@@ -4,6 +4,7 @@ pub mod io;
 pub mod graph;
 pub mod dijkstra;
 pub mod visualization;
+pub mod experiments;
 
 
 #[cfg(test)]
@@ -13,4 +14,3 @@ mod tests {
         assert_eq!(2 + 2, 4);
     }
 }
-
