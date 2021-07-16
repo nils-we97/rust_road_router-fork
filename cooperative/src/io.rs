@@ -31,20 +31,18 @@ pub fn load_td_capacity_graph(
 ) -> Result<TDCapacityGraph, Box<dyn Error>> {
     let first_out = Vec::load_from(graph_directory.join("first_out"))?;
     let head = Vec::load_from(graph_directory.join("head"))?;
-    let mut freeflow_time = Vec::load_from(graph_directory.join("travel_time"))?;
+    let freeflow_time = Vec::load_from(graph_directory.join("travel_time"))?;
     let distance = Vec::load_from(graph_directory.join("geo_distance"))?;
     let capacity = vec![10; head.len()];
 
-    for i in 0..freeflow_time.len() {
-        if freeflow_time[i] == 0 {
-            // freeflow times must NOT be zero! Otherwise speeds can't be calculated!
-            freeflow_time[i] = 1;
-        }
-    }
+    let num_edges = head.len();
+    assert_eq!(freeflow_time.len(), num_edges);
+    assert_eq!(distance.len(), num_edges);
+    assert_eq!(capacity.len(), num_edges);
 
     Ok(
         TDCapacityGraph::new(
-            10,
+            1,
             first_out,
             head,
             distance,

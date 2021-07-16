@@ -2,9 +2,10 @@ use rust_road_router::datastr::graph::Weight;
 
 use crate::graph::capacity_graph::Capacity;
 use crate::graph::traffic_functions::convert_to_weight;
+use crate::graph::td_capacity_graph::Velocity;
 
 pub fn bpr_speed_function(
-    freeflow_velocity: Weight,
+    freeflow_velocity: Velocity,
     max_capacity: Capacity,
     used_capacity: Capacity
 ) -> Weight {
