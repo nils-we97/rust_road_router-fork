@@ -1,8 +1,8 @@
 use std::borrow::Borrow;
 
 use rust_road_router::algo::GenQuery;
-use rust_road_router::algo::dijkstra::{DefaultOps, DijkstraData, DijkstraRun};
-use rust_road_router::datastr::graph::{EdgeId, Graph, RandomLinkAccessGraph, Weight};
+use rust_road_router::algo::dijkstra::{DijkstraData, DijkstraRun, DefaultOpsWithLinkPath};
+use rust_road_router::datastr::graph::{EdgeId, Graph, Weight, EdgeIdT};
 use rust_road_router::datastr::graph::time_dependent::Timestamp;
 use rust_road_router::report::*;
 use rust_road_router::report;
@@ -15,7 +15,7 @@ use crate::graph::td_capacity_graph::TDCapacityGraph;
 
 pub struct CapacityServer<G> {
     graph: G,
-    dijkstra: DijkstraData<Weight>,
+    dijkstra: DijkstraData<Weight, EdgeIdT>,
 }
 
 pub trait CapacityServerOps<G, P> {
@@ -66,7 +66,7 @@ impl CapacityServerOps<CapacityGraph, PathResult> for CapacityServer<CapacityGra
         report!("algo", "Dijkstra with Capacities");
 
         let to = query.to();
-        let mut ops = DefaultOps::default();
+        let mut ops = DefaultOpsWithLinkPath::default();
         let mut dijkstra = DijkstraRun::query(self.graph.borrow(), &mut self.dijkstra, &mut ops, query);
 
         let mut result = None;
@@ -88,18 +88,16 @@ impl CapacityServerOps<CapacityGraph, PathResult> for CapacityServer<CapacityGra
 
     fn path(&self, query: impl GenQuery<Weight>) -> PathResult {
         let mut node_path = Vec::new();
+        let mut edge_path = Vec::new();
         node_path.push(query.to());
 
         while *node_path.last().unwrap() != query.from() {
-            let next = self.dijkstra.predecessors[*node_path.last().unwrap() as usize];
-            node_path.push(next);
+            let (next_node, next_edge) = self.dijkstra.predecessors[*node_path.last().unwrap() as usize];
+            node_path.push(next_node);
+            edge_path.push(next_edge.0);
         }
         node_path.reverse();
-
-        let mut edge_path = Vec::with_capacity(node_path.len() - 1);
-        for i in 0..node_path.len() - 1 {
-            edge_path.push(self.graph.get_edge_id(node_path[i], node_path[i + 1]).unwrap());
-        }
+        edge_path.reverse();
 
         PathResult::new(node_path, edge_path)
     }
@@ -179,19 +177,14 @@ impl CapacityServerOps<TDCapacityGraph, TDPathResult> for CapacityServer<TDCapac
 
     fn path(&self, query: impl GenQuery<Weight>) -> TDPathResult {
         let mut node_path = Vec::new();
+        let mut edge_path = Vec::new();
         node_path.push(query.to());
 
-        // determine path nodes by recursively traversing through the predecessors of the target node
+        // determine path nodes/edges by recursively traversing through the predecessors of the target node
         while *node_path.last().unwrap() != query.from() {
-            let next = self.dijkstra.predecessors[*node_path.last().unwrap() as usize];
-            node_path.push(next);
-        }
-        node_path.reverse();
-
-        // determine path edges
-        let mut edge_path = Vec::with_capacity(node_path.len() - 1);
-        for i in 0..node_path.len() - 1 {
-            edge_path.push(self.graph.edge_index(node_path[i], node_path[i + 1]).unwrap());
+            let (next_node, next_edge) = self.dijkstra.predecessors[*node_path.last().unwrap() as usize];
+            node_path.push(next_node);
+            edge_path.push(next_edge.0);
         }
 
         // determine timestamps of departures at each vertex

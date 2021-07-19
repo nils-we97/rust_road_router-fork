@@ -1,4 +1,4 @@
-use rust_road_router::datastr::graph::{EdgeId, NodeId, Weight, Graph, LinkIterable, Link, RandomLinkAccessGraph};
+use rust_road_router::datastr::graph::{EdgeId, NodeId, Weight, Graph, LinkIterable, Link, RandomLinkAccessGraph, NodeIdT, EdgeIdT};
 use rust_road_router::io::{Deconstruct, Store};
 use rust_road_router::datastr::graph::time_dependent::{Timestamp, PiecewiseLinearFunction};
 use conversion::speed_profile_to_tt_profile;
@@ -250,17 +250,20 @@ impl RandomLinkAccessGraph for TDCapacityGraph {
     }
 }
 
-impl LinkIterable<NodeId> for TDCapacityGraph {
-    type Iter<'a> = std::iter::Cloned<std::slice::Iter<'a, NodeId>>;
+impl LinkIterable<NodeIdT> for TDCapacityGraph {
+    type Iter<'a> = impl Iterator<Item=NodeIdT> + 'a;
+    //type Iter<'a> = std::iter::Cloned<std::iter::Map<std::slice::Iter<'a, NodeId>, fn(&NodeId) -> NodeIdT>>;
 
     #[inline(always)]
     fn link_iter(&self, node: NodeId) -> Self::Iter<'_> {
-        self.head[self.neighbor_edge_indices_usize(node)].iter().cloned()
+        self.head[self.neighbor_edge_indices_usize(node)].iter().map(|&l| NodeIdT(l))
     }
 }
 
-impl LinkIterable<(NodeId, EdgeId)> for TDCapacityGraph {
-    type Iter<'a> = std::iter::Zip<std::iter::Cloned<std::slice::Iter<'a, NodeId>>, std::ops::Range<EdgeId>>;
+impl LinkIterable<(NodeIdT, EdgeIdT)> for TDCapacityGraph {
+    type Iter<'a> = impl Iterator<Item=(NodeIdT, EdgeIdT)> + 'a;
+
+    //type Iter<'a> = std::iter::Zip<std::iter::Cloned<std::slice::Iter<'a, NodeId>>, std::ops::Range<EdgeIdT>>;
 
     #[inline(always)]
     fn link_iter(&self, node: NodeId) -> Self::Iter<'_> {
@@ -269,5 +272,6 @@ impl LinkIterable<(NodeId, EdgeId)> for TDCapacityGraph {
             .iter()
             .cloned()
             .zip(self.neighbor_edge_indices(node))
+            .map(|(node, edge)| (NodeIdT(node), EdgeIdT(edge)))
     }
 }

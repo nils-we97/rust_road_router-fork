@@ -11,6 +11,8 @@ use crate::graph::traffic_functions::speed_functions::bpr_speed_function;
 use crate::io::{load_coords, load_td_capacity_graph};
 
 pub fn run_td_server(graph_directory: &Path) {
+    println!("Running TD server...");
+
     let (graph, time) = measure(||
         load_td_capacity_graph(&graph_directory, bpr_speed_function).unwrap()
     );

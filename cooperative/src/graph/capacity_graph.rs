@@ -1,7 +1,8 @@
-use rust_road_router::datastr::graph::{EdgeId, NodeId, Weight, Graph, LinkIterable, Link};
+use rust_road_router::datastr::graph::{EdgeId, NodeId, Weight, Graph, LinkIterable, Link, RandomLinkAccessGraph, NodeIdT, EdgeIdT};
 use rust_road_router::io::{Deconstruct, Store};
 use rust_road_router::util::SlcsIdx;
 use crate::graph::ModifiableWeight;
+use std::ops::Range;
 
 pub type Capacity = u32;
 
@@ -121,7 +122,6 @@ impl Deconstruct for CapacityGraph {
 }
 
 impl LinkIterable<Link> for CapacityGraph {
-
     #[allow(clippy::type_complexity)]
     type Iter<'a> = std::iter::Map<std::iter::Zip<std::slice::Iter<'a, NodeId>, std::slice::Iter<'a, Weight>>, fn((&NodeId, &Weight)) -> Link>;
 
@@ -132,5 +132,46 @@ impl LinkIterable<Link> for CapacityGraph {
             .iter()
             .zip(self.weight[range].iter())
             .map(|(&neighbor, &weight)| Link { node: neighbor, weight })
+    }
+}
+
+impl LinkIterable<(NodeIdT, (Weight, EdgeIdT))> for CapacityGraph {
+    #[allow(clippy::type_complexity)]
+    type Iter<'a> = impl Iterator<Item=(NodeIdT, (Weight, EdgeIdT))> + 'a;
+
+    #[inline]
+    fn link_iter(&self, node: NodeId) -> Self::Iter<'_> {
+        let range = SlcsIdx(&self.first_out).range(node as usize);
+        self.head[range.clone()]
+            .iter()
+            .zip(self.weight[range.clone()].iter())
+            .zip(range.into_iter())
+            .map(|((&node, &weight), edge_id)| (NodeIdT(node), (weight, EdgeIdT(edge_id as EdgeId))))
+    }
+}
+
+impl RandomLinkAccessGraph for CapacityGraph {
+    fn link(&self, edge_id: EdgeId) -> Link {
+        Link {
+            node: self.head[edge_id as usize],
+            weight: 0,
+        }
+    }
+
+    fn edge_index(&self, from: NodeId, to: NodeId) -> Option<u32> {
+        let first_out = self.first_out[from as usize];
+        let range = self.neighbor_edge_indices_usize(from);
+        self.head[range].iter().position(|&head| head == to).map(|pos| pos as EdgeId + first_out)
+    }
+
+    #[inline(always)]
+    fn neighbor_edge_indices(&self, node: NodeId) -> Range<EdgeId> {
+        (self.first_out[node as usize] as EdgeId)..(self.first_out[(node + 1) as usize] as EdgeId)
+    }
+
+    #[inline(always)]
+    fn neighbor_edge_indices_usize(&self, node: NodeId) -> Range<usize> {
+        let node = node as usize;
+        (self.first_out[node] as usize)..(self.first_out[(node + 1)] as usize)
     }
 }
