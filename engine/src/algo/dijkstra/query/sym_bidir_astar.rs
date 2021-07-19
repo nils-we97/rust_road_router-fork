@@ -187,14 +187,14 @@ impl<G: LinkIterGraph, H: LinkIterGraph, P: Potential> Server<G, H, P> {
         path.push(self.meeting_node);
 
         while *path.last().unwrap() != query.from {
-            let next = self.forward_data.predecessors[*path.last().unwrap() as usize];
+            let next = self.forward_data.predecessors[*path.last().unwrap() as usize].0;
             path.push(next);
         }
 
         path.reverse();
 
         while *path.last().unwrap() != query.to {
-            let next = self.backward_data.predecessors[*path.last().unwrap() as usize];
+            let next = self.backward_data.predecessors[*path.last().unwrap() as usize].0;
             path.push(next);
         }
 
@@ -206,9 +206,13 @@ pub struct PathServerWrapper<'s, G: LinkIterGraph, H: LinkIterGraph, P>(&'s Serv
 
 impl<'s, G: LinkIterGraph, H: LinkIterGraph, P: Potential> PathServer for PathServerWrapper<'s, G, H, P> {
     type NodeInfo = NodeId;
+    type EdgeInfo = ();
 
-    fn reconstruct_path(&mut self) -> Vec<Self::NodeInfo> {
+    fn reconstruct_node_path(&mut self) -> Vec<Self::NodeInfo> {
         Server::path(self.0, self.1)
+    }
+    fn reconstruct_edge_path(&mut self) -> Vec<Self::EdgeInfo> {
+        vec![(); self.reconstruct_node_path().len() - 1]
     }
 }
 

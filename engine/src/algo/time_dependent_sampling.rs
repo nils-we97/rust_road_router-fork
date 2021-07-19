@@ -72,7 +72,7 @@ impl<'a> Server<'a> {
         // query each window independently and mark edges
         for server in &mut self.samples {
             let mut result = server.query(Query { from, to });
-            if let Some(path) = result.path() {
+            if let Some(path) = result.node_path() {
                 for edge in path.windows(2) {
                     self.active_edges[self.graph.edge_index(edge[0], edge[1]).unwrap() as usize] = true;
                 }
@@ -84,7 +84,7 @@ impl<'a> Server<'a> {
         let mut dijkstra = DijkstraRun::query(&self.graph, &mut self.dijkstra_data, &mut ops, TDQuery { from, to, departure });
 
         let active_edges = &self.active_edges;
-        while let Some(node) = dijkstra.next_filtered_edges(|&(_, edge_id)| active_edges[edge_id as usize]) {
+        while let Some(node) = dijkstra.next_filtered_edges(|&(_, edge_id)| active_edges[edge_id.0 as usize]) {
             if node == to {
                 return Some(dijkstra.tentative_distance(node) - departure);
             }
@@ -94,17 +94,7 @@ impl<'a> Server<'a> {
     }
 
     fn path(&self, query: TDQuery<Weight>) -> Vec<NodeId> {
-        let mut path = Vec::new();
-        path.push(query.to);
-
-        while *path.last().unwrap() != query.from {
-            let next = self.dijkstra_data.predecessors[*path.last().unwrap() as usize];
-            path.push(next);
-        }
-
-        path.reverse();
-
-        path
+        self.dijkstra_data.node_path(query.from, query.to)
     }
 }
 
@@ -112,9 +102,13 @@ pub struct PathServerWrapper<'s, 'a>(&'s Server<'a>, TDQuery<Weight>);
 
 impl<'s, 'a> PathServer for PathServerWrapper<'s, 'a> {
     type NodeInfo = NodeId;
+    type EdgeInfo = ();
 
-    fn reconstruct_path(&mut self) -> Vec<Self::NodeInfo> {
+    fn reconstruct_node_path(&mut self) -> Vec<Self::NodeInfo> {
         Server::path(self.0, self.1)
+    }
+    fn reconstruct_edge_path(&mut self) -> Vec<Self::EdgeInfo> {
+        self.0.dijkstra_data.edge_path(self.1.from, self.1.to)
     }
 }
 
