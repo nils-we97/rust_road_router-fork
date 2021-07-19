@@ -42,7 +42,7 @@ pub fn load_td_capacity_graph(
 
     Ok(
         TDCapacityGraph::new(
-            1,
+            10,
             first_out,
             head,
             distance,

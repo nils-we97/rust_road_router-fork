@@ -42,12 +42,15 @@ impl CapacityServerOps<CapacityGraph, PathResult> for CapacityServer<CapacityGra
         update: bool,
     ) -> Option<CapacityQueryResult<PathResult>> {
         let query_copy = query.clone();
-        let distance = self.distance(query);
+
+        let (distance, time) = measure(|| self.distance(query));
+        println!("Query took {} ms", time.to_std().unwrap().as_nanos() as f64 / 1_000_000.0);
 
         if distance.is_some() {
             let path = self.path(query_copy);
             if update {
-                self.update(&path);
+                let (_, time) = measure(|| self.update(&path));
+                println!("Update took {} ms", time.to_std().unwrap().as_nanos() as f64 / 1_000_000.0);
             }
             return Some(CapacityQueryResult::new(distance.unwrap(), path));
         }
@@ -118,12 +121,14 @@ impl CapacityServerOps<TDCapacityGraph, TDPathResult> for CapacityServer<TDCapac
         update: bool,
     ) -> Option<CapacityQueryResult<TDPathResult>> {
         let query_copy = query.clone();
-        let distance = self.distance(query);
+        let (distance, time) = measure(|| self.distance(query));
+        println!("Query took {} ms", time.to_std().unwrap().as_nanos() as f64 / 1_000_000.0);
 
         if distance.is_some() {
             let path = self.path(query_copy);
             if update {
-                self.update(&path);
+                let (_, time) = measure(|| self.update(&path));
+                println!("Update took {} ms", time.to_std().unwrap().as_nanos() as f64 / 1_000_000.0);
             }
             return Some(CapacityQueryResult::new(distance.unwrap(), path));
         }
@@ -135,7 +140,7 @@ impl CapacityServerOps<TDCapacityGraph, TDPathResult> for CapacityServer<TDCapac
         let edges_with_timestamps = path
             .edge_path
             .iter()
-            .zip(path.departure[..path.edge_path.len()].iter())// TODO
+            .zip(path.departure.iter())
             .map(|(&a, &b)| (a, b))
             .collect::<Vec<(EdgeId, Timestamp)>>();
 
