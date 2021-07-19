@@ -33,7 +33,7 @@ pub fn load_td_capacity_graph(
     let head = Vec::load_from(graph_directory.join("head"))?;
     let freeflow_time = Vec::load_from(graph_directory.join("travel_time"))?;
     let distance = Vec::load_from(graph_directory.join("geo_distance"))?;
-    let capacity = vec![10; head.len()];
+    let capacity = vec![2; head.len()];
 
     let num_edges = head.len();
     assert_eq!(freeflow_time.len(), num_edges);

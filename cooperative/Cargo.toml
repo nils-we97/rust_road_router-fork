@@ -13,5 +13,7 @@ report-to-stderr = []
 [dependencies]
 rust_road_router = { path = "../engine" }
 conversion = { path = "../conversion" }
+rand = "^0.8.4"
+rand_distr = "^0.4.1"
 #rayon = "1.5.0"
 #num = "0.4.0"

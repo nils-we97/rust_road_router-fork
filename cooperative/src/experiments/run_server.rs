@@ -1,9 +1,11 @@
 use std::path::Path;
+
+use rust_road_router::algo::{GenQuery, Query};
 use rust_road_router::report::measure;
-use rust_road_router::algo::{TDQuery, GenQuery};
-use crate::io::{load_capacity_graph, load_coords};
-use crate::graph::traffic_functions::time_functions::bpr_traffic_function;
+
 use crate::dijkstra::server::{CapacityServer, CapacityServerOps};
+use crate::graph::traffic_functions::time_functions::bpr_traffic_function;
+use crate::io::{load_capacity_graph, load_coords};
 use crate::visualization::generate_visualization_data;
 
 pub fn run_server(graph_directory: &Path) {
@@ -25,7 +27,7 @@ pub fn run_server(graph_directory: &Path) {
 
     for _ in 0..15 {
         let result = server.query(
-            TDQuery::new(source, target, 0),
+            Query::new(source, target, 0),
             true,
         ).unwrap();
 
