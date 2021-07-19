@@ -4,6 +4,7 @@ use rust_road_router::algo::{GenQuery, Query, TDQuery};
 use rust_road_router::datastr::graph::time_dependent::Timestamp;
 
 use crate::graph::td_capacity_graph::MAX_BUCKETS;
+use crate::experiments::generate_queries::departure_distributions::DepartureDistribution;
 
 pub fn generate_random_uniform_queries(num_nodes: u32, num_queries: u32) -> Vec<Query> {
     let mut rng = thread_rng();
@@ -21,7 +22,11 @@ pub fn generate_random_uniform_queries(num_nodes: u32, num_queries: u32) -> Vec<
         .collect::<Vec<Query>>()
 }
 
-pub fn generate_random_uniform_td_queries(num_nodes: u32, num_queries: u32) -> Vec<TDQuery<Timestamp>> {
+pub fn generate_random_uniform_td_queries<D: DepartureDistribution>(
+    num_nodes: u32,
+    num_queries: u32,
+    departure_distribution: D
+) -> Vec<TDQuery<Timestamp>> {
     let mut rng = thread_rng();
 
     (0..num_queries)
@@ -32,7 +37,7 @@ pub fn generate_random_uniform_td_queries(num_nodes: u32, num_queries: u32) -> V
                 from = rng.gen_range(0..num_nodes);
                 to = rng.gen_range(0..num_nodes);
             }
-            TDQuery::new(from, to, rng.gen_range(0..MAX_BUCKETS))
+            TDQuery::new(from, to, departure_distribution.rand(&mut rng))
         })
         .collect::<Vec<TDQuery<Timestamp>>>()
 }
