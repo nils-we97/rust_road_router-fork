@@ -151,7 +151,7 @@ pub struct PathServerWrapper<'s>(&'s Server, Query);
 impl<'s> PathServer for PathServerWrapper<'s> {
     type NodeInfo = NodeId;
 
-    fn path(&mut self) -> Vec<Self::NodeInfo> {
+    fn reconstruct_path(&mut self) -> Vec<Self::NodeInfo> {
         Server::path(self.0, self.1)
     }
 }
@@ -159,8 +159,7 @@ impl<'s> PathServer for PathServerWrapper<'s> {
 impl QueryServer for Server {
     type P<'s> = PathServerWrapper<'s>;
 
-    fn query(&mut self, query: Query) -> Option<QueryResult<Self::P<'_>, Weight>> {
-        self.distance(query.from, query.to)
-            .map(move |distance| QueryResult::new(distance, PathServerWrapper(self, query)))
+    fn query(&mut self, query: Query) -> QueryResult<Self::P<'_>, Weight> {
+        QueryResult::new(self.distance(query.from, query.to), PathServerWrapper(self, query))
     }
 }

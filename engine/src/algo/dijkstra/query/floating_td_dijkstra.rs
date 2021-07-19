@@ -76,7 +76,7 @@ pub struct PathServerWrapper<'s>(&'s Server, TDQuery<Timestamp>);
 impl<'s> PathServer for PathServerWrapper<'s> {
     type NodeInfo = (NodeId, Timestamp);
 
-    fn path(&mut self) -> Vec<Self::NodeInfo> {
+    fn reconstruct_path(&mut self) -> Vec<Self::NodeInfo> {
         Server::path(self.0, self.1)
     }
 }
@@ -84,9 +84,8 @@ impl<'s> PathServer for PathServerWrapper<'s> {
 impl TDQueryServer<Timestamp, FlWeight> for Server {
     type P<'s> = PathServerWrapper<'s>;
 
-    fn td_query(&mut self, query: TDQuery<Timestamp>) -> Option<QueryResult<Self::P<'_>, FlWeight>> {
-        self.distance(query)
-            .map(move |distance| QueryResult::new(distance, PathServerWrapper(self, query)))
+    fn td_query(&mut self, query: TDQuery<Timestamp>) -> QueryResult<Self::P<'_>, FlWeight> {
+        QueryResult::new(self.distance(query), PathServerWrapper(self, query))
     }
 }
 
