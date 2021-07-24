@@ -3,7 +3,6 @@ use rand::{Rng, thread_rng};
 use rust_road_router::algo::{GenQuery, Query, TDQuery};
 use rust_road_router::datastr::graph::time_dependent::Timestamp;
 
-use crate::graph::td_capacity_graph::MAX_BUCKETS;
 use crate::experiments::generate_queries::departure_distributions::DepartureDistribution;
 
 pub fn generate_random_uniform_queries(num_nodes: u32, num_queries: u32) -> Vec<Query> {

@@ -13,10 +13,19 @@ mod tests {
     use rust_road_router::datastr::graph::Weight;
     use rust_road_router::datastr::graph::time_dependent::{Timestamp, period};
     use conversion::speed_profile_to_tt_profile;
+    use crate::io::parse_visum_graph::convert_coord;
 
     #[test]
     fn it_works() {
         assert_eq!(2 + 2, 4);
+    }
+
+    #[test]
+    fn test_coord_conversion() {
+        let coords = vec![3513149i32];
+        let result = convert_coord(&coords);
+
+        println!("{:?}", result);
     }
 
     #[test]
@@ -36,7 +45,5 @@ mod tests {
         let _ = speed_profile_to_tt_profile(&speed, 1000).iter().cloned().for_each(|(ts, val)| {
             println!("{}: {}", ts, val)
         });
-
-        assert_eq!(2+2, 4);
     }
 }
