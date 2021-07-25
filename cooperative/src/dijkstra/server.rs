@@ -24,6 +24,7 @@ pub trait CapacityServerOps<G, P> {
     fn update(&mut self, path: &P);
     fn distance(&mut self, query: impl GenQuery<Weight> + Clone) -> Option<Weight>;
     fn path(&self, query: impl GenQuery<Weight> + Clone) -> P;
+    fn path_distance(&self, path: &P) ->  Weight;
 }
 
 impl CapacityServerOps<CapacityGraph, PathResult> for CapacityServer<CapacityGraph> {
@@ -100,6 +101,14 @@ impl CapacityServerOps<CapacityGraph, PathResult> for CapacityServer<CapacityGra
         edge_path.reverse();
 
         PathResult::new(node_path, edge_path)
+    }
+
+    fn path_distance(&self, path: &PathResult) -> Weight {
+        path
+            .edge_path
+            .iter()
+            .map(|&edge_id| self.graph.weight(edge_id))
+            .sum()
     }
 }
 
@@ -204,5 +213,14 @@ impl CapacityServerOps<TDCapacityGraph, TDPathResult> for CapacityServer<TDCapac
 
 
         TDPathResult::new(node_path, edge_path, departure)
+    }
+
+    fn path_distance(&self, path: &TDPathResult) -> Weight {
+        path
+            .edge_path
+            .iter()
+            .enumerate()
+            .map(|(idx, &edge_id)| self.graph.weight(edge_id, path.departure[idx]))
+            .sum()
     }
 }

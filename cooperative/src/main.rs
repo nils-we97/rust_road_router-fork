@@ -8,7 +8,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let graph_directory = env::current_dir()?
         .parent().unwrap()
         .join("graphs")
-        .join("germany");
+        .join("mecklenburg");
 
     run_td_server(&graph_directory);
 

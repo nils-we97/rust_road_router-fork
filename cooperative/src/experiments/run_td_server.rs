@@ -4,13 +4,14 @@ use rust_road_router::datastr::graph::Graph;
 use rust_road_router::report::measure;
 
 use crate::dijkstra::server::{CapacityServer, CapacityServerOps};
-//use crate::experiments::evaluation::evaluate_queries;
+use crate::experiments::compare_static_cooperative::compare_static_cooperative;
 use crate::experiments::generate_queries::departure_distributions::{ConstantDeparture, DepartureDistribution};
 use crate::experiments::generate_queries::random_uniform::generate_random_uniform_td_queries;
 use crate::graph::traffic_functions::speed_functions::bpr_speed_function;
-use crate::io::load_coords;
 use crate::io::load_td_graph::load_td_capacity_graph;
-use crate::visualization::generate_visualization_data;
+
+//use crate::io::load_coords;
+//use crate::visualization::generate_visualization_data;
 
 pub fn run_td_server(graph_directory: &Path) {
     println!("Running TD server...");
@@ -20,21 +21,21 @@ pub fn run_td_server(graph_directory: &Path) {
     );
     println!("Graph loaded in {} ms", time.to_std().unwrap().as_nanos() as f64 / 1_000_000.0);
 
-    let ((lon, lat), time) = measure(|| load_coords(&graph_directory).unwrap());
-    println!("Coordinates loaded in {} ms", time.to_std().unwrap().as_nanos() as f64 / 1_000_000.0);
+    //let ((lon, lat), time) = measure(|| load_coords(&graph_directory).unwrap());
+    //println!("Coordinates loaded in {} ms", time.to_std().unwrap().as_nanos() as f64 / 1_000_000.0);
 
     let queries = generate_random_uniform_td_queries(
         graph.num_nodes() as u32,
-        30,
+        100,
         ConstantDeparture::new()
     );
 
     let mut server = CapacityServer::new(graph);
 
-    //let result = evaluate_queries(&mut server, &queries);
-    //dbg!(result);
+    let result = compare_static_cooperative(&mut server, &queries);
+    dbg!(result);
 
-    queries
+    /*queries
         .iter()
         .for_each(|&query| {
             let result = server.query(query, true);
@@ -52,5 +53,5 @@ pub fn run_td_server(graph_directory: &Path) {
                     lon[query.to as usize]
                 );
             }
-        });
+        });*/
 }

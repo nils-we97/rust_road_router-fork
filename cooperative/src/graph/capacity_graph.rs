@@ -56,6 +56,10 @@ impl CapacityGraph {
 
         None
     }
+
+    pub fn weight(&self, edge_id: EdgeId) -> Weight {
+        self.weight[edge_id as usize]
+    }
 }
 
 impl Graph for CapacityGraph {

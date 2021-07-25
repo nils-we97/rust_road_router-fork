@@ -39,7 +39,7 @@ impl TDCapacityGraph {
         head: Vec<NodeId>,
         distance: Vec<Weight>,
         freeflow_time: Vec<Weight>,
-        max_capacity: Vec<Capacity>,
+        max_capacity: Vec<Capacity>, // given in capacity / hour
         speed_function: fn(Velocity, Capacity, Capacity) -> Weight,
     ) -> Self {
         assert!(num_buckets > 0 && MAX_BUCKETS % num_buckets == 0); // avoid rounding when accessing buckets!
@@ -52,6 +52,13 @@ impl TDCapacityGraph {
         assert_eq!(max_capacity.len(), head.len());
 
         let used_capacity = vec![vec![0; num_buckets as usize]; max_capacity.len()];
+
+        let capacity_adjustment_factor = (num_buckets as f64) / 24.0;
+
+        let max_capacity = max_capacity
+            .iter()
+            .map(|&capacity| (capacity as f64 * capacity_adjustment_factor) as Capacity)
+            .collect::<Vec<Capacity>>();
 
         let freeflow_speed = freeflow_time
             .iter()
@@ -96,6 +103,10 @@ impl TDCapacityGraph {
     pub fn travel_time_function(&self, edge_id: EdgeId) -> PiecewiseLinearFunction {
         let edge_id = edge_id as usize;
         PiecewiseLinearFunction::new(&self.departure[edge_id], &self.travel_time[edge_id])
+    }
+
+    pub fn weight(&self, edge_id: EdgeId, departure: Timestamp) -> Weight {
+        self.travel_time_function(edge_id).eval(departure)
     }
 
     fn timestamp_to_bucket_id(&self, timestamp: Timestamp) -> usize {
