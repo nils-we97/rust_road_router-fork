@@ -2,6 +2,7 @@ pub mod capacity_graph;
 pub mod td_capacity_graph;
 pub mod traffic_functions;
 pub mod conversion;
+pub mod preprocessing;
 
 pub trait ModifiableWeight<PathContainer> {
     fn increase_weights(&mut self, path: PathContainer);

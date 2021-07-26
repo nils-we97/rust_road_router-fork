@@ -41,8 +41,8 @@ impl CapacityGraph {
     }
 
     /// Decompose the graph into its three seperate data containers
-    pub fn decompose(self) -> (Vec<EdgeId>, Vec<NodeId>, Vec<Weight>) {
-        (self.first_out, self.head, self.weight)
+    pub fn decompose(self) -> (Vec<EdgeId>, Vec<NodeId>, Vec<Weight>, Vec<Capacity>) {
+        (self.first_out, self.head, self.weight, self.max_capacity)
     }
 
     pub fn get_edge_id(&self, start: NodeId, end: NodeId) -> Option<EdgeId> {
@@ -57,9 +57,13 @@ impl CapacityGraph {
         None
     }
 
+    pub fn head(&self, edge_id: EdgeId) -> NodeId { self.head[edge_id as usize] }
+
     pub fn weight(&self, edge_id: EdgeId) -> Weight {
         self.weight[edge_id as usize]
     }
+
+    pub fn capacity(&self, edge_id: EdgeId) -> Capacity { self.max_capacity[edge_id as usize] }
 }
 
 impl Graph for CapacityGraph {
@@ -119,7 +123,7 @@ impl Deconstruct for CapacityGraph {
     fn store_each(&self, store: &dyn Fn(&str, &dyn Store) -> std::io::Result<()>) -> std::io::Result<()> {
         store("first_out", &self.first_out)?;
         store("head", &self.head)?;
-        store("weights", &self.freeflow_weight)?;
+        store("weight", &self.freeflow_weight)?;
         store("capacity", &self.max_capacity)?;
         Ok(())
     }

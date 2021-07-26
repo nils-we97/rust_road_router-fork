@@ -6,7 +6,7 @@ use rust_road_router::report::measure;
 use crate::dijkstra::server::{CapacityServer, CapacityServerOps};
 use crate::graph::traffic_functions::time_functions::bpr_traffic_function;
 use crate::io::load_coords;
-use crate::io::load_graph::load_capacity_graph;
+use crate::io::io_graph::load_capacity_graph;
 use crate::visualization::generate_visualization_data;
 
 pub fn run_server(graph_directory: &Path) {

@@ -8,7 +8,7 @@ use crate::experiments::compare_static_cooperative::compare_static_cooperative;
 use crate::experiments::generate_queries::departure_distributions::{ConstantDeparture, DepartureDistribution};
 use crate::experiments::generate_queries::random_uniform::generate_random_uniform_td_queries;
 use crate::graph::traffic_functions::speed_functions::bpr_speed_function;
-use crate::io::load_td_graph::load_td_capacity_graph;
+use crate::io::io_td_graph::load_td_capacity_graph;
 
 //use crate::io::load_coords;
 //use crate::visualization::generate_visualization_data;
