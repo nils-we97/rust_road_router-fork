@@ -15,7 +15,4 @@ rust_road_router = { path = "../engine" }
 conversion = { path = "../conversion" }
 rand = "^0.8.4"
 rand_distr = "^0.4.1"
-#csv = "^1.1.6"
-#byteorder = "1.4.3"
-#rayon = "1.5.0"
-#num = "0.4.0"
+fux_kdtree = "^0.2.0"

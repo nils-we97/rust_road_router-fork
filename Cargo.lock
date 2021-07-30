@@ -249,6 +249,7 @@ name = "cooperative"
 version = "0.1.0"
 dependencies = [
  "conversion",
+ "fux_kdtree",
  "rand 0.8.4",
  "rand_distr 0.4.1",
  "rust_road_router",

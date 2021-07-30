@@ -17,7 +17,7 @@ pub fn run_td_server(graph_directory: &Path) {
     println!("Running TD server...");
 
     let (graph, time) = measure(||
-        load_td_capacity_graph(&graph_directory, bpr_speed_function).unwrap()
+        load_td_capacity_graph(&graph_directory, 10,bpr_speed_function).unwrap()
     );
     println!("Graph loaded in {} ms", time.to_std().unwrap().as_nanos() as f64 / 1_000_000.0);
 
