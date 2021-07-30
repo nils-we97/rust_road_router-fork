@@ -74,6 +74,8 @@ pub fn extract_largest_scc(graph_directory: &Path, out_directory: &Path) -> Resu
     new_longitude.write_to(&out_directory.join("longitude"))?;
     new_latitude.write_to(&out_directory.join("latitude"))?;
 
+    println!("all okay up here!");
+
     Ok(())
 }
 
