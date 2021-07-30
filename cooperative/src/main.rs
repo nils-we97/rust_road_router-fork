@@ -9,7 +9,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let graph_directory = env::current_dir()?
         .parent().unwrap()
         .join("graphs")
-        .join("mecklenburg");
+        .join("test");
 
     let out_directory = env::current_dir()?
         .parent().unwrap()
@@ -24,8 +24,6 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     //run_server(&graph_directory, &population_directory);
     extract_largest_scc(&graph_directory, &out_directory)?;
-
-    println!("This should not be printed out, my app crashed before!");
 
     Ok(())
 }

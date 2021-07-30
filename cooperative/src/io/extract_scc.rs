@@ -1,10 +1,11 @@
+use std::error::Error;
+use std::path::Path;
+
 use rust_road_router::datastr::graph::{EdgeId, Graph, NodeId, RandomLinkAccessGraph, UnweightedFirstOutGraph};
 use rust_road_router::datastr::rank_select_map::{BitVec, RankSelectMap};
+use rust_road_router::io::Load;
 
-use crate::io::io_raw_graph::load_capacity_graph_raw;
-use std::path::Path;
-use std::error::Error;
-use rust_road_router::io::{Load, Store};
+use crate::io::io_raw_graph::{load_capacity_graph_raw, RawCapacityGraphContainer, store_capacity_graph_raw};
 
 /// Extract the largest strongly connected component of a given Graph.
 /// This preprocessing step avoids invalid (s,t)-queries where t is not reachable from s.
@@ -66,17 +67,17 @@ pub fn extract_largest_scc(graph_directory: &Path, out_directory: &Path) -> Resu
         }
     }
 
-    new_first_out.write_to(&out_directory.join("first_out"))?;
-    new_head.write_to(&out_directory.join("head"))?;
-    new_distance.write_to(&out_directory.join("geo_distance"))?;
-    new_time.write_to(&out_directory.join("travel_time"))?;
-    new_capacity.write_to(&out_directory.join("capacity"))?;
-    new_longitude.write_to(&out_directory.join("longitude"))?;
-    new_latitude.write_to(&out_directory.join("latitude"))?;
+    let container = RawCapacityGraphContainer {
+        first_out: new_first_out,
+        head: new_head,
+        geo_distance: new_distance,
+        travel_time: new_time,
+        capacity: new_capacity,
+        longitude: new_longitude,
+        latitude: new_latitude,
+    };
 
-    println!("all okay up here!");
-
-    Ok(())
+    store_capacity_graph_raw(&container, &out_directory)
 }
 
 /// Shrink the graph by removing all degree 2 vertices.
