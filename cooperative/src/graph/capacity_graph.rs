@@ -1,6 +1,6 @@
 use std::ops::Range;
 
-use rust_road_router::datastr::graph::{EdgeId, EdgeIdGraph, EdgeIdT, Graph, Link, LinkIterable, NodeId, NodeIdT, Weight};
+use rust_road_router::datastr::graph::{EdgeId, EdgeIdGraph, EdgeIdT, Graph, Link, LinkIterable, NodeId, NodeIdT, Weight, EdgeRandomAccessGraph};
 use rust_road_router::io::{Deconstruct, Store};
 use rust_road_router::util::SlcsIdx;
 
@@ -145,6 +145,15 @@ impl LinkIterable<Link> for CapacityGraph {
     }
 }
 
+impl LinkIterable<NodeIdT> for CapacityGraph {
+    type Iter<'a> = impl Iterator<Item=NodeIdT> + 'a;
+
+    #[inline(always)]
+    fn link_iter(&self, node: NodeId) -> Self::Iter<'_> {
+        self.head[self.neighbor_edge_indices_usize(node)].iter().map(|&l| NodeIdT(l))
+    }
+}
+
 impl LinkIterable<(NodeIdT, (Weight, EdgeIdT))> for CapacityGraph {
     #[allow(clippy::type_complexity)]
     type Iter<'a> = impl Iterator<Item=(NodeIdT, (Weight, EdgeIdT))> + 'a;
@@ -179,5 +188,14 @@ impl EdgeIdGraph for CapacityGraph {
     fn neighbor_edge_indices_usize(&self, node: NodeId) -> Range<usize> {
         let node = node as usize;
         (self.first_out[node] as usize)..(self.first_out[node + 1] as usize)
+    }
+}
+
+impl EdgeRandomAccessGraph<Link> for CapacityGraph {
+    fn link(&self, edge_id: u32) -> Link {
+        Link {
+            node: self.head(edge_id),
+            weight: self.weight(edge_id),
+        }
     }
 }

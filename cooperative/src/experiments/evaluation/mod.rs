@@ -81,7 +81,7 @@ fn rel_deviation((algo, actual): (Weight, Weight)) -> f64 {
     abs_diff((algo, actual)) as f64 / algo as f64
 }
 
-pub fn evaluate_queries<G, P>(server: &mut impl CapacityServerOps<G, P>, queries: &[impl GenQuery<NodeId> + Clone]) -> EvaluationResult<Weight> {
+pub fn evaluate_queries<G, P, Pot>(server: &mut impl CapacityServerOps<G, P, Pot>, queries: &[impl GenQuery<NodeId> + Clone]) -> EvaluationResult<Weight> {
     let distances_algo = queries
         .iter()
         .cloned()

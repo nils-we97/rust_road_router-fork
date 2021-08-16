@@ -7,9 +7,9 @@ use crate::experiments::PathCompareResult;
 use crate::graph::capacity_graph::CapacityGraph;
 use crate::graph::td_capacity_graph::TDCapacityGraph;
 
-pub fn evaluate_time_dependent_impact(
-    server: &mut impl CapacityServerOps<CapacityGraph, PathResult>,
-    td_server: &mut impl CapacityServerOps<TDCapacityGraph, TDPathResult>,
+pub fn evaluate_time_dependent_impact<Pot>(
+    server: &mut impl CapacityServerOps<CapacityGraph, PathResult, Pot>,
+    td_server: &mut impl CapacityServerOps<TDCapacityGraph, TDPathResult, Pot>,
     queries: &[impl GenQuery<NodeId> + Clone],
 ) -> PathCompareResult {
     let (count, sum_distances) = calculate_distances(server, queries);
@@ -25,8 +25,8 @@ pub fn evaluate_time_dependent_impact(
     PathCompareResult::new(count as u32, sum_distances, sum_td_distances)
 }
 
-fn calculate_distances<G, P>(
-    server: &mut impl CapacityServerOps<G, P>,
+fn calculate_distances<G, P, Pot>(
+    server: &mut impl CapacityServerOps<G, P, Pot>,
     queries: &[impl GenQuery<NodeId> + Clone],
 ) -> (usize, Weight) {
     let paths = queries

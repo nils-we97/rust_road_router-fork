@@ -4,6 +4,7 @@ pub mod generate_queries;
 pub mod run_server;
 pub mod run_td_server;
 pub mod evaluate_td_impact;
+pub mod run_server_with_potentials;
 
 #[derive(Copy, Clone, Debug)]
 pub struct PathCompareResult {

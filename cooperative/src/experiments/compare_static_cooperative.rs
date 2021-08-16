@@ -4,8 +4,8 @@ use rust_road_router::datastr::graph::NodeId;
 use crate::dijkstra::server::CapacityServerOps;
 use crate::experiments::PathCompareResult;
 
-pub fn compare_static_cooperative<G, P>(
-    server: &mut impl CapacityServerOps<G, P>,
+pub fn compare_static_cooperative<G, P, Pot>(
+    server: &mut impl CapacityServerOps<G, P, Pot>,
     queries: &[impl GenQuery<NodeId> + Clone]
 ) -> PathCompareResult {
     let static_paths = queries

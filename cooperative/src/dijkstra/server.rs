@@ -12,14 +12,17 @@ use crate::dijkstra::td_capacity_dijkstra_ops::TDCapacityDijkstraOps;
 use crate::graph::capacity_graph::CapacityGraph;
 use crate::graph::td_capacity_graph::TDCapacityGraph;
 use crate::graph::ModifiableWeight;
+use rust_road_router::algo::a_star::{Potential, ZeroPotential};
 
-pub struct CapacityServer<G> {
+pub struct CapacityServer<G, Pot = ZeroPotential> {
     graph: G,
     dijkstra: DijkstraData<Weight, EdgeIdT>,
+    potential: Pot,
 }
 
-pub trait CapacityServerOps<G, P> {
+pub trait CapacityServerOps<G, P, Pot = ZeroPotential> {
     fn new(graph: G) -> CapacityServer<G>;
+    fn new_with_potential(graph: G, potential: Pot) -> CapacityServer<G, Pot>;
     fn query(&mut self, query: impl GenQuery<Weight> + Clone, update: bool) -> Option<CapacityQueryResult<P>>;
     fn update(&mut self, path: &P);
     fn distance(&mut self, query: impl GenQuery<Weight> + Clone) -> Option<Weight>;
@@ -27,29 +30,43 @@ pub trait CapacityServerOps<G, P> {
     fn path_distance(&self, path: &P) -> Weight;
 }
 
-impl CapacityServerOps<CapacityGraph, PathResult> for CapacityServer<CapacityGraph> {
+impl<Pot> CapacityServerOps<CapacityGraph, PathResult, Pot> for CapacityServer<CapacityGraph, Pot>
+    where Pot: Potential
+{
     fn new(graph: CapacityGraph) -> CapacityServer<CapacityGraph> {
         let nodes = graph.num_nodes();
 
         CapacityServer {
             graph,
             dijkstra: DijkstraData::new(nodes),
+            potential: ZeroPotential(),
         }
     }
+
+    fn new_with_potential(graph: CapacityGraph, potential: Pot) -> CapacityServer<CapacityGraph, Pot> {
+        let nodes = graph.num_nodes();
+
+        CapacityServer {
+            graph,
+            dijkstra: DijkstraData::new(nodes),
+            potential,
+        }
+    }
+
 
     fn query(&mut self, query: impl GenQuery<Weight> + Clone, update: bool) -> Option<CapacityQueryResult<PathResult>> {
         let query_copy = query.clone();
 
-        let distance = self.distance(query);
-        //let (distance, time) = measure(|| self.distance(query));
-        //println!("Query took {} ms", time.to_std().unwrap().as_nanos() as f64 / 1_000_000.0);
+        //let distance = self.distance(query);
+        let (distance, time) = measure(|| self.distance(query));
+        println!("Query took {} ms", time.to_std().unwrap().as_nanos() as f64 / 1_000_000.0);
 
         if distance.is_some() {
             let path = self.path(query_copy);
             if update {
-                self.update(&path);
-                //let (_, time) = measure(|| self.update(&path));
-                //println!("Update took {} ms", time.to_std().unwrap().as_nanos() as f64 / 1_000_000.0);
+                //self.update(&path);
+                let (_, time) = measure(|| self.update(&path));
+                println!("Update took {} ms", time.to_std().unwrap().as_nanos() as f64 / 1_000_000.0);
             }
             return Some(CapacityQueryResult::new(distance.unwrap(), path));
         }
@@ -68,9 +85,12 @@ impl CapacityServerOps<CapacityGraph, PathResult> for CapacityServer<CapacityGra
         let mut ops = DefaultOpsWithLinkPath::default();
         let mut dijkstra = DijkstraRun::query(self.graph.borrow(), &mut self.dijkstra, &mut ops, query);
 
+        self.potential.init(to);
+        let pot = &mut self.potential;
+
         let mut result = None;
         let mut num_queue_pops = 0;
-        while let Some(node) = dijkstra.next() {
+        while let Some(node) = dijkstra.next_step_with_potential(|node| pot.potential(node)) {
             num_queue_pops += 1;
             if node == to {
                 result = Some(*dijkstra.tentative_distance(node));
@@ -106,28 +126,39 @@ impl CapacityServerOps<CapacityGraph, PathResult> for CapacityServer<CapacityGra
     }
 }
 
-impl CapacityServerOps<TDCapacityGraph, TDPathResult> for CapacityServer<TDCapacityGraph> {
+impl<Pot> CapacityServerOps<TDCapacityGraph, TDPathResult, Pot> for CapacityServer<TDCapacityGraph, Pot>
+    where Pot: Potential
+{
     fn new(graph: TDCapacityGraph) -> CapacityServer<TDCapacityGraph> {
         let nodes = graph.num_nodes();
 
         CapacityServer {
             graph,
             dijkstra: DijkstraData::new(nodes),
+            potential: ZeroPotential(),
+        }
+    }
+
+    fn new_with_potential(graph: TDCapacityGraph, potential: Pot) -> CapacityServer<TDCapacityGraph, Pot> {
+        let nodes = graph.num_nodes();
+
+        CapacityServer {
+            graph,
+            dijkstra: DijkstraData::new(nodes),
+            potential,
         }
     }
 
     fn query(&mut self, query: impl GenQuery<Weight> + Clone, update: bool) -> Option<CapacityQueryResult<TDPathResult>> {
         let query_copy = query.clone();
-        let distance = self.distance(query);
-        //let (distance, time) = measure(|| self.distance(query));
-        //println!("//Query took {} ms", time.to_std().unwrap().as_nanos() as f64 / 1_000_000.0);
+        let (distance, time) = measure(|| self.distance(query));
+        println!("//Query took {} ms", time.to_std().unwrap().as_nanos() as f64 / 1_000_000.0);
 
         if distance.is_some() {
             let path = self.path(query_copy);
             if update {
-                self.update(&path);
-                //let (_, time) = measure(|| self.update(&path));
-                //println!("//Update took {} ms", time.to_std().unwrap().as_nanos() as f64 / 1_000_000.0);
+                let (_, time) = measure(|| self.update(&path));
+                println!("//Update took {} ms", time.to_std().unwrap().as_nanos() as f64 / 1_000_000.0);
             }
             return Some(CapacityQueryResult::new(distance.unwrap(), path));
         }
@@ -154,9 +185,12 @@ impl CapacityServerOps<TDCapacityGraph, TDPathResult> for CapacityServer<TDCapac
 
         let mut dijkstra = DijkstraRun::query(self.graph.borrow(), &mut self.dijkstra, &mut ops, query);
 
+        self.potential.init(to);
+        let pot = &mut self.potential;
+
         let mut result = None;
         let mut num_queue_pops = 0;
-        while let Some(node) = dijkstra.next() {
+        while let Some(node) = dijkstra.next_step_with_potential(|node| pot.potential(node)) {
             num_queue_pops += 1;
             if node == to {
                 result = Some(*dijkstra.tentative_distance(node));
