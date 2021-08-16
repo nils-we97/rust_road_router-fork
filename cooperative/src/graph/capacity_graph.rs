@@ -1,8 +1,10 @@
-use rust_road_router::datastr::graph::{EdgeId, NodeId, Weight, Graph, LinkIterable, Link, RandomLinkAccessGraph, NodeIdT, EdgeIdT};
+use std::ops::Range;
+
+use rust_road_router::datastr::graph::{EdgeId, EdgeIdGraph, EdgeIdT, Graph, Link, LinkIterable, NodeId, NodeIdT, Weight};
 use rust_road_router::io::{Deconstruct, Store};
 use rust_road_router::util::SlcsIdx;
+
 use crate::graph::ModifiableWeight;
-use std::ops::Range;
 
 pub type Capacity = u32;
 
@@ -158,28 +160,24 @@ impl LinkIterable<(NodeIdT, (Weight, EdgeIdT))> for CapacityGraph {
     }
 }
 
-impl RandomLinkAccessGraph for CapacityGraph {
-    fn link(&self, edge_id: EdgeId) -> Link {
-        Link {
-            node: self.head[edge_id as usize],
-            weight: 0,
-        }
+impl EdgeIdGraph for CapacityGraph {
+    #[rustfmt::skip]
+    type IdxIter<'a> where Self: 'a = impl Iterator<Item=EdgeIdT> + 'a;
+
+    fn edge_indices(&self, from: NodeId, to: NodeId) -> Self::IdxIter<'_> {
+        self
+            .neighbor_edge_indices(from)
+            .filter(move |&edge_id| self.head(edge_id) == to)
+            .map(EdgeIdT)
     }
 
-    fn edge_index(&self, from: NodeId, to: NodeId) -> Option<u32> {
-        let first_out = self.first_out[from as usize];
-        let range = self.neighbor_edge_indices_usize(from);
-        self.head[range].iter().position(|&head| head == to).map(|pos| pos as EdgeId + first_out)
-    }
-
-    #[inline(always)]
     fn neighbor_edge_indices(&self, node: NodeId) -> Range<EdgeId> {
-        (self.first_out[node as usize] as EdgeId)..(self.first_out[(node + 1) as usize] as EdgeId)
+        let node = node as usize;
+        (self.first_out[node])..(self.first_out[node + 1])
     }
 
-    #[inline(always)]
     fn neighbor_edge_indices_usize(&self, node: NodeId) -> Range<usize> {
         let node = node as usize;
-        (self.first_out[node] as usize)..(self.first_out[(node + 1)] as usize)
+        (self.first_out[node] as usize)..(self.first_out[node + 1] as usize)
     }
 }

@@ -1,6 +1,6 @@
 use crate::dijkstra::server::CapacityServerOps;
 use rust_road_router::algo::GenQuery;
-use rust_road_router::datastr::graph::{Weight, NodeId};
+use rust_road_router::datastr::graph::{NodeId, Weight};
 
 #[derive(Copy, Clone, Debug)]
 pub struct EvaluationResult<W> {
@@ -36,16 +36,10 @@ impl EvaluationResult<Weight> {
             .collect::<Vec<(Weight, Weight)>>();
         abs_deviations.sort_by_key(|k| abs_diff(*k));
 
-        let abs_total_deviation = abs_deviations
-            .iter()
-            .map(|a| abs_diff(*a))
-            .sum::<Weight>();
+        let abs_total_deviation = abs_deviations.iter().map(|a| abs_diff(*a)).sum::<Weight>();
 
         // handle relative deviations
-        let mut rel_deviations = abs_deviations
-            .iter()
-            .map(|a| rel_deviation(*a))
-            .collect::<Vec<f64>>();
+        let mut rel_deviations = abs_deviations.iter().map(|a| rel_deviation(*a)).collect::<Vec<f64>>();
         rel_deviations.sort_by(|a, b| a.partial_cmp(b).unwrap());
 
         let rel_total_deviation = rel_deviations.iter().sum::<f64>();
@@ -62,31 +56,32 @@ impl EvaluationResult<Weight> {
                 abs_diff(*abs_deviations.get(num_queries / 4).unwrap()),
                 abs_diff(*abs_deviations.get(num_queries / 2).unwrap()),
                 abs_diff(*abs_deviations.get((3 * num_queries) / 4).unwrap()),
-                abs_diff(*abs_deviations.last().unwrap())
+                abs_diff(*abs_deviations.last().unwrap()),
             ],
             deviation_quantiles_rel: [
                 *rel_deviations.first().unwrap(),
                 *rel_deviations.get(num_queries / 4).unwrap(),
                 *rel_deviations.get(num_queries / 2).unwrap(),
                 *rel_deviations.get((3 * num_queries) / 4).unwrap(),
-                *rel_deviations.last().unwrap()
+                *rel_deviations.last().unwrap(),
             ],
         }
     }
 }
 
 fn abs_diff((a, b): (Weight, Weight)) -> Weight {
-    if a > b { a - b } else { b - a }
+    if a > b {
+        a - b
+    } else {
+        b - a
+    }
 }
 
 fn rel_deviation((algo, actual): (Weight, Weight)) -> f64 {
     abs_diff((algo, actual)) as f64 / algo as f64
 }
 
-pub fn evaluate_queries<G, P>(
-    server: &mut impl CapacityServerOps<G, P>,
-    queries: &[impl GenQuery<NodeId> + Clone],
-) -> EvaluationResult<Weight> {
+pub fn evaluate_queries<G, P>(server: &mut impl CapacityServerOps<G, P>, queries: &[impl GenQuery<NodeId> + Clone]) -> EvaluationResult<Weight> {
     let distances_algo = queries
         .iter()
         .cloned()

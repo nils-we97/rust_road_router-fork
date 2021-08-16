@@ -13,16 +13,22 @@ pub trait DepartureDistribution {
 pub struct ConstantDeparture();
 
 impl DepartureDistribution for ConstantDeparture {
-    fn new() -> Self { Self {} }
+    fn new() -> Self {
+        Self {}
+    }
 
-    fn rand<R: Rng + ?Sized>(&self, _rng: &mut R) -> Timestamp { 0 }
+    fn rand<R: Rng + ?Sized>(&self, _rng: &mut R) -> Timestamp {
+        0
+    }
 }
 
 /// uniform departure distribution: trip departures are distributed randomly
 pub struct UniformDeparture();
 
 impl DepartureDistribution for UniformDeparture {
-    fn new() -> Self { Self {} }
+    fn new() -> Self {
+        Self {}
+    }
 
     fn rand<R: Rng + ?Sized>(&self, rng: &mut R) -> Timestamp {
         rng.gen_range(0..MAX_BUCKETS)

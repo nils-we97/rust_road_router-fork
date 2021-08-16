@@ -1,5 +1,5 @@
 use kdtree::kdtree::Kdtree;
-use rand::{Rng, thread_rng};
+use rand::{thread_rng, Rng};
 
 use rust_road_router::algo::{GenQuery, Query};
 use rust_road_router::datastr::graph::NodeId;
@@ -16,14 +16,10 @@ pub fn generate_uniform_population_density_based_queries(
     // distribute population into buckets
     let mut vertex_grid = vec![Vec::new(); grid_population.len()];
 
-    (0..longitude.len())
-        .into_iter()
-        .for_each(|node_id| {
-            let nearest_cell = grid_tree.nearest_search(
-                &PopulationGridEntry::from_coords(longitude[node_id], latitude[node_id])
-            );
-            vertex_grid[nearest_cell.id].push(node_id as NodeId);
-        });
+    (0..longitude.len()).into_iter().for_each(|node_id| {
+        let nearest_cell = grid_tree.nearest_search(&PopulationGridEntry::from_coords(longitude[node_id], latitude[node_id]));
+        vertex_grid[nearest_cell.id].push(node_id as NodeId);
+    });
 
     // build prefix sum upon population entries
     // consider a cell's population if there is at least one corresponding node
@@ -44,22 +40,17 @@ pub fn generate_uniform_population_density_based_queries(
         .map(|_| {
             // draw random start cell according to population density, pick a random node inside
             let mut rng = thread_rng();
-            let start_cell_id = find_interval(
-                &grid_population_intervals,
-                rng.gen_range(0..longitude.len() as NodeId),
-            );
+            let start_cell_id = find_interval(&grid_population_intervals, rng.gen_range(0..longitude.len() as NodeId));
             let start_cell_vertex_pos = rng.gen_range(0..vertex_grid[start_cell_id].len());
             let from = vertex_grid[start_cell_id][start_cell_vertex_pos];
 
-            let target_cell_id = find_interval(
-                &grid_population_intervals,
-                rng.gen_range(0..longitude.len() as NodeId),
-            );
+            let target_cell_id = find_interval(&grid_population_intervals, rng.gen_range(0..longitude.len() as NodeId));
             let target_cell_vertex_pos = rng.gen_range(0..vertex_grid[target_cell_id].len());
             let to = vertex_grid[target_cell_id][target_cell_vertex_pos];
 
             Query::new(from, to, 0)
-        }).collect::<Vec<Query>>()
+        })
+        .collect::<Vec<Query>>()
 }
 
 fn find_interval(vec: &Vec<(u32, usize)>, val: u32) -> usize {

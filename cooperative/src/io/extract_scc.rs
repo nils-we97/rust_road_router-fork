@@ -1,11 +1,11 @@
 use std::error::Error;
 use std::path::Path;
 
-use rust_road_router::datastr::graph::{EdgeId, Graph, NodeId, RandomLinkAccessGraph, UnweightedFirstOutGraph};
+use rust_road_router::datastr::graph::{EdgeId, EdgeIdGraph, Graph, NodeId, UnweightedFirstOutGraph};
 use rust_road_router::datastr::rank_select_map::{BitVec, RankSelectMap};
 use rust_road_router::io::Load;
 
-use crate::io::io_raw_graph::{load_capacity_graph_raw, RawCapacityGraphContainer, store_capacity_graph_raw};
+use crate::io::io_raw_graph::{load_capacity_graph_raw, store_capacity_graph_raw, RawCapacityGraphContainer};
 
 /// Extract the largest strongly connected component of a given Graph.
 /// This preprocessing step avoids invalid (s,t)-queries where t is not reachable from s.
@@ -22,10 +22,7 @@ pub fn extract_largest_scc(graph_directory: &Path, out_directory: &Path) -> Resu
         .for_each(|(idx, _)| bit_vec.set(idx));
     let rank_select_map = RankSelectMap::new(bit_vec);
 
-    let graph = UnweightedFirstOutGraph::new(
-        graph_container.first_out.clone(),
-        graph_container.head.clone(),
-    );
+    let graph = UnweightedFirstOutGraph::new(graph_container.first_out.clone(), graph_container.head.clone());
 
     let mut new_first_out = Vec::with_capacity(graph.num_nodes() + 1);
     let mut new_head = Vec::with_capacity(graph.num_arcs());
@@ -34,7 +31,6 @@ pub fn extract_largest_scc(graph_directory: &Path, out_directory: &Path) -> Resu
     let mut new_capacity = Vec::with_capacity(graph.num_arcs());
     let mut new_longitude = Vec::with_capacity(graph.num_nodes());
     let mut new_latitude = Vec::with_capacity(graph.num_nodes());
-
 
     new_first_out.push(0);
     for node_id in 0..graph.num_nodes() {
@@ -48,22 +44,19 @@ pub fn extract_largest_scc(graph_directory: &Path, out_directory: &Path) -> Resu
                 .neighbor_edge_indices(node_id as NodeId)
                 .filter_map(|edge_id| {
                     let edge_id = edge_id as usize;
-                    rank_select_map
-                        .get(graph.head()[edge_id] as usize)
-                        .map(|target| (edge_id, target as NodeId))
-                }).collect::<Vec<(usize, NodeId)>>();
+                    rank_select_map.get(graph.head()[edge_id] as usize).map(|target| (edge_id, target as NodeId))
+                })
+                .collect::<Vec<(usize, NodeId)>>();
 
             let prefix_sum = new_first_out.last().unwrap() + remaining_neighbors.len() as EdgeId;
             new_first_out.push(prefix_sum);
 
-            remaining_neighbors
-                .iter()
-                .for_each(|&(old_edge_id, new_target_vertex_id)| {
-                    new_head.push(new_target_vertex_id);
-                    new_distance.push(graph_container.geo_distance[old_edge_id]);
-                    new_time.push(graph_container.travel_time[old_edge_id]);
-                    new_capacity.push(graph_container.capacity[old_edge_id]);
-                });
+            remaining_neighbors.iter().for_each(|&(old_edge_id, new_target_vertex_id)| {
+                new_head.push(new_target_vertex_id);
+                new_distance.push(graph_container.geo_distance[old_edge_id]);
+                new_time.push(graph_container.travel_time[old_edge_id]);
+                new_capacity.push(graph_container.capacity[old_edge_id]);
+            });
         }
     }
 

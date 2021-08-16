@@ -1,17 +1,17 @@
 use std::borrow::Borrow;
 
+use rust_road_router::algo::dijkstra::{DefaultOpsWithLinkPath, DijkstraData, DijkstraRun};
 use rust_road_router::algo::GenQuery;
-use rust_road_router::algo::dijkstra::{DijkstraData, DijkstraRun, DefaultOpsWithLinkPath};
-use rust_road_router::datastr::graph::{EdgeId, Graph, Weight, EdgeIdT};
 use rust_road_router::datastr::graph::time_dependent::Timestamp;
-use rust_road_router::report::*;
+use rust_road_router::datastr::graph::{EdgeId, EdgeIdT, Graph, Weight};
 use rust_road_router::report;
+use rust_road_router::report::*;
 
 use crate::dijkstra::model::{CapacityQueryResult, PathResult, TDPathResult};
 use crate::dijkstra::td_capacity_dijkstra_ops::TDCapacityDijkstraOps;
 use crate::graph::capacity_graph::CapacityGraph;
-use crate::graph::ModifiableWeight;
 use crate::graph::td_capacity_graph::TDCapacityGraph;
+use crate::graph::ModifiableWeight;
 
 pub struct CapacityServer<G> {
     graph: G,
@@ -24,7 +24,7 @@ pub trait CapacityServerOps<G, P> {
     fn update(&mut self, path: &P);
     fn distance(&mut self, query: impl GenQuery<Weight> + Clone) -> Option<Weight>;
     fn path(&self, query: impl GenQuery<Weight> + Clone) -> P;
-    fn path_distance(&self, path: &P) ->  Weight;
+    fn path_distance(&self, path: &P) -> Weight;
 }
 
 impl CapacityServerOps<CapacityGraph, PathResult> for CapacityServer<CapacityGraph> {
@@ -37,11 +37,7 @@ impl CapacityServerOps<CapacityGraph, PathResult> for CapacityServer<CapacityGra
         }
     }
 
-    fn query(
-        &mut self,
-        query: impl GenQuery<Weight> + Clone,
-        update: bool,
-    ) -> Option<CapacityQueryResult<PathResult>> {
+    fn query(&mut self, query: impl GenQuery<Weight> + Clone, update: bool) -> Option<CapacityQueryResult<PathResult>> {
         let query_copy = query.clone();
 
         let distance = self.distance(query);
@@ -106,11 +102,7 @@ impl CapacityServerOps<CapacityGraph, PathResult> for CapacityServer<CapacityGra
     }
 
     fn path_distance(&self, path: &PathResult) -> Weight {
-        path
-            .edge_path
-            .iter()
-            .map(|&edge_id| self.graph.weight(edge_id))
-            .sum()
+        path.edge_path.iter().map(|&edge_id| self.graph.weight(edge_id)).sum()
     }
 }
 
@@ -124,11 +116,7 @@ impl CapacityServerOps<TDCapacityGraph, TDPathResult> for CapacityServer<TDCapac
         }
     }
 
-    fn query(
-        &mut self,
-        query: impl GenQuery<Weight> + Clone,
-        update: bool,
-    ) -> Option<CapacityQueryResult<TDPathResult>> {
+    fn query(&mut self, query: impl GenQuery<Weight> + Clone, update: bool) -> Option<CapacityQueryResult<TDPathResult>> {
         let query_copy = query.clone();
         let (distance, time) = measure(|| self.distance(query));
         println!("//Query took {} ms", time.to_std().unwrap().as_nanos() as f64 / 1_000_000.0);
@@ -162,12 +150,7 @@ impl CapacityServerOps<TDCapacityGraph, TDPathResult> for CapacityServer<TDCapac
         let to = query.to();
         let mut ops = TDCapacityDijkstraOps::default();
 
-        let mut dijkstra = DijkstraRun::query(
-            self.graph.borrow(),
-            &mut self.dijkstra,
-            &mut ops,
-            query,
-        );
+        let mut dijkstra = DijkstraRun::query(self.graph.borrow(), &mut self.dijkstra, &mut ops, query);
 
         let mut result = None;
         let mut num_queue_pops = 0;
@@ -213,13 +196,11 @@ impl CapacityServerOps<TDCapacityGraph, TDPathResult> for CapacityServer<TDCapac
 
         departure.push(current_time); // arrival time at target node
 
-
         TDPathResult::new(node_path, edge_path, departure)
     }
 
     fn path_distance(&self, path: &TDPathResult) -> Weight {
-        path
-            .edge_path
+        path.edge_path
             .iter()
             .enumerate()
             .map(|(idx, &edge_id)| self.graph.weight(edge_id, path.departure[idx]))

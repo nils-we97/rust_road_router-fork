@@ -18,7 +18,10 @@ impl PopulationGridEntry {
     }
 
     pub fn from_coords(lon: f32, lat: f32) -> Self {
-        Self { id: 0, coords: [lon as f64, lat as f64] }
+        Self {
+            id: 0,
+            coords: [lon as f64, lat as f64],
+        }
     }
 }
 
@@ -47,5 +50,7 @@ pub fn load_population_grid(directory: &Path) -> Result<(Kdtree<PopulationGridEn
 
 impl KdtreePointTrait for PopulationGridEntry {
     #[inline] // the inline on this method is important! Without it there is ~25% speed loss on the tree when cross-crate usage.
-    fn dims(&self) -> &[f64] { &self.coords }
+    fn dims(&self) -> &[f64] {
+        &self.coords
+    }
 }

@@ -1,5 +1,5 @@
-use rust_road_router::datastr::graph::{Weight, INFINITY};
 use rust_road_router::datastr::graph::floating_time_dependent::FlWeight;
+use rust_road_router::datastr::graph::{Weight, INFINITY};
 use std::cmp::max;
 
 pub mod speed_functions;

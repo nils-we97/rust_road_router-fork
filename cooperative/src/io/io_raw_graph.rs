@@ -1,9 +1,9 @@
-use rust_road_router::datastr::graph::{EdgeId, NodeId, Weight};
 use crate::graph::capacity_graph::Capacity;
-use std::path::Path;
+use crate::io::load_coords;
+use rust_road_router::datastr::graph::{EdgeId, NodeId, Weight};
 use rust_road_router::io::{Load, Store};
 use std::error::Error;
-use crate::io::load_coords;
+use std::path::Path;
 
 pub struct RawCapacityGraphContainer {
     pub first_out: Vec<EdgeId>,
@@ -24,23 +24,18 @@ pub fn load_capacity_graph_raw(graph_directory: &Path) -> Result<RawCapacityGrap
 
     let (longitude, latitude) = load_coords(graph_directory)?;
 
-    Ok(
-        RawCapacityGraphContainer {
-            first_out,
-            head,
-            geo_distance,
-            travel_time,
-            capacity,
-            longitude,
-            latitude,
-        }
-    )
+    Ok(RawCapacityGraphContainer {
+        first_out,
+        head,
+        geo_distance,
+        travel_time,
+        capacity,
+        longitude,
+        latitude,
+    })
 }
 
-pub fn store_capacity_graph_raw(
-    container: &RawCapacityGraphContainer,
-    graph_directory: &Path
-) -> Result<(), Box<dyn Error>> {
+pub fn store_capacity_graph_raw(container: &RawCapacityGraphContainer, graph_directory: &Path) -> Result<(), Box<dyn Error>> {
     container.first_out.write_to(&graph_directory.join("first_out"))?;
     container.head.write_to(&graph_directory.join("head"))?;
     container.geo_distance.write_to(&graph_directory.join("geo_distance"))?;

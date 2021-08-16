@@ -11,36 +11,24 @@ use crate::io::population_grid::load_population_grid;
 use crate::visualization::generate_visualization_data;
 
 pub fn run_server(graph_directory: &Path, population_directory: &Path) {
-    let (graph, time) = measure(||
-        load_capacity_graph(&graph_directory, bpr_traffic_function).unwrap()
-    );
+    let (graph, time) = measure(|| load_capacity_graph(&graph_directory, bpr_traffic_function).unwrap());
     println!("Graph loaded in {} ms", time.to_std().unwrap().as_nanos() as f64 / 1_000_000.0);
 
-    let ((lon, lat), time) = measure(
-        || load_coords(&graph_directory).unwrap()
-    );
+    let ((lon, lat), time) = measure(|| load_coords(&graph_directory).unwrap());
     println!("Coordinates loaded in {} ms", time.to_std().unwrap().as_nanos() as f64 / 1_000_000.0);
 
-    let ((grid, population), time) = measure(
-        || load_population_grid(&population_directory).unwrap()
+    let ((grid, population), time) = measure(|| load_population_grid(&population_directory).unwrap());
+    println!(
+        "Population structures initialized in {} ms",
+        time.to_std().unwrap().as_nanos() as f64 / 1_000_000.0
     );
-    println!("Population structures initialized in {} ms", time.to_std().unwrap().as_nanos() as f64 / 1_000_000.0);
 
     let mut server = CapacityServer::new(graph);
 
-    generate_uniform_population_density_based_queries(
-        &lon,
-        &lat,
-        &grid,
-        &population,
-        30
-    )
+    generate_uniform_population_density_based_queries(&lon, &lat, &grid, &population, 30)
         .iter()
         .for_each(|query| {
-            let result = server.query(
-                *query,
-                true,
-            );
+            let result = server.query(*query, true);
 
             if result.is_some() {
                 generate_visualization_data(&result.unwrap().path.node_path, &lat, &lon);

@@ -1,8 +1,8 @@
-use rand::{Rng, thread_rng};
-use rand_distr::{Geometric, Distribution};
+use rand::{thread_rng, Rng};
+use rand_distr::{Distribution, Geometric};
 
-use rust_road_router::algo::{GenQuery, Query};
 use rust_road_router::algo::dijkstra::{DefaultOpsWithLinkPath, DijkstraData, DijkstraRun};
+use rust_road_router::algo::{GenQuery, Query};
 use rust_road_router::datastr::graph::{EdgeId, FirstOutGraph, Graph, NodeId, Weight};
 
 //const INV_AVERAGE_TRIP_LENGTH: f64 = 0.000025; // 1 / 40000, avg trip length is ~40 km
@@ -23,7 +23,8 @@ pub fn generate_random_geometric_queries(
         .map(|_| {
             let mut result: Option<Query> = None;
 
-            while result.is_none() { // in (extremely rare) case a too high number gets selected
+            while result.is_none() {
+                // in (extremely rare) case a too high number gets selected
                 let from = rng.gen_range(0..graph.num_nodes()) as NodeId;
                 let distance = distribution.sample(&mut rng) as u32;
 
