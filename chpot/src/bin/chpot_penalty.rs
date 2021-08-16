@@ -1,7 +1,7 @@
 #[macro_use]
 extern crate rust_road_router;
 use rust_road_router::{
-    algo::{a_star::RecyclingPotential, ch_potentials::*, *},
+    algo::{ch_potentials::*, *},
     cli::CliErr,
     datastr::graph::*,
     experiments,
@@ -25,16 +25,11 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let mut algo_runs_ctxt = push_collection_context("algo_runs".to_string());
 
-    let core_ids = core_affinity::get_core_ids().unwrap();
-    core_affinity::set_for_current(core_ids[0]);
-
     let chpot_data = CHPotLoader::reconstruct_from(&path.join("lower_bound_ch"))?;
-    let (forward_pot, backward_pot) = chpot_data.potentials();
-    let (forward_pot, backward_pot) = (RecyclingPotential::new(forward_pot), RecyclingPotential::new(backward_pot));
 
     let mut penalty_server = {
         let _prepro_ctxt = algo_runs_ctxt.push_collection_item();
-        penalty::Penalty::new(&graph, forward_pot)
+        penalty::Penalty::new(&graph, chpot_data.potentials().0, chpot_data.potentials().1)
     };
 
     let mut total_query_time = Duration::zero();
@@ -51,7 +46,10 @@ fn main() -> Result<(), Box<dyn Error>> {
 
         let (_, time) = measure(|| penalty_server.alternatives(Query { from, to }));
         report!("running_time_ms", time.to_std().unwrap().as_nanos() as f64 / 1_000_000.0);
-        report!("pot_evals", penalty_server.potential().inner().num_pot_computations());
+        report!(
+            "pot_evals",
+            penalty_server.potentials().map(|p| p.inner().inner().num_pot_computations()).sum::<usize>()
+        );
         eprintln!();
 
         total_query_time = total_query_time + time;

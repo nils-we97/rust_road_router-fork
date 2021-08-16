@@ -5,7 +5,7 @@ use crate::{
         customizable_contraction_hierarchy::{query::stepped_elimination_tree::SteppedEliminationTree, *},
         dijkstra::*,
     },
-    datastr::{node_order::*, timestamped_vector::TimestampedVector},
+    datastr::{node_order::*, rank_select_map::FastClearBitVec, timestamped_vector::TimestampedVector},
     io::*,
     report::*,
     util::in_range_option::InRangeOption,
@@ -14,41 +14,70 @@ use crate::{
 pub mod penalty;
 pub mod query;
 
-#[derive(Debug)]
-pub struct CCHPotential<'a> {
-    cch: &'a CCH,
-    stack: Vec<NodeId>,
-    potentials: TimestampedVector<InRangeOption<Weight>>,
-    forward_cch_graph: FirstOutGraph<&'a [EdgeId], &'a [NodeId], Vec<Weight>>,
-    backward_elimination_tree: SteppedEliminationTree<'a, FirstOutGraph<&'a [EdgeId], &'a [NodeId], Vec<Weight>>>,
-    num_pot_computations: usize,
+pub struct CCHPotData<'a> {
+    customized: Customized<'a, CCH>,
 }
 
-impl<'a> CCHPotential<'a> {
+impl<'a> CCHPotData<'a> {
     pub fn new<Graph>(cch: &'a CCH, lower_bound: &Graph) -> Self
     where
-        Graph: LinkIterGraph + RandomLinkAccessGraph + Sync,
+        Graph: LinkIterGraph + EdgeRandomAccessGraph<Link> + Sync,
     {
         let customized = customize(cch, lower_bound);
-        let (forward_up_graph, backward_up_graph) = customized.into_ch_graphs();
-        let backward_elimination_tree = SteppedEliminationTree::new(backward_up_graph, cch.elimination_tree());
+        Self { customized }
+    }
 
-        Self {
-            cch,
+    pub fn forward_potential(
+        &self,
+    ) -> CCHPotential<'a, FirstOutGraph<&'a [EdgeId], &'a [NodeId], &'_ [Weight]>, FirstOutGraph<&'a [EdgeId], &'a [NodeId], &'_ [Weight]>> {
+        let backward_elimination_tree = SteppedEliminationTree::new(self.customized.backward_graph(), self.customized.cch().elimination_tree());
+
+        CCHPotential {
+            cch: self.customized.cch(),
             stack: Vec::new(),
-            forward_cch_graph: forward_up_graph,
+            forward_cch_graph: self.customized.forward_graph(),
             backward_elimination_tree,
-            potentials: TimestampedVector::new(cch.num_nodes(), InRangeOption::new(None)),
+            potentials: TimestampedVector::new(self.customized.cch().num_nodes(), InRangeOption::new(None)),
             num_pot_computations: 0,
         }
     }
 
+    pub fn backward_potential(
+        &self,
+    ) -> CCHPotential<'a, FirstOutGraph<&'a [EdgeId], &'a [NodeId], &'_ [Weight]>, FirstOutGraph<&'a [EdgeId], &'a [NodeId], &'_ [Weight]>> {
+        let backward_elimination_tree = SteppedEliminationTree::new(self.customized.forward_graph(), self.customized.cch().elimination_tree());
+
+        CCHPotential {
+            cch: self.customized.cch(),
+            stack: Vec::new(),
+            forward_cch_graph: self.customized.backward_graph(),
+            backward_elimination_tree,
+            potentials: TimestampedVector::new(self.customized.cch().num_nodes(), InRangeOption::new(None)),
+            num_pot_computations: 0,
+        }
+    }
+}
+
+pub struct CCHPotential<'a, GF, GB> {
+    cch: &'a CCH,
+    stack: Vec<NodeId>,
+    potentials: TimestampedVector<InRangeOption<Weight>>,
+    forward_cch_graph: GF,
+    backward_elimination_tree: SteppedEliminationTree<'a, GB>,
+    num_pot_computations: usize,
+}
+
+impl<'a, GF, GB> CCHPotential<'a, GF, GB> {
     pub fn num_pot_computations(&self) -> usize {
         self.num_pot_computations
     }
 }
 
-impl<'a> Potential for CCHPotential<'a> {
+impl<'a, GF, GB> Potential for CCHPotential<'a, GF, GB>
+where
+    GF: LinkIterGraph,
+    GB: LinkIterGraph,
+{
     fn init(&mut self, target: NodeId) {
         self.potentials.reset();
         self.backward_elimination_tree.initialize_query(self.cch.node_order().rank(target));
@@ -129,12 +158,15 @@ impl<GF: LinkIterGraph, GB: LinkIterGraph> CHPotential<GF, GB> {
         }
         *num_pot_computations += 1;
 
-        let min_by_up = LinkIterable::<Link>::link_iter(forward, node)
-            .map(|edge| edge.weight + Self::potential_internal(potentials, forward, backward_data, edge.node, num_pot_computations))
-            .min()
-            .unwrap_or(INFINITY);
+        let mut dist = backward_data.distances[node as usize];
 
-        potentials[node as usize] = InRangeOption::new(Some(std::cmp::min(backward_data.distances[node as usize], min_by_up)));
+        for l in LinkIterable::<Link>::link_iter(forward, node) {
+            dist = std::cmp::min(
+                dist,
+                Self::potential_internal(potentials, forward, backward_data, l.node, num_pot_computations) + l.weight,
+            );
+        }
+        potentials[node as usize] = InRangeOption::new(Some(dist));
 
         potentials[node as usize].value().unwrap()
     }
@@ -169,6 +201,50 @@ impl<GF: LinkIterGraph, GB: LinkIterGraph> Potential for CHPotential<GF, GB> {
             None
         }
     }
+
+    // fn potential(&mut self, node: NodeId) -> Option<Weight> {
+    //     let node = self.order.rank(node);
+    //     let dist = if let Some(pot) = self.potentials[node as usize].value() {
+    //         pot
+    //     } else {
+    //         let mut stack = Vec::new();
+    //         stack.push((
+    //             node,
+    //             LinkIterable::<Link>::link_iter(&self.forward, node).peekable(),
+    //             *self.backward_dijkstra.tentative_distance(node),
+    //         ));
+
+    //         while let Some((node, iter, tentative_distance)) = stack.last_mut() {
+    //             let node = *node;
+    //             let mut missing = false;
+    //             while let Some(&link) = iter.peek() {
+    //                 if let Some(pot) = self.potentials[link.node as usize].value() {
+    //                     *tentative_distance = std::cmp::min(*tentative_distance, pot + link.weight);
+    //                     iter.next();
+    //                 } else {
+    //                     stack.push((
+    //                         link.node,
+    //                         LinkIterable::<Link>::link_iter(&self.forward, link.node).peekable(),
+    //                         *self.backward_dijkstra.tentative_distance(link.node),
+    //                     ));
+    //                     missing = true;
+    //                     break;
+    //                 }
+    //             }
+    //             if !missing {
+    //                 self.potentials[node as usize] = InRangeOption::new(Some(stack.pop().unwrap().2));
+    //             }
+    //         }
+
+    //         self.potentials[node as usize].value().unwrap()
+    //     };
+
+    //     if dist < INFINITY {
+    //         Some(dist)
+    //     } else {
+    //         None
+    //     }
+    // }
 }
 
 impl Reconstruct for CHPotential<OwnedGraph, OwnedGraph> {
@@ -231,5 +307,240 @@ impl CHPotLoader {
                 self.order.clone(),
             ),
         )
+    }
+
+    pub fn bucket_ch_pot(&self) -> BucketCHPotential<FirstOutGraph<&[EdgeId], &[NodeId], &[Weight]>, FirstOutGraph<&[EdgeId], &[NodeId], &[Weight]>> {
+        BucketCHPotential::new(
+            FirstOutGraph::new(&self.forward_first_out[..], &self.forward_head[..], &self.forward_weight[..]),
+            FirstOutGraph::new(&self.backward_first_out[..], &self.backward_head[..], &self.backward_weight[..]),
+            self.order.clone(),
+        )
+    }
+}
+
+#[derive(Clone)]
+pub struct BucketCHPotential<GF, GB> {
+    order: NodeOrder,
+    potentials: Vec<Option<Box<[Weight]>>>,
+    pot_final: FastClearBitVec,
+    to_clear: Vec<NodeId>,
+    forward: GF,
+    backward: GB,
+    dijkstra_data: DijkstraData<Vec<(NodeId, Weight)>>,
+    num_pot_computations: usize,
+    num_targets: usize,
+}
+
+impl<GF: LinkIterGraph, GB: LinkIterGraph> BucketCHPotential<GF, GB> {
+    pub fn new(forward: GF, backward: GB, order: NodeOrder) -> Self {
+        let n = forward.num_nodes();
+        Self {
+            order,
+            potentials: vec![None; n],
+            pot_final: FastClearBitVec::new(n),
+            to_clear: Vec::new(),
+            forward,
+            backward,
+            dijkstra_data: DijkstraData::new(n),
+            num_pot_computations: 0,
+            num_targets: 0,
+        }
+    }
+
+    pub fn num_pot_computations(&self) -> usize {
+        self.num_pot_computations
+    }
+
+    fn compute_dists(
+        potentials: &mut [Option<Box<[Weight]>>],
+        dijkstra_data: &DijkstraData<Vec<(NodeId, Weight)>>,
+        forward: &GF,
+        pot_final: &mut FastClearBitVec,
+        to_clear: &mut Vec<NodeId>,
+        node: NodeId,
+        num_pot_computations: &mut usize,
+        num_targets: usize,
+    ) {
+        if pot_final.get(node as usize) {
+            return;
+        }
+        *num_pot_computations += 1;
+
+        if potentials[node as usize].is_none() {
+            to_clear.push(node);
+            potentials[node as usize] = Some(std::iter::repeat(INFINITY).take(num_targets).collect());
+            for &(i, dist) in &dijkstra_data.distances[node as usize] {
+                potentials[node as usize].as_mut().unwrap()[i as usize] = dist;
+            }
+        }
+
+        for l in LinkIterable::<Link>::link_iter(forward, node) {
+            debug_assert!(l.node > node);
+            Self::compute_dists(
+                potentials,
+                dijkstra_data,
+                forward,
+                pot_final,
+                to_clear,
+                l.node,
+                num_pot_computations,
+                num_targets,
+            );
+            debug_assert!(pot_final.get(node as usize));
+            let (potentials, upper_dists) = potentials.split_at_mut(l.node as usize);
+            let head_dists = upper_dists[0].as_ref().unwrap();
+            let self_dists = potentials[node as usize].as_mut().unwrap();
+
+            for (self_dist, head_dist) in self_dists.iter_mut().zip(head_dists.iter()) {
+                *self_dist = std::cmp::min(*self_dist, *head_dist + l.weight);
+            }
+        }
+
+        pot_final.set(node as usize);
+    }
+
+    pub fn init(&mut self, targets: &[NodeId]) {
+        self.num_targets = targets.len();
+        self.num_pot_computations = 0;
+        for node in self.to_clear.drain(..) {
+            self.potentials[node as usize] = None;
+        }
+        self.pot_final.clear();
+
+        let mut ops = SimulBucketCHOps();
+        let mut backward_dijkstra_run = DijkstraRun::query(
+            &self.backward,
+            &mut self.dijkstra_data,
+            &mut ops,
+            SimulBucketQuery {
+                node: self.order.rank(targets[0]),
+                index: 0,
+            },
+        );
+        for (i, &target) in targets.iter().enumerate().skip(1) {
+            backward_dijkstra_run.add_start_node(SimulBucketQuery {
+                node: self.order.rank(target),
+                index: i as u32,
+            });
+        }
+        while let Some(_) = backward_dijkstra_run.next() {}
+    }
+
+    pub fn potential(&mut self, node: NodeId) -> &[Weight] {
+        let node = self.order.rank(node);
+
+        Self::compute_dists(
+            &mut self.potentials,
+            &self.dijkstra_data,
+            &self.forward,
+            &mut self.pot_final,
+            &mut self.to_clear,
+            node,
+            &mut self.num_pot_computations,
+            self.num_targets,
+        );
+        debug_assert!(self.pot_final.get(node as usize));
+        self.potentials[node as usize].as_ref().unwrap()
+    }
+}
+
+struct SimulBucketQuery {
+    node: NodeId,
+    index: u32,
+}
+
+impl GenQuery<Vec<(NodeId, Weight)>> for SimulBucketQuery {
+    fn new(_from: NodeId, _to: NodeId, _initial_state: Vec<(NodeId, Weight)>) -> Self {
+        unimplemented!()
+    }
+    fn from(&self) -> NodeId {
+        self.node
+    }
+    fn to(&self) -> NodeId {
+        unimplemented!()
+    }
+    fn initial_state(&self) -> Vec<(NodeId, Weight)> {
+        vec![(self.index, 0)]
+    }
+    fn permutate(&mut self, _order: &NodeOrder) {
+        unimplemented!()
+    }
+}
+
+struct SimulBucketCHOps();
+
+impl<G: LinkIterGraph> DijkstraOps<G> for SimulBucketCHOps {
+    type Label = Vec<(NodeId, Weight)>;
+    type Arc = Link;
+    type LinkResult = Vec<(NodeId, Weight)>;
+    type PredecessorLink = ();
+
+    #[inline(always)]
+    fn link(&mut self, _graph: &G, label: &Vec<(NodeId, Weight)>, link: &Link) -> Self::LinkResult {
+        label.iter().map(move |&(n, w)| (n, w + link.weight)).collect()
+    }
+
+    #[inline(always)]
+    fn merge<'g, 'l, 'a>(&mut self, label: &mut Vec<(NodeId, Weight)>, linked: Self::LinkResult) -> bool {
+        let mut improved = false;
+        let mut res: Self::Label = Vec::with_capacity(label.len() + linked.len());
+
+        let mut cur_iter = label.iter().peekable();
+        let mut linked_iter = linked.iter().peekable();
+
+        loop {
+            use std::cmp::*;
+            match (cur_iter.peek(), linked_iter.peek()) {
+                (Some(&&(cur_node, cur_dist)), Some(&&(linked_node, linked_dist))) => match cur_node.cmp(&linked_node) {
+                    Ordering::Less => {
+                        res.push((cur_node, cur_dist));
+                        cur_iter.next();
+                    }
+                    Ordering::Greater => {
+                        improved = true;
+                        res.push((linked_node, linked_dist));
+                        linked_iter.next();
+                    }
+                    Ordering::Equal => {
+                        if linked_dist < cur_dist {
+                            improved = true;
+                        }
+                        res.push((cur_node, min(cur_dist, linked_dist)));
+                        cur_iter.next();
+                        linked_iter.next();
+                    }
+                },
+                (Some(&&(cur_node, cur_dist)), None) => {
+                    res.push((cur_node, cur_dist));
+                    cur_iter.next();
+                }
+                (None, Some(&&(linked_node, linked_dist))) => {
+                    improved = true;
+                    res.push((linked_node, linked_dist));
+                    linked_iter.next();
+                }
+                _ => break,
+            }
+        }
+
+        if improved {
+            *label = res;
+        }
+        improved
+    }
+
+    #[inline(always)]
+    fn predecessor_link(&self, _link: &Self::Arc) -> Self::PredecessorLink {
+        ()
+    }
+}
+
+impl Label for Vec<(NodeId, Weight)> {
+    type Key = ();
+    fn neutral() -> Self {
+        Vec::new()
+    }
+    fn key(&self) -> Self::Key {
+        ()
     }
 }

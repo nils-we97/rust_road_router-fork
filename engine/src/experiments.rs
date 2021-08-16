@@ -7,7 +7,11 @@ pub fn num_dijkstra_queries() -> usize {
 use rand::{distributions::uniform::SampleUniform, prelude::*};
 use time::Duration;
 
-use crate::{algo::*, datastr::graph::*, report::*};
+use crate::{
+    algo::{dijkstra::*, *},
+    datastr::graph::*,
+    report::*,
+};
 
 pub mod catchup;
 pub mod chpot;
@@ -54,7 +58,7 @@ pub fn run_random_queries_with_callbacks<S: QueryServer>(
     reporting_context: &mut CollectionContextGuard,
     num_queries: usize,
     pre_query: impl FnMut(NodeId, NodeId, &mut S),
-    // with_result: impl for<'a> FnMut(Option<&mut QueryResult<S::P<'a>, Weight>>),
+    // with_result: impl for<'a> FnMut(&mut QueryResult<S::P<'a>, Weight>),
     ground_truth: impl FnMut(NodeId, NodeId) -> Option<Option<Weight>>,
 ) {
     run_queries(
@@ -72,7 +76,7 @@ pub fn run_queries<S: QueryServer>(
     server: &mut S,
     mut reporting_context: Option<&mut CollectionContextGuard>,
     mut pre_query: impl FnMut(NodeId, NodeId, &mut S),
-    // mut with_result: impl for<'a> FnMut(Option<&mut QueryResult<S::P<'a>, Weight>>),
+    // mut with_result: impl for<'a> FnMut(&mut QueryResult<S::P<'a>, Weight>),
     mut ground_truth: impl FnMut(NodeId, NodeId) -> Option<Option<Weight>>,
 ) {
     let core_ids = core_affinity::get_core_ids().unwrap();
@@ -99,7 +103,7 @@ pub fn run_queries<S: QueryServer>(
             assert_eq!(dist, gt);
         }
 
-        // with_result(res.as_mut());
+        // with_result(&mut res);
 
         total_query_time = total_query_time + time;
     }
@@ -121,7 +125,7 @@ pub fn run_random_td_queries<
     reporting_context: &mut CollectionContextGuard,
     num_queries: usize,
     pre_query: impl FnMut(NodeId, NodeId, &mut S),
-    // mut with_result: impl for<'a> FnMut(Option<&mut QueryResult<S::P<'a>, W>>),
+    // with_result: impl for<'a> FnMut(&mut QueryResult<S::P<'a>, W>),
     ground_truth: impl FnMut(NodeId, NodeId) -> Option<Option<W>>,
 ) {
     run_td_queries(
@@ -146,7 +150,7 @@ pub fn run_td_queries<T: Copy + serde::ser::Serialize, W: Copy + Eq + std::fmt::
     server: &mut S,
     mut reporting_context: Option<&mut CollectionContextGuard>,
     mut pre_query: impl FnMut(NodeId, NodeId, &mut S),
-    // mut with_result: impl for<'a> FnMut(Option<&mut QueryResult<S::P<'a>, W>>),
+    // mut with_result: impl for<'a> FnMut(&mut QueryResult<S::P<'a>, W>),
     mut ground_truth: impl FnMut(NodeId, NodeId) -> Option<Option<W>>,
 ) {
     let core_ids = core_affinity::get_core_ids().unwrap();
@@ -174,7 +178,7 @@ pub fn run_td_queries<T: Copy + serde::ser::Serialize, W: Copy + Eq + std::fmt::
             assert_eq!(dist, gt);
         }
 
-        // with_result(res.as_mut());
+        // with_result(&mut res);
 
         total_query_time = total_query_time + time;
     }
@@ -187,4 +191,51 @@ pub fn run_td_queries<T: Copy + serde::ser::Serialize, W: Copy + Eq + std::fmt::
 pub fn rng(seed: <StdRng as SeedableRng>::Seed) -> StdRng {
     report!("seed", seed);
     StdRng::from_seed(seed)
+}
+
+pub fn gen_many_to_many_queries(
+    graph: &impl LinkIterGraph,
+    num_queries: usize,
+    ball_size: usize,
+    set_size: usize,
+    rng: &mut StdRng,
+) -> Vec<(Vec<NodeId>, Vec<NodeId>)> {
+    assert!(ball_size >= set_size);
+    let n = graph.num_nodes();
+    let mut queries = Vec::with_capacity(num_queries);
+
+    let mut dijk_data = DijkstraData::new(n);
+    let mut ops = DefaultOps();
+
+    for _ in 0..num_queries {
+        let source_center = rng.gen_range(0..n as NodeId);
+        let dijk_run = DijkstraRun::query(
+            graph,
+            &mut dijk_data,
+            &mut ops,
+            Query {
+                from: source_center,
+                to: n as NodeId,
+            },
+        );
+        let ball: Vec<_> = dijk_run.take(ball_size).collect();
+        let sources = ball.choose_multiple(rng, set_size).copied().collect();
+
+        // let target_center = rng.gen_range(0..n as NodeId);
+        // let dijk_run = DijkstraRun::query(
+        //     graph,
+        //     &mut dijk_data,
+        //     &mut ops,
+        //     Query {
+        //         from: target_center,
+        //         to: n as NodeId,
+        //     },
+        // );
+        // let ball: Vec<_> = dijk_run.take(ball_size).collect();
+        let targets = ball.choose_multiple(rng, set_size).copied().collect();
+
+        queries.push((sources, targets));
+    }
+
+    queries
 }

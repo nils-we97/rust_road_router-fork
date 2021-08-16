@@ -6,6 +6,7 @@ use crate::{
     datastr::graph::*,
     io::*,
     report::*,
+    util::{fl_max, fl_min},
 };
 use std::{error::Error, path::Path};
 
@@ -48,19 +49,9 @@ pub fn run(
         num_queries(),
         |_, _, _| (),
         // |mut res| {
-        //     report!(
-        //         "num_pot_computations",
-        //         res.as_mut().map(|res| res.data().potential().num_pot_computations()).unwrap_or(0)
-        //     );
-        //     report!(
-        //         "lower_bound",
-        //         res.as_mut()
-        //             .map(|res| {
-        //                 let from = res.data().query().from();
-        //                 res.data().lower_bound(from)
-        //             })
-        //             .flatten()
-        //     );
+        //     report!("num_pot_computations", res.data().potential().num_pot_computations());
+        //     let from = res.data().query().from();
+        //     report!("lower_bound", res.data().lower_bound(from));
         // },
         |_, _| None,
     );
@@ -69,4 +60,68 @@ pub fn run(
     super::run_random_queries(graph.num_nodes(), &mut server, &mut rng, &mut algo_runs_ctxt, super::num_dijkstra_queries());
 
     Ok(())
+}
+
+fn kmh_to_mpms(tt_units_per_s: u32, dist_units_per_m: u32, speed: f64) -> f64 {
+    // speed * 1000.0 / 3600.0 / 1000.0
+    speed * 1000.0 * dist_units_per_m as f64 / 3600.0 / tt_units_per_s as f64
+}
+
+pub struct ProbabilisticSpeedWeightedScaler {
+    v_min: f64,
+    v_max: f64,
+    prob_at_min: f64,
+    prob_at_max: f64,
+    factor: f64,
+}
+
+impl ProbabilisticSpeedWeightedScaler {
+    pub fn scale_all(tt_units_per_s: u32, dist_units_per_m: u32, factor: f64) -> Self {
+        Self {
+            v_min: 0.0,
+            v_max: kmh_to_mpms(tt_units_per_s, dist_units_per_m, 300.0),
+            prob_at_min: 1.0,
+            prob_at_max: 1.0,
+            factor,
+        }
+    }
+
+    pub fn scale_probabilistically(tt_units_per_s: u32, dist_units_per_m: u32, factor: f64, p: f64) -> Self {
+        Self {
+            v_min: 0.0,
+            v_max: kmh_to_mpms(tt_units_per_s, dist_units_per_m, 300.0),
+            prob_at_min: p,
+            prob_at_max: p,
+            factor,
+        }
+    }
+
+    pub fn speed_cutoff(tt_units_per_s: u32, dist_units_per_m: u32, factor: f64, speed: f64, p_below: f64) -> Self {
+        Self {
+            v_min: kmh_to_mpms(tt_units_per_s, dist_units_per_m, speed),
+            v_max: kmh_to_mpms(tt_units_per_s, dist_units_per_m, speed + 1.0),
+            prob_at_min: p_below,
+            prob_at_max: 1.0 - p_below,
+            factor,
+        }
+    }
+
+    pub fn scale_with_speed_weighted_prob(&self, rng: &mut StdRng, travel_time: &mut [Weight], geo_distance: &[Weight]) {
+        for (weight, &dist) in travel_time.iter_mut().zip(geo_distance.iter()) {
+            if *weight == 0 {
+                continue;
+            }
+
+            let speed = dist as f64 / *weight as f64;
+            let speed = fl_max(speed, self.v_min);
+            let speed = fl_min(speed, self.v_max);
+
+            let alpha = (speed - self.v_min) / (self.v_max - self.v_min);
+            let p = self.prob_at_min + alpha * (self.prob_at_max - self.prob_at_min);
+
+            if rng.gen_bool(fl_max(fl_min(p, 1.0), 0.0)) {
+                *weight = (*weight as f64 * self.factor) as Weight;
+            }
+        }
+    }
 }

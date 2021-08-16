@@ -432,9 +432,9 @@ pub struct VirtualTopocore {
     biggest_bcc: usize,
     deg2: usize,
     deg3: usize,
-    symmetric_degrees: std::rc::Rc<[u8]>,
-    bcc: std::rc::Rc<[u32]>,
-    bridge: std::rc::Rc<[InRangeOption<NodeId>]>,
+    symmetric_degrees: std::sync::Arc<[u8]>,
+    bcc: std::sync::Arc<[u32]>,
+    bridge: std::sync::Arc<[InRangeOption<NodeId>]>,
 }
 
 #[derive(Debug, PartialEq)]
@@ -491,7 +491,7 @@ pub fn virtual_topocore<'c, Graph: LinkIterable<NodeIdT>>(graph: &Graph) -> Virt
         .map(|node| {
             graph
                 .link_iter(node as NodeId)
-                .chain(reversed.link_iter(node as NodeId))
+                .chain(LinkIterable::<NodeIdT>::link_iter(&reversed, node as NodeId))
                 .collect::<Vec<NodeIdT>>()
                 .tap(|neighbors| neighbors.sort_unstable())
                 .tap(|neighbors| neighbors.dedup())
@@ -646,6 +646,34 @@ impl<Graph> VirtualTopocoreGraph<Graph> {
             topocore,
         )
     }
+
+    pub fn new_bidir_graphs<G>(graph: &G) -> (Self, Self, VirtualTopocore)
+    where
+        G: LinkIterable<NodeIdT>,
+        Graph: BuildReversed<G>,
+        Graph: BuildPermutated<G>,
+        Graph: BuildPermutated<Graph>,
+    {
+        let reversed = Graph::reversed(graph);
+        let topocore = virtual_topocore(graph);
+        (
+            VirtualTopocoreGraph {
+                graph: <Graph as BuildPermutated<G>>::permutated_filtered(&graph, &topocore.order, {
+                    let topocore = topocore.clone();
+                    Box::new(move |t, h| !(topocore.node_type(t).in_core() && !topocore.node_type(h).in_core()))
+                }),
+                virtual_topocore: topocore.clone(),
+            },
+            VirtualTopocoreGraph {
+                graph: <Graph as BuildPermutated<Graph>>::permutated_filtered(&reversed, &topocore.order, {
+                    let topocore = topocore.clone();
+                    Box::new(move |t, h| !(topocore.node_type(t).in_core() && !topocore.node_type(h).in_core()))
+                }),
+                virtual_topocore: topocore.clone(),
+            },
+            topocore,
+        )
+    }
 }
 
 impl<G: Graph> Graph for VirtualTopocoreGraph<G> {
@@ -698,15 +726,22 @@ impl<G: BuildReversed<G>> BuildReversed<VirtualTopocoreGraph<G>> for VirtualTopo
     }
 }
 
-impl<G: RandomLinkAccessGraph> RandomLinkAccessGraph for VirtualTopocoreGraph<G> {
-    fn link(&self, edge_id: EdgeId) -> Link {
-        self.graph.link(edge_id)
-    }
-    fn edge_index(&self, from: NodeId, to: NodeId) -> Option<EdgeId> {
-        self.graph.edge_index(from, to)
+impl<G: EdgeIdGraph> EdgeIdGraph for VirtualTopocoreGraph<G> {
+    // https://github.com/rust-lang/rustfmt/issues/4911
+    #[rustfmt::skip]
+    type IdxIter<'a> where Self: 'a = G::IdxIter<'a>;
+
+    fn edge_indices(&self, from: NodeId, to: NodeId) -> Self::IdxIter<'_> {
+        self.graph.edge_indices(from, to)
     }
     fn neighbor_edge_indices(&self, node: NodeId) -> std::ops::Range<EdgeId> {
         self.graph.neighbor_edge_indices(node)
+    }
+}
+
+impl<E, G: EdgeRandomAccessGraph<E>> EdgeRandomAccessGraph<E> for VirtualTopocoreGraph<G> {
+    fn link(&self, edge_id: EdgeId) -> E {
+        self.graph.link(edge_id)
     }
 }
 

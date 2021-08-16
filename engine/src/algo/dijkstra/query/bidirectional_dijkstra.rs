@@ -1,26 +1,26 @@
 use super::*;
 use crate::algo::{a_star::*, dijkstra::generic_dijkstra::*};
-use crate::report::*;
 
-use std::cell::RefCell;
+use std::{cell::RefCell, cmp::min, marker::PhantomData};
 
-pub struct Server<G, H, P> {
+pub struct Server<G, H, P = BiDirZeroPot, D = ChooseMinKeyDir> {
     pub forward: G,
     pub backward: H,
     pub forward_data: DijkstraData<Weight>,
     pub backward_data: DijkstraData<Weight>,
     pub meeting_node: NodeId,
-    pub potential: RefCell<AveragePotential<P, P>>,
+    pub potential: P,
+    pub dir_chooser: PhantomData<D>,
 }
 
-impl<G: LinkIterGraph> Server<G, OwnedGraph, ZeroPotential> {
+impl<G: LinkIterGraph, D: BidirChooseDir> Server<G, OwnedGraph, BiDirZeroPot, D> {
     pub fn new(graph: G) -> Self {
-        Self::new_with_potentials(graph, ZeroPotential(), ZeroPotential())
+        Self::new_with_potentials(graph, BiDirZeroPot)
     }
 }
 
-impl<G: LinkIterGraph, P: Potential> Server<G, OwnedGraph, P> {
-    pub fn new_with_potentials(graph: G, forward_pot: P, backward_pot: P) -> Self {
+impl<G: LinkIterGraph, P: BiDirPotential, D: BidirChooseDir> Server<G, OwnedGraph, P, D> {
+    pub fn new_with_potentials(graph: G, potential: P) -> Self {
         let n = graph.num_nodes();
         let reversed = OwnedGraph::reversed(&graph);
 
@@ -30,24 +30,21 @@ impl<G: LinkIterGraph, P: Potential> Server<G, OwnedGraph, P> {
             forward_data: DijkstraData::new(n),
             backward_data: DijkstraData::new(n),
             meeting_node: 0,
-            potential: RefCell::new(AveragePotential::new(forward_pot, backward_pot)),
+            potential,
+            dir_chooser: Default::default(),
         }
     }
 }
 
-impl<G: LinkIterGraph, H: LinkIterGraph, P: Potential> Server<G, H, P> {
+impl<G: LinkIterGraph, H: LinkIterGraph, P: BiDirPotential, D: BidirChooseDir> Server<G, H, P, D> {
     fn distance(&mut self, from: NodeId, to: NodeId) -> Option<Weight> {
-        self.distance_with_cap(from, to, INFINITY, |_, _, _, _| ())
+        self.distance_with_cap(from, to, INFINITY, |_, _, _| ())
     }
 
-    pub fn distance_with_cap(
-        &mut self,
-        from: NodeId,
-        to: NodeId,
-        maximum_distance: Weight,
-        mut inspect: impl FnMut(NodeId, Weight, &mut AveragePotential<P, P>, i32),
-    ) -> Option<Weight> {
+    pub fn distance_with_cap(&mut self, from: NodeId, to: NodeId, maximum_distance: Weight, mut inspect: impl FnMut(NodeId, Weight, &mut P)) -> Option<Weight> {
         report!("algo", "Bidrectional Dijkstra Query");
+        D::report();
+        P::report();
         // initialize
         let mut tentative_distance = INFINITY;
 
@@ -56,25 +53,30 @@ impl<G: LinkIterGraph, H: LinkIterGraph, P: Potential> Server<G, H, P> {
         let mut forward_dijkstra = DijkstraRun::query(&self.forward, &mut self.forward_data, &mut fw_ops, Query { from, to });
         let mut backward_dijkstra = DijkstraRun::query(&self.backward, &mut self.backward_data, &mut bw_ops, Query { from: to, to: from });
 
-        self.potential.borrow_mut().init(from, to);
+        self.potential.init(from, to);
 
         let mut num_queue_pops = 0;
         let meeting_node = &mut self.meeting_node;
-        let potential = &self.potential;
-
-        let forward_add = (self.potential.borrow_mut().backward_potential(to)? / 2) as i32;
-        let backward_add = (self.potential.borrow_mut().forward_potential(from)? / 2) as i32;
-        let mu_add = (self.potential.borrow_mut().potential(from)? + forward_add) as Weight;
+        let mut potential = RefCell::new(&mut self.potential);
+        let mut dir_chooser: D = Default::default();
 
         let result = (|| {
-            while forward_dijkstra.queue().peek().map(|q| q.key).unwrap_or(INFINITY) + backward_dijkstra.queue().peek().map(|q| q.key).unwrap_or(INFINITY)
-                < std::cmp::min(tentative_distance, maximum_distance) + mu_add
+            while !(dir_chooser.may_stop()
+                && potential.get_mut().stop(
+                    forward_dijkstra.queue().peek().map(|q| q.key),
+                    backward_dijkstra.queue().peek().map(|q| q.key),
+                    min(tentative_distance, maximum_distance),
+                ))
             {
-                let searches_met = tentative_distance < INFINITY;
-                if forward_dijkstra.queue().peek().map(|q| q.key).unwrap_or(INFINITY) <= backward_dijkstra.queue().peek().map(|q| q.key).unwrap_or(INFINITY) {
+                if dir_chooser.choose(forward_dijkstra.queue().peek().map(|q| q.key), backward_dijkstra.queue().peek().map(|q| q.key)) {
                     if let Some(node) = forward_dijkstra.next_with_improve_callback_and_potential(
                         |head, &dist| {
-                            if searches_met && dist + potential.borrow_mut().forward_potential(head).unwrap_or(INFINITY) >= tentative_distance {
+                            if potential.borrow_mut().prune_forward(
+                                NodeIdT(head),
+                                dist,
+                                backward_dijkstra.queue().peek().map(|q| q.key).unwrap_or(INFINITY),
+                                min(tentative_distance, maximum_distance),
+                            ) {
                                 return false;
                             }
                             if dist + backward_dijkstra.tentative_distance(head) < tentative_distance {
@@ -83,27 +85,24 @@ impl<G: LinkIterGraph, H: LinkIterGraph, P: Potential> Server<G, H, P> {
                             }
                             true
                         },
-                        |node| {
-                            if searches_met {
-                                potential.borrow_mut().potential(node).map(|p| (p + forward_add) as Weight)
-                            } else {
-                                potential.borrow_mut().forward_potential(node)
-                            }
-                        },
+                        |node| potential.borrow_mut().forward_potential(node),
                     ) {
                         num_queue_pops += 1;
-                        inspect(node, *forward_dijkstra.tentative_distance(node), &mut potential.borrow_mut(), forward_add);
+                        inspect(node, *forward_dijkstra.tentative_distance(node), &mut potential.borrow_mut());
                         if node == to {
                             *meeting_node = to;
-                            return Some(tentative_distance);
+                            return Some(*forward_dijkstra.tentative_distance(to));
                         }
-                    } else {
-                        return None;
                     }
                 } else {
                     if let Some(node) = backward_dijkstra.next_with_improve_callback_and_potential(
                         |head, &dist| {
-                            if searches_met && dist + potential.borrow_mut().backward_potential(head).unwrap_or(INFINITY) >= tentative_distance {
+                            if potential.borrow_mut().prune_backward(
+                                NodeIdT(head),
+                                dist,
+                                forward_dijkstra.queue().peek().map(|q| q.key).unwrap_or(INFINITY),
+                                min(tentative_distance, maximum_distance),
+                            ) {
                                 return false;
                             }
                             if dist + forward_dijkstra.tentative_distance(head) < tentative_distance {
@@ -112,27 +111,15 @@ impl<G: LinkIterGraph, H: LinkIterGraph, P: Potential> Server<G, H, P> {
                             }
                             true
                         },
-                        |node| {
-                            if searches_met {
-                                potential.borrow_mut().potential(node).map(|p| (backward_add - p) as Weight)
-                            } else {
-                                potential.borrow_mut().backward_potential(node)
-                            }
-                        },
+                        |node| potential.borrow_mut().backward_potential(node),
                     ) {
                         num_queue_pops += 1;
-                        inspect(node, *backward_dijkstra.tentative_distance(node), &mut potential.borrow_mut(), -backward_add);
+                        inspect(node, *backward_dijkstra.tentative_distance(node), &mut potential.borrow_mut());
                         if node == from {
                             *meeting_node = from;
-                            return Some(tentative_distance);
+                            return Some(*backward_dijkstra.tentative_distance(from));
                         }
-                    } else {
-                        return None;
                     }
-                }
-                if !searches_met && tentative_distance < INFINITY {
-                    forward_dijkstra.exchange_potential(|node| potential.borrow_mut().potential(node).map(|p| (p + forward_add) as Weight));
-                    backward_dijkstra.exchange_potential(|node| potential.borrow_mut().potential(node).map(|p| (backward_add - p) as Weight));
                 }
             }
 
@@ -151,18 +138,18 @@ impl<G: LinkIterGraph, H: LinkIterGraph, P: Potential> Server<G, H, P> {
 
     pub fn visualize_query(&mut self, from: NodeId, to: NodeId, lat: &[f32], lng: &[f32]) -> Option<Weight> {
         let mut num_settled_nodes = 0;
-        let res = self.distance_with_cap(from, to, INFINITY, |node, dist, pot, pot_add| {
+        let res = self.distance_with_cap(from, to, INFINITY, |node, dist, pot| {
             let node_id = node as usize;
             println!(
                 "var marker = L.marker([{}, {}], {{ icon: L.dataIcon({{ data: {{ popped: {} }}, ...blueIconOptions }}) }}).addTo(map);",
                 lat[node_id], lng[node_id], num_settled_nodes
             );
             println!(
-                "marker.bindPopup(\"id: {}<br>distance: {}<br>potential: {}<br>ugly_pot: {}\");",
+                "marker.bindPopup(\"id: {}<br>distance: {}<br>forward_potential: {}<br>backward_potential: {}\");",
                 node_id,
                 dist,
-                pot.potential(node_id as NodeId).unwrap() + pot_add,
-                pot.potential(node_id as NodeId).unwrap()
+                pot.forward_potential(node_id as NodeId).unwrap(),
+                pot.backward_potential(node_id as NodeId).unwrap(),
             );
             num_settled_nodes += 1;
         });
@@ -197,9 +184,9 @@ impl<G: LinkIterGraph, H: LinkIterGraph, P: Potential> Server<G, H, P> {
     }
 }
 
-pub struct PathServerWrapper<'s, G: LinkIterGraph, H: LinkIterGraph, P>(&'s Server<G, H, P>, Query);
+pub struct PathServerWrapper<'s, G: LinkIterGraph, H: LinkIterGraph, P, D>(&'s mut Server<G, H, P, D>, Query);
 
-impl<'s, G: LinkIterGraph, H: LinkIterGraph, P: Potential> PathServer for PathServerWrapper<'s, G, H, P> {
+impl<'s, G: LinkIterGraph, H: LinkIterGraph, P: BiDirPotential, D: BidirChooseDir> PathServer for PathServerWrapper<'s, G, H, P, D> {
     type NodeInfo = NodeId;
     type EdgeInfo = ();
 
@@ -211,11 +198,21 @@ impl<'s, G: LinkIterGraph, H: LinkIterGraph, P: Potential> PathServer for PathSe
     }
 }
 
-impl<G: LinkIterGraph, H: LinkIterGraph, P: Potential> QueryServer for Server<G, H, P> {
+impl<'s, G: LinkIterGraph, H: LinkIterGraph, P: BiDirPotential, D: BidirChooseDir> PathServerWrapper<'s, G, H, P, D> {
+    pub fn potential(&self) -> &P {
+        &self.0.potential
+    }
+
+    pub fn lower_bound(&mut self, node: NodeId) -> Option<Weight> {
+        self.0.potential.forward_potential_raw(node)
+    }
+}
+
+impl<G: LinkIterGraph, H: LinkIterGraph, P: BiDirPotential, D: BidirChooseDir> QueryServer for Server<G, H, P, D> {
     type P<'s>
     where
         Self: 's,
-    = PathServerWrapper<'s, G, H, P>;
+    = PathServerWrapper<'s, G, H, P, D>;
 
     fn query(&mut self, query: Query) -> QueryResult<Self::P<'_>, Weight> {
         QueryResult::new(self.distance(query.from, query.to), PathServerWrapper(self, query))

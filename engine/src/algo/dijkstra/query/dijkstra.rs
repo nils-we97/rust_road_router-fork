@@ -1,6 +1,5 @@
 use super::*;
 use crate::datastr::graph::time_dependent::Timestamp;
-use crate::report::*;
 use a_star::{Potential, ZeroPotential};
 use generic_dijkstra::*;
 use std::borrow::Borrow;
@@ -157,6 +156,14 @@ where
 
     pub fn distance(&self, node: NodeId) -> Weight {
         self.0.dijkstra.distances[node as usize]
+    }
+
+    pub fn potential(&self) -> &P {
+        &self.0.potential
+    }
+
+    pub fn lower_bound(&mut self, node: NodeId) -> Option<Weight> {
+        self.0.potential.potential(node)
     }
 }
 

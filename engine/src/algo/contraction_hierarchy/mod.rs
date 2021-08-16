@@ -3,6 +3,8 @@
 //! Not tuned for performance yet.
 //! No node ordering implemented yet, depends on getting a precalculated order.
 
+use std::marker::PhantomData;
+
 use super::*;
 use crate::algo::{a_star::*, dijkstra::*};
 use crate::datastr::node_order::NodeOrder;
@@ -281,11 +283,12 @@ impl<'a> PartialContractionGraph<'a> {
             forward_data: recycled.0,
             backward_data: recycled.1,
             meeting_node: 0,
-            potential: std::cell::RefCell::new(AveragePotential::new(ZeroPotential(), ZeroPotential())),
+            potential: BiDirZeroPot,
+            dir_chooser: PhantomData::<ChooseMinKeyDir>::default(),
         };
 
         // witness search is a bidirection dijkstra capped to the length of the path over the contracted node
-        let res = match server.distance_with_cap(from - self.id_offset, to - self.id_offset, shortcut_weight, |_, _, _, _| ()) {
+        let res = match server.distance_with_cap(from - self.id_offset, to - self.id_offset, shortcut_weight, |_, _, _| ()) {
             Some(length) if length < shortcut_weight => false,
             Some(_) => true,
             None => true,

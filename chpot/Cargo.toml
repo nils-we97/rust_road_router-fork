@@ -7,6 +7,7 @@ authors = ["Tim 'tim3z' Zeitz <mail@tim3z.net>"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+rayon = "^1.5.1"
 rust_road_router = { path = "../engine" }
 rand = "^0.8.4"
 time = "^0.1.40"
@@ -21,3 +22,4 @@ chpot-no-reorder = ["chpot-no-bcc", "chpot-no-deg2", "chpot-no-deg3"]
 chpot-cch = []
 chpot-alt = []
 chpot-oracle = ['rust_road_router/report-allow-override']
+chpot-improved-pruning = []

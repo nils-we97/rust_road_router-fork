@@ -2,6 +2,7 @@
 
 use super::*;
 use crate::datastr::{index_heap::*, timestamped_vector::*};
+use crate::report::*;
 
 pub mod gen_topo_dijkstra;
 pub mod generic_dijkstra;
@@ -18,26 +19,10 @@ pub enum QueryProgress<W> {
 }
 
 /// Priority Queue entries
-#[derive(Copy, Clone, Eq, PartialEq, Debug)]
+#[derive(Copy, Clone, Eq, PartialEq, Debug, PartialOrd, Ord)]
 pub struct State<W> {
     pub key: W,
     pub node: NodeId,
-}
-
-// slightly optimized version of derived
-impl<W: std::cmp::PartialOrd> std::cmp::PartialOrd for State<W> {
-    #[inline]
-    fn partial_cmp(&self, rhs: &Self) -> Option<std::cmp::Ordering> {
-        self.key.partial_cmp(&rhs.key)
-    }
-}
-
-// slightly optimized version of derived
-impl<W: std::cmp::Ord> std::cmp::Ord for State<W> {
-    #[inline]
-    fn cmp(&self, rhs: &Self) -> std::cmp::Ordering {
-        self.key.cmp(&rhs.key)
-    }
 }
 
 impl<W> Indexing for State<W> {
@@ -167,7 +152,7 @@ impl Default for DefaultOps {
 #[derive(Debug, Clone, Copy)]
 pub struct DefaultOpsWithLinkPath();
 
-impl<G: RandomLinkAccessGraph> DijkstraOps<G> for DefaultOpsWithLinkPath {
+impl<G: EdgeIdGraph> DijkstraOps<G> for DefaultOpsWithLinkPath {
     type Label = Weight;
     type Arc = (NodeIdT, (Weight, EdgeIdT));
     type LinkResult = Weight;
@@ -196,5 +181,80 @@ impl<G: RandomLinkAccessGraph> DijkstraOps<G> for DefaultOpsWithLinkPath {
 impl Default for DefaultOpsWithLinkPath {
     fn default() -> Self {
         Self()
+    }
+}
+
+pub trait BidirChooseDir: Default {
+    fn choose(&mut self, fw_min_key: Option<Weight>, bw_min_key: Option<Weight>) -> bool;
+    fn may_stop(&self) -> bool {
+        true
+    }
+    fn strategy_key() -> &'static str;
+    fn report() {
+        report!("choose_direction_strategy", Self::strategy_key());
+    }
+}
+
+pub struct ChooseMinKeyDir();
+
+impl Default for ChooseMinKeyDir {
+    fn default() -> Self {
+        Self()
+    }
+}
+
+impl BidirChooseDir for ChooseMinKeyDir {
+    fn choose(&mut self, fw_min_key: Option<Weight>, bw_min_key: Option<Weight>) -> bool {
+        match (fw_min_key, bw_min_key) {
+            (Some(fw_min_key), Some(bw_min_key)) => fw_min_key <= bw_min_key,
+            (None, Some(_)) => false,
+            _ => true,
+        }
+    }
+    fn strategy_key() -> &'static str {
+        "min_key"
+    }
+}
+
+pub struct AlternatingDirs {
+    prev: bool,
+}
+
+impl Default for AlternatingDirs {
+    fn default() -> Self {
+        Self { prev: false }
+    }
+}
+
+impl BidirChooseDir for AlternatingDirs {
+    fn choose(&mut self, fw_min_key: Option<Weight>, bw_min_key: Option<Weight>) -> bool {
+        self.prev = !self.prev;
+        match (fw_min_key, bw_min_key) {
+            (Some(_), Some(_)) => self.prev,
+            (None, Some(_)) => false,
+            _ => true,
+        }
+    }
+    fn may_stop(&self) -> bool {
+        !self.prev
+    }
+    fn strategy_key() -> &'static str {
+        "alternating"
+    }
+}
+
+pub struct SyncDijkstraData {
+    pub distances: AtomicDists,
+    pub predecessors: Vec<(NodeId, EdgeIdT)>,
+    pub queue: IndexdMinHeap<State<Weight>>,
+}
+
+impl SyncDijkstraData {
+    pub fn new(n: usize) -> Self {
+        Self {
+            distances: AtomicDists::new(n),
+            predecessors: vec![(n as NodeId, Default::default()); n],
+            queue: IndexdMinHeap::new(n),
+        }
     }
 }
