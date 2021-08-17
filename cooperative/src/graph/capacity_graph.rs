@@ -5,6 +5,9 @@ use rust_road_router::io::{Deconstruct, Store};
 use rust_road_router::util::SlcsIdx;
 
 use crate::graph::ModifiableWeight;
+use crate::graph::conversion::to_velocity;
+use crate::graph::td_capacity_graph::MAX_BUCKETS;
+use conversion::speed_profile_to_tt_profile;
 
 pub type Capacity = u32;
 
@@ -25,7 +28,8 @@ impl CapacityGraph {
     pub fn new(
         first_out: Vec<EdgeId>,
         head: Vec<NodeId>,
-        freeflow_weight: Vec<Weight>,
+        freeflow_time: Vec<Weight>,
+        distance: Vec<Weight>,
         max_capacity: Vec<Capacity>,
         weight_function: fn(Weight, Capacity, Capacity) -> Weight,
     ) -> CapacityGraph {
@@ -33,8 +37,19 @@ impl CapacityGraph {
         assert!(head.len() > 0 && head.len() < <EdgeId>::MAX as usize);
         assert_eq!(first_out.first(), Some(&0));
         assert_eq!(first_out.last(), Some(&(head.len() as u32)));
-        assert_eq!(freeflow_weight.len(), head.len());
+        assert_eq!(freeflow_time.len(), head.len());
         assert_eq!(max_capacity.len(), head.len());
+
+        let freeflow_weight = freeflow_time
+            .iter()
+            .zip(distance.iter())
+            .map(|(&time, &dist)| {
+                let velocity = to_velocity(dist, time);
+                let speed_profile = [(0, velocity), (MAX_BUCKETS, velocity)];
+                let tt_profile = speed_profile_to_tt_profile(&speed_profile, dist);
+                tt_profile.first().map(|&(_, time)| time).unwrap_or(1)
+            })
+            .collect::<Vec<Weight>>();
 
         let weight = freeflow_weight.clone();
         let used_capacity = vec![0; max_capacity.len()];

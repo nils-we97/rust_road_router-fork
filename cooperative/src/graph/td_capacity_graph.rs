@@ -69,10 +69,10 @@ impl TDCapacityGraph {
 
         let lowerbound_time = freeflow_speed
             .iter()
-            .enumerate()
-            .map(|(idx, &val)| {
-                let speeds = [(0, val), (MAX_BUCKETS, val)];
-                let tt_profile = speed_profile_to_tt_profile(&speeds, distance[idx]);
+            .zip(distance.iter())
+            .map(|(&velocity, &distance)| {
+                let speeds = [(0, velocity), (MAX_BUCKETS, velocity)];
+                let tt_profile = speed_profile_to_tt_profile(&speeds, distance);
                 tt_profile.first().map(|&(_, time)| time).unwrap_or(1)
             })
             .collect::<Vec<Weight>>();
@@ -121,6 +121,7 @@ impl TDCapacityGraph {
         self.travel_time_function(edge_id).eval(departure)
     }
 
+    #[inline(always)]
     fn timestamp_to_bucket_id(&self, timestamp: Timestamp) -> usize {
         let timestamp = timestamp % MAX_BUCKETS; // clip to single day
 
@@ -128,6 +129,7 @@ impl TDCapacityGraph {
         ((timestamp as u64 * self.num_buckets as u64) / MAX_BUCKETS as u64) as usize
     }
 
+    #[inline(always)]
     fn bucket_id_to_timestamp(&self, bucket_id: usize) -> Timestamp {
         (bucket_id as u32) * (MAX_BUCKETS / self.num_buckets)
     }

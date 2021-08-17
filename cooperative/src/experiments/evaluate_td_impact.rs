@@ -1,14 +1,13 @@
 use rust_road_router::algo::GenQuery;
 use rust_road_router::datastr::graph::{NodeId, Weight};
 
-use crate::dijkstra::model::{PathResult, TDPathResult};
+use crate::dijkstra::model::TDPathResult;
 use crate::dijkstra::server::CapacityServerOps;
 use crate::experiments::PathCompareResult;
-use crate::graph::capacity_graph::CapacityGraph;
 use crate::graph::td_capacity_graph::TDCapacityGraph;
 
 pub fn evaluate_time_dependent_impact<Pot>(
-    server: &mut impl CapacityServerOps<CapacityGraph, PathResult, Pot>,
+    server: &mut impl CapacityServerOps<TDCapacityGraph, TDPathResult, Pot>,
     td_server: &mut impl CapacityServerOps<TDCapacityGraph, TDPathResult, Pot>,
     queries: &[impl GenQuery<NodeId> + Clone],
 ) -> PathCompareResult {
@@ -41,6 +40,8 @@ fn calculate_distances<G, P, Pot>(
         .iter()
         .map(|path| server.path_distance(path))
         .collect::<Vec<Weight>>();
+
+    dbg!(distances.clone());
 
     (distances.len(), distances.iter().sum())
 }
