@@ -2,7 +2,7 @@ use crate::graph::conversion::to_velocity;
 use crate::graph::ModifiableWeight;
 use conversion::speed_profile_to_tt_profile;
 use rust_road_router::datastr::graph::time_dependent::{PiecewiseLinearFunction, Timestamp};
-use rust_road_router::datastr::graph::{EdgeId, EdgeIdGraph, EdgeIdT, Graph, LinkIterable, NodeId, NodeIdT, Weight};
+use rust_road_router::datastr::graph::{EdgeId, EdgeIdGraph, EdgeIdT, Graph, LinkIterable, NodeId, NodeIdT, Weight, EdgeRandomAccessGraph, Link};
 use rust_road_router::io::{Deconstruct, Store};
 use std::ops::Range;
 
@@ -27,6 +27,7 @@ pub struct TDCapacityGraph {
     distance: Vec<Weight>,
     freeflow_speed: Vec<Weight>,
     max_capacity: Vec<Capacity>,
+    lowerbound_time: Vec<Weight>,
 
     speed_function: fn(Velocity, Capacity, Capacity) -> Weight,
 }
@@ -66,6 +67,16 @@ impl TDCapacityGraph {
             .map(|(&time, &dist)| to_velocity(dist, time))
             .collect::<Vec<Velocity>>();
 
+        let lowerbound_time = freeflow_speed
+            .iter()
+            .enumerate()
+            .map(|(idx, &val)| {
+                let speeds = [(0, val), (MAX_BUCKETS, val)];
+                let tt_profile = speed_profile_to_tt_profile(&speeds, distance[idx]);
+                tt_profile.first().map(|&(_, time)| time).unwrap_or(1)
+            })
+            .collect::<Vec<Weight>>();
+
         let speed = freeflow_speed
             .iter()
             .map(|&speed| vec![speed; num_buckets as usize])
@@ -85,6 +96,7 @@ impl TDCapacityGraph {
             distance,
             freeflow_speed,
             max_capacity,
+            lowerbound_time,
             speed_function,
         };
 
@@ -166,8 +178,8 @@ impl Graph for TDCapacityGraph {
 }
 
 impl<TDPathContainer> ModifiableWeight<TDPathContainer> for TDCapacityGraph
-where
-    TDPathContainer: AsRef<[(EdgeId, Timestamp)]>,
+    where
+        TDPathContainer: AsRef<[(EdgeId, Timestamp)]>,
 {
     fn increase_weights(&mut self, path: TDPathContainer) {
         path.as_ref().iter().cloned().for_each(|(edge_id, timestamp)| {
@@ -231,6 +243,7 @@ impl EdgeIdGraph for TDCapacityGraph {
             .map(EdgeIdT)
     }
 
+    #[inline(always)]
     fn neighbor_edge_indices(&self, node: NodeId) -> Range<u32> {
         let node = node as usize;
         (self.first_out[node])..(self.first_out[node + 1])
@@ -243,34 +256,19 @@ impl EdgeIdGraph for TDCapacityGraph {
     }
 }
 
-/*impl EdgeRandomAccessGraph<Link> for TDCapacityGraph {
-    fn link(&self, edge_id: EdgeId) -> Link {
+impl EdgeRandomAccessGraph<Link> for TDCapacityGraph {
+    #[inline(always)]
+    fn link(&self, edge_id: u32) -> Link {
+        let edge_id = edge_id as usize;
         Link {
-            node: self.head[edge_id as usize],
-            weight: 0,
+            node: self.head[edge_id],
+            weight: self.lowerbound_time[edge_id],
         }
     }
-
-    fn edge_index(&self, from: NodeId, to: NodeId) -> Option<EdgeId> {
-        let first_out = self.first_out[from as usize];
-        let range = self.neighbor_edge_indices_usize(from);
-        self.head[range].iter().position(|&head| head == to).map(|pos| pos as EdgeId + first_out)
-    }
-
-    #[inline(always)]
-    fn neighbor_edge_indices(&self, node: NodeId) -> Range<EdgeId> {
-        (self.first_out[node as usize] as EdgeId)..(self.first_out[(node + 1) as usize] as EdgeId)
-    }
-
-    #[inline(always)]
-    fn neighbor_edge_indices_usize(&self, node: NodeId) -> Range<usize> {
-        let node = node as usize;
-        (self.first_out[node] as usize)..(self.first_out[(node + 1)] as usize)
-    }
-}*/
+}
 
 impl LinkIterable<NodeIdT> for TDCapacityGraph {
-    type Iter<'a> = impl Iterator<Item = NodeIdT> + 'a;
+    type Iter<'a> = impl Iterator<Item=NodeIdT> + 'a;
     //type Iter<'a> = std::iter::Cloned<std::iter::Map<std::slice::Iter<'a, NodeId>, fn(&NodeId) -> NodeIdT>>;
 
     #[inline(always)]
@@ -280,7 +278,7 @@ impl LinkIterable<NodeIdT> for TDCapacityGraph {
 }
 
 impl LinkIterable<(NodeIdT, EdgeIdT)> for TDCapacityGraph {
-    type Iter<'a> = impl Iterator<Item = (NodeIdT, EdgeIdT)> + 'a;
+    type Iter<'a> = impl Iterator<Item=(NodeIdT, EdgeIdT)> + 'a;
 
     //type Iter<'a> = std::iter::Zip<std::iter::Cloned<std::slice::Iter<'a, NodeId>>, std::ops::Range<EdgeIdT>>;
 
@@ -291,5 +289,18 @@ impl LinkIterable<(NodeIdT, EdgeIdT)> for TDCapacityGraph {
             .cloned()
             .zip(self.neighbor_edge_indices(node))
             .map(|(node, edge)| (NodeIdT(node), EdgeIdT(edge)))
+    }
+}
+
+impl LinkIterable<Link> for TDCapacityGraph {
+    #[allow(clippy::type_complexity)]
+    type Iter<'a> = impl Iterator<Item=Link> + 'a;
+
+    #[inline(always)]
+    fn link_iter(&self, node: u32) -> Self::Iter<'_> {
+        self
+            .neighbor_edge_indices_usize(node)
+            .into_iter()
+            .map(move |idx| Link { node: self.head[idx], weight: self.lowerbound_time[idx] })
     }
 }
