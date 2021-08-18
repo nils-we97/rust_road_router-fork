@@ -42,16 +42,11 @@ impl CapacityGraph {
 
         let freeflow_weight = freeflow_time
             .iter()
-            .zip(distance.iter())
-            .map(|(&time, &dist)| {
-                let velocity = to_velocity(dist, time);
-                let speed_profile = [(0, velocity), (MAX_BUCKETS, velocity)];
-                let tt_profile = speed_profile_to_tt_profile(&speed_profile, dist);
-                tt_profile.first().map(|&(_, time)| time).unwrap_or(1)
-            })
+            .map(|&val| val * 1000)
             .collect::<Vec<Weight>>();
 
         let weight = freeflow_weight.clone();
+
         let used_capacity = vec![0; max_capacity.len()];
 
         CapacityGraph { first_out, head, weight, freeflow_weight, max_capacity, used_capacity, weight_function }
