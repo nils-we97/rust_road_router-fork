@@ -11,37 +11,46 @@ pub fn evaluate_time_dependent_impact<Pot>(
     td_server: &mut impl CapacityServerOps<TDCapacityGraph, TDPathResult, Pot>,
     queries: &[impl GenQuery<NodeId> + Clone],
 ) -> PathCompareResult {
-    let (count, sum_distances) = calculate_distances(server, queries);
 
-    println!("finished queries (1/2)");
+    //TODO auf größerem Graphen Routen vergleichen!!
 
-    let (td_count, sum_td_distances) = calculate_distances(td_server, queries);
+    // calculate paths
+    let paths = calculate_paths(server, queries);
+    println!("Finished baseline queries!");
 
-    println!("finished td-queries (2/2)");
+    let td_paths = calculate_paths(td_server, queries);
+    println!("Finished TD queries!");
 
-    assert_eq!(count, td_count, "number of paths should be the same!");
+    assert_eq!(paths.len(), td_paths.len(), "number of valid paths should be the same!");
 
-    PathCompareResult::new(count as u32, sum_distances, sum_td_distances)
+    // compare paths, evaluate on `td_server`
+    let distances = calculate_path_distances(td_server, &paths);
+    let td_distances = calculate_path_distances(td_server, &td_paths);
+    println!("Finished calculating total distances");
+
+    PathCompareResult::new(paths.len() as u32, distances, td_distances)
 }
 
-fn calculate_distances<G, P, Pot>(
-    server: &mut impl CapacityServerOps<G, P, Pot>,
+fn calculate_paths<Pot>(
+    server: &mut impl CapacityServerOps<TDCapacityGraph, TDPathResult, Pot>,
     queries: &[impl GenQuery<NodeId> + Clone],
-) -> (usize, Weight) {
-    let paths = queries
+) -> Vec<TDPathResult> {
+    queries
         .iter()
         .cloned()
         .filter_map(|query| server
             .query(query, true)
             .map(|result| result.path)
-        ).collect::<Vec<P>>();
+        ).collect::<Vec<TDPathResult>>()
+}
 
-    let distances = paths
+fn calculate_path_distances<Pot>(
+    compare_server: &mut impl CapacityServerOps<TDCapacityGraph, TDPathResult, Pot>,
+    paths: &Vec<TDPathResult>
+) -> Weight {
+
+    paths
         .iter()
-        .map(|path| server.path_distance(path))
-        .collect::<Vec<Weight>>();
-
-    dbg!(distances.clone());
-
-    (distances.len(), distances.iter().sum())
+        .map(|path| compare_server.path_distance(path))
+        .sum()
 }

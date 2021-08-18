@@ -27,7 +27,7 @@ pub fn run_td_server(graph_directory: &Path) {
     let (td_graph, time) = measure(||
         load_td_capacity_graph(
             &graph_directory,
-            2,
+            30,
             bpr_speed_function,
         ).unwrap()
     );
@@ -35,7 +35,7 @@ pub fn run_td_server(graph_directory: &Path) {
 
     let queries = generate_random_uniform_td_queries(
         td_graph_single_bucket.num_nodes() as u32,
-        10,
+        500,
         ConstantDeparture::new(),
     );
 
