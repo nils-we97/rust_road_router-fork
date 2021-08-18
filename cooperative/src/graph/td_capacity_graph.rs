@@ -18,8 +18,8 @@ pub struct TDCapacityGraph {
     head: Vec<NodeId>,
 
     // dynamic values, subject to change on updates
-    used_capacity: Vec<Vec<Weight>>,
-    speed: Vec<Vec<Velocity>>,
+    used_capacity: Vec<Vec<(Timestamp, Weight)>>,
+    speed: Vec<Vec<(Timestamp, Velocity)>>,
     departure: Vec<Vec<Timestamp>>,
     travel_time: Vec<Vec<Weight>>,
 
@@ -52,7 +52,7 @@ impl TDCapacityGraph {
         assert_eq!(freeflow_time.len(), head.len());
         assert_eq!(max_capacity.len(), head.len());
 
-        let used_capacity = vec![vec![0; num_buckets as usize]; max_capacity.len()];
+        let used_capacity = vec![vec![(0, 0)]; max_capacity.len()];
 
         let capacity_adjustment_factor = (num_buckets as f64) / 24.0;
 
@@ -79,8 +79,8 @@ impl TDCapacityGraph {
 
         let speed = freeflow_speed
             .iter()
-            .map(|&speed| vec![speed; num_buckets as usize])
-            .collect::<Vec<Vec<Velocity>>>();
+            .map(|&speed| vec![(0, speed), (MAX_BUCKETS, speed)])
+            .collect::<Vec<Vec<(Timestamp, Velocity)>>>();
 
         let departure = vec![Vec::new(); head.len()];
         let travel_time = vec![Vec::new(); head.len()];
@@ -121,30 +121,16 @@ impl TDCapacityGraph {
         self.travel_time_function(edge_id).eval(departure)
     }
 
+    /// round timestamp to nearest bucket interval
     #[inline(always)]
-    fn timestamp_to_bucket_id(&self, timestamp: Timestamp) -> usize {
-        let timestamp = timestamp % MAX_BUCKETS; // clip to single day
-
-        // convert to u64 to avoid integer overflows (86400^2 > u32::MAX)
-        ((timestamp as u64 * self.num_buckets as u64) / MAX_BUCKETS as u64) as usize
-    }
-
-    #[inline(always)]
-    fn bucket_id_to_timestamp(&self, bucket_id: usize) -> Timestamp {
-        (bucket_id as u32) * (MAX_BUCKETS / self.num_buckets)
+    fn round_timestamp(&self, timestamp: Timestamp) -> Timestamp {
+        let bucket_size = MAX_BUCKETS / self.num_buckets;
+        bucket_size * ((timestamp % MAX_BUCKETS) / bucket_size)
     }
 
     fn update_travel_time_profile(&mut self, edge_id: usize) {
         // profile contains all points + (max_ts, speed[0])
-        let mut speed_profile = Vec::with_capacity(self.speed[edge_id].len() + 1);
-
-        self.speed[edge_id]
-            .iter()
-            .enumerate()
-            .for_each(|(idx, &val)| speed_profile.push((self.bucket_id_to_timestamp(idx), val)));
-        speed_profile.push((MAX_BUCKETS, speed_profile.first().unwrap().1));
-
-        let profile = speed_profile_to_tt_profile(&speed_profile, self.distance[edge_id]);
+        let profile = speed_profile_to_tt_profile(&self.speed[edge_id], self.distance[edge_id]);
 
         self.departure[edge_id] = Vec::with_capacity(profile.len());
         self.travel_time[edge_id] = Vec::with_capacity(profile.len());
@@ -153,13 +139,6 @@ impl TDCapacityGraph {
             self.departure[edge_id].push(timestamp);
             self.travel_time[edge_id].push(weight);
         });
-
-        if false && edge_id == 393270 {
-            dbg!("Speed: {}", &self.speed[edge_id]);
-            dbg!("Used Cap: {}", &self.used_capacity[edge_id]);
-            dbg!("Departure: {}", &self.departure[edge_id]);
-            dbg!("TT: {}\n", &self.travel_time[edge_id]);
-        }
     }
 }
 
@@ -186,13 +165,44 @@ impl<TDPathContainer> ModifiableWeight<TDPathContainer> for TDCapacityGraph
     fn increase_weights(&mut self, path: TDPathContainer) {
         path.as_ref().iter().cloned().for_each(|(edge_id, timestamp)| {
             let edge_id = edge_id as usize;
-            let bucket_id = self.timestamp_to_bucket_id(timestamp);
+            let ts_rounded = self.round_timestamp(timestamp);
 
-            self.used_capacity[edge_id][bucket_id] += 1;
+            // check whether the respective bucket already exists
+            let position = self
+                .used_capacity[edge_id]
+                .binary_search_by_key(&ts_rounded, |&(ts, _)| ts);
 
-            self.speed[edge_id][bucket_id] =
-                (self.speed_function)(self.freeflow_speed[edge_id], self.max_capacity[edge_id], self.used_capacity[edge_id][bucket_id]);
+            if position.is_ok() { // bucket exists -> increase capacity by 1 vehicle
+                let pos = position.unwrap();
+                self.used_capacity[edge_id][pos].1 += 1;
+                self.speed[edge_id][pos].1 = (self.speed_function)(
+                    self.freeflow_speed[edge_id], self.max_capacity[edge_id], self.used_capacity[edge_id][pos].1,
+                );
+            } else { // bucket does not exist yet -> create a new bucket
+                let pos = position.unwrap_err();
 
+                self.used_capacity[edge_id].insert(pos, (ts_rounded, 1));
+                self.speed[edge_id].insert(
+                    pos,
+                    (ts_rounded, (self.speed_function)(self.freeflow_speed[edge_id], self.max_capacity[edge_id], 1)),
+                );
+
+                // additionally, we have to check whether the neighboring bucket already exists
+                // if so, there is nothing to do
+                // else, we have to add an additional bucket with capacity 0 -> otherwise, the algorithm
+                // falsely assumes that the speed in the next interval is equal to the current interval
+                let next_ts = (ts_rounded + (MAX_BUCKETS / self.num_buckets)) % MAX_BUCKETS;
+
+                // access with speed array as it has a sentinel element at the end
+                if next_ts != 0 && self.speed[edge_id][pos + 1].0 != next_ts {
+                    self.used_capacity[edge_id].insert(pos + 1, (next_ts, 0));
+                    self.speed[edge_id].insert(pos + 1, (next_ts, self.freeflow_speed[edge_id]));
+                }
+            }
+
+            let last_idx = self.speed[edge_id].len() - 1;
+
+            self.speed[edge_id][last_idx].1 = self.speed[edge_id][0].1;
             self.update_travel_time_profile(edge_id);
         });
     }
@@ -200,26 +210,30 @@ impl<TDPathContainer> ModifiableWeight<TDPathContainer> for TDCapacityGraph
     fn decrease_weights(&mut self, path: TDPathContainer) {
         path.as_ref().iter().cloned().for_each(|(edge_id, timestamp)| {
             let edge_id = edge_id as usize;
-            let bucket_id = self.timestamp_to_bucket_id(timestamp);
+            let ts_rounded = self.round_timestamp(timestamp);
 
-            self.used_capacity[edge_id][bucket_id] -= 1;
+            let position = self
+                .used_capacity[edge_id]
+                .binary_search_by_key(&ts_rounded, |&(ts, _)| ts);
 
-            self.speed[edge_id][bucket_id] =
-                (self.speed_function)(self.freeflow_speed[edge_id], self.max_capacity[edge_id], self.used_capacity[edge_id][bucket_id]);
+            if position.is_ok() {
+                let pos = position.unwrap();
+                self.used_capacity[edge_id][pos].1 -= 1;
+                self.speed[edge_id][pos].1 = (self.speed_function)(
+                    self.freeflow_speed[edge_id], self.max_capacity[edge_id], self.used_capacity[edge_id][pos].1,
+                );
+            } else {
+                panic!("Trying to decrease capacity of a zero-capacity bucket!")
+            }
 
             self.update_travel_time_profile(edge_id);
         });
     }
 
     fn reset_weights(&mut self) {
-        self.used_capacity.clear();
-
         for edge_id in 0..self.num_arcs() {
-            for bucket_id in 0..self.num_buckets as usize {
-                self.speed[edge_id][bucket_id] =
-                    (self.speed_function)(self.freeflow_speed[edge_id], self.max_capacity[edge_id], self.used_capacity[edge_id][bucket_id]);
-            }
-
+            self.used_capacity[edge_id] = vec![(0, 0)];
+            self.speed[edge_id] = vec![(0, self.freeflow_speed[edge_id]), (MAX_BUCKETS, self.freeflow_speed[edge_id])];
             self.update_travel_time_profile(edge_id);
         }
     }
