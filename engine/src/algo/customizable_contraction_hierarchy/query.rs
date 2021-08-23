@@ -2,115 +2,202 @@
 
 use super::*;
 pub mod stepped_elimination_tree;
-use stepped_elimination_tree::SteppedEliminationTree;
+use crate::datastr::timestamped_vector::TimestampedVector;
+use stepped_elimination_tree::EliminationTreeWalk;
 
 #[derive(Debug)]
-pub struct Server<'a, CCH> {
-    forward: SteppedEliminationTree<'a, FirstOutGraph<&'a [EdgeId], &'a [NodeId], Vec<Weight>>>,
-    backward: SteppedEliminationTree<'a, FirstOutGraph<&'a [EdgeId], &'a [NodeId], Vec<Weight>>>,
-    cch: &'a CCH,
-    tentative_distance: Weight,
+pub struct Server<CCH, CCHB> {
+    customized: Customized<CCH, CCHB>,
+    fw_distances: TimestampedVector<Weight>,
+    bw_distances: TimestampedVector<Weight>,
+    fw_parents: Vec<NodeId>,
+    bw_parents: Vec<NodeId>,
     meeting_node: NodeId,
 }
 
-impl<'a, CCH: CCHT> Server<'a, CCH> {
-    pub fn new(customized: Customized<'a, CCH>) -> Self {
-        let cch = customized.cch;
-        let (forward, backward) = customized.into_ch_graphs();
-        let forward = SteppedEliminationTree::new(forward, cch.elimination_tree());
-        let backward = SteppedEliminationTree::new(backward, cch.elimination_tree());
-
+impl<'a, CCH: CCHT, CCHB: std::borrow::Borrow<CCH>> Server<CCH, CCHB> {
+    pub fn new(customized: Customized<CCH, CCHB>) -> Self {
+        let n = customized.forward_graph().num_nodes();
         Server {
-            forward,
-            backward,
-            cch,
-            tentative_distance: INFINITY,
+            customized,
+            fw_distances: TimestampedVector::new(n, INFINITY),
+            bw_distances: TimestampedVector::new(n, INFINITY),
+            fw_parents: vec![n as NodeId; n],
+            bw_parents: vec![n as NodeId; n],
             meeting_node: 0,
         }
     }
 
     // Update the metric using a new customization result
-    pub fn update(&mut self, mut customized: Customized<'a, CCH>) {
-        self.forward.graph_mut().swap_weights(&mut customized.upward);
-        self.backward.graph_mut().swap_weights(&mut customized.downward);
+    pub fn update(&mut self, mut customized: Customized<CCH, CCHB>) {
+        std::mem::swap(&mut self.customized, &mut customized);
     }
 
     fn distance(&mut self, from: NodeId, to: NodeId) -> Option<Weight> {
-        let from = self.cch.node_order().rank(from);
-        let to = self.cch.node_order().rank(to);
+        let from = self.customized.cch.borrow().node_order().rank(from);
+        let to = self.customized.cch.borrow().node_order().rank(to);
+
+        let fw_graph = self.customized.forward_graph();
+        let bw_graph = self.customized.backward_graph();
 
         // initialize
-        self.tentative_distance = INFINITY;
+        let mut tentative_distance = INFINITY;
         self.meeting_node = 0;
-        self.forward.initialize_query(from);
-        self.backward.initialize_query(to);
+        let mut fw_walk = EliminationTreeWalk::query(
+            &fw_graph,
+            self.customized.cch.borrow().elimination_tree(),
+            &mut self.fw_distances,
+            &mut self.fw_parents,
+            from,
+        );
+        let mut bw_walk = EliminationTreeWalk::query(
+            &bw_graph,
+            self.customized.cch.borrow().elimination_tree(),
+            &mut self.bw_distances,
+            &mut self.bw_parents,
+            to,
+        );
 
-        // walk up forward elimination tree
-        while self.forward.next().is_some() {
-            self.forward.next_step();
-        }
-
-        // walk up backward elimination tree while updating tentative distances
-        while let QueryProgress::Settled(State { key, node }) = self.backward.next_step() {
-            if key + self.forward.tentative_distance(node) < self.tentative_distance {
-                self.tentative_distance = key + self.forward.tentative_distance(node);
-                self.meeting_node = node;
+        loop {
+            match (fw_walk.peek(), bw_walk.peek()) {
+                (Some(fw_node), Some(bw_node)) if fw_node < bw_node => {
+                    fw_walk.next();
+                }
+                (Some(fw_node), Some(bw_node)) if fw_node > bw_node => {
+                    bw_walk.next();
+                }
+                (Some(node), Some(_node)) => {
+                    debug_assert_eq!(node, _node);
+                    if fw_walk.tentative_distance(node) < tentative_distance {
+                        fw_walk.next();
+                    } else {
+                        fw_walk.skip_next();
+                    }
+                    if bw_walk.tentative_distance(node) < tentative_distance {
+                        bw_walk.next();
+                    } else {
+                        bw_walk.skip_next();
+                    }
+                    let dist = fw_walk.tentative_distance(node) + bw_walk.tentative_distance(node);
+                    if dist < tentative_distance {
+                        tentative_distance = dist;
+                        self.meeting_node = node;
+                    }
+                }
+                // the (Some,None) case can only happen when the nodes
+                // share no common ancestores in the elimination tree
+                // thus, there will be no path
+                (Some(_), None) => return None,
+                (None, Some(_)) => return None,
+                (None, None) => break,
             }
         }
 
-        match self.tentative_distance {
+        match tentative_distance {
             INFINITY => None,
             dist => Some(dist),
         }
     }
 
-    fn path(&mut self) -> Vec<NodeId> {
+    fn path(&mut self, query: Query) -> Vec<NodeId> {
+        let from = self.customized.cch.borrow().node_order().rank(query.from);
+        let to = self.customized.cch.borrow().node_order().rank(query.to);
+
         // unpack shortcuts so that parant pointers already point along the completely unpacked path
-        self.forward.unpack_path(self.meeting_node, true, self.cch, self.backward.graph().weight());
-        self.backward.unpack_path(self.meeting_node, true, self.cch, self.forward.graph().weight());
+        Self::unpack_path(
+            from,
+            self.meeting_node,
+            true,
+            self.customized.cch.borrow(),
+            self.customized.forward_graph().weight(),
+            self.customized.backward_graph().weight(),
+            &mut self.fw_distances,
+            &mut self.fw_parents,
+        );
+        Self::unpack_path(
+            to,
+            self.meeting_node,
+            false,
+            self.customized.cch.borrow(),
+            self.customized.backward_graph().weight(),
+            self.customized.forward_graph().weight(),
+            &mut self.bw_distances,
+            &mut self.bw_parents,
+        );
 
         let mut path = Vec::new();
         path.push(self.meeting_node);
 
-        while *path.last().unwrap() != self.forward.origin() {
-            path.push(self.forward.predecessor(*path.last().unwrap()));
+        while *path.last().unwrap() != from {
+            path.push(self.fw_parents[*path.last().unwrap() as usize]);
         }
 
         path.reverse();
 
-        while *path.last().unwrap() != self.backward.origin() {
-            path.push(self.backward.predecessor(*path.last().unwrap()));
+        while *path.last().unwrap() != to {
+            path.push(self.bw_parents[*path.last().unwrap() as usize]);
         }
 
         for node in &mut path {
-            *node = self.cch.node_order().node(*node);
+            *node = self.customized.cch.borrow().node_order().node(*node);
         }
 
         path
     }
+
+    /// Unpack path from a start node (the meeting node of the CCH query), so that parent pointers point along the unpacked path.
+    fn unpack_path(
+        origin: NodeId,
+        target: NodeId,
+        forward: bool,
+        cch: &CCH,
+        weights: &[Weight],
+        other_weights: &[Weight],
+        distances: &mut TimestampedVector<Weight>,
+        parents: &mut [NodeId],
+    ) {
+        let mut current = target;
+        while current != origin {
+            let pred = parents[current as usize];
+            let weight = distances[current as usize] - distances[pred as usize];
+
+            let unpacked = if forward {
+                cch.unpack_arc(pred, current, weight, weights, other_weights)
+            } else {
+                cch.unpack_arc(current, pred, weight, other_weights, weights)
+            };
+            if let Some((middle, first_weight, second_weight)) = unpacked {
+                parents[current as usize] = middle;
+                parents[middle as usize] = pred;
+                distances[middle as usize] = distances[pred as usize] + if forward { first_weight } else { second_weight };
+            } else {
+                current = pred;
+            }
+        }
+    }
 }
 
-pub struct PathServerWrapper<'s, 'a, CCH>(&'s mut Server<'a, CCH>);
+pub struct PathServerWrapper<'s, CCH, CCHB>(&'s mut Server<CCH, CCHB>, Query);
 
-impl<'s, 'a, CCH: CCHT> PathServer for PathServerWrapper<'s, 'a, CCH> {
+impl<'s, CCH: CCHT, CCHB: std::borrow::Borrow<CCH>> PathServer for PathServerWrapper<'s, CCH, CCHB> {
     type NodeInfo = NodeId;
     type EdgeInfo = ();
 
     fn reconstruct_node_path(&mut self) -> Vec<Self::NodeInfo> {
-        Server::path(self.0)
+        Server::path(self.0, self.1)
     }
     fn reconstruct_edge_path(&mut self) -> Vec<Self::EdgeInfo> {
         vec![(); self.reconstruct_node_path().len() - 1]
     }
 }
 
-impl<'a, CCH: CCHT> QueryServer for Server<'a, CCH> {
+impl<'a, CCH: CCHT, CCHB: std::borrow::Borrow<CCH>> QueryServer for Server<CCH, CCHB> {
     type P<'s>
     where
         Self: 's,
-    = PathServerWrapper<'s, 'a, CCH>;
+    = PathServerWrapper<'s, CCH, CCHB>;
 
     fn query(&mut self, query: Query) -> QueryResult<Self::P<'_>, Weight> {
-        QueryResult::new(self.distance(query.from, query.to), PathServerWrapper(self))
+        QueryResult::new(self.distance(query.from, query.to), PathServerWrapper(self, query))
     }
 }

@@ -5,7 +5,7 @@
 //! This implementation is not guaranteed to run in linear time, but is practically faster than the linear version.
 
 use super::*;
-use crate::{datastr::graph::first_out_graph::degrees_to_first_out, report::benchmark::report_time, report::*};
+use crate::{datastr::graph::first_out_graph::degrees_to_first_out, report::*};
 use std::{
     cmp::Ordering,
     ops::{Index, IndexMut},
@@ -142,7 +142,7 @@ impl<'a, Graph: LinkIterable<NodeIdT>> ContractionGraph<'a, Graph> {
     /// Main preprocessing work - chordal completion
     pub fn contract(mut self) -> ContractedGraph<'a, Graph> {
         report!("algo", "CCH Contraction");
-        report_time("CCH Contraction", || {
+        report_time_with_key("CCH Contraction", "contraction", || {
             let mut num_shortcut_arcs = 0;
             // We utilize split borrows to make node contraction work well with rusts borrowing rules.
             // The graph representation already contains the node in order of increasing rank.

@@ -1,49 +1,41 @@
 //! Elimination Tree path to root traversal while relaxing edges.
 
 use super::*;
-use crate::datastr::timestamped_vector::TimestampedVector;
-use crate::util::in_range_option::InRangeOption;
+use crate::{datastr::timestamped_vector::TimestampedVector, util::in_range_option::InRangeOption};
 
 #[derive(Debug)]
-pub struct SteppedEliminationTree<'b, Graph> {
-    graph: Graph,
-    distances: TimestampedVector<Weight>,
-    predecessors: Vec<NodeId>,
-    elimination_tree: &'b [InRangeOption<NodeId>],
+pub struct EliminationTreeWalk<'a, Graph> {
+    graph: &'a Graph,
+    distances: &'a mut TimestampedVector<Weight>,
+    predecessors: &'a mut [NodeId],
+    elimination_tree: &'a [InRangeOption<NodeId>],
     next: Option<NodeId>,
-    origin: Option<NodeId>,
 }
 
-impl<'b, Graph: LinkIterGraph> SteppedEliminationTree<'b, Graph> {
-    pub fn new(graph: Graph, elimination_tree: &'b [InRangeOption<NodeId>]) -> SteppedEliminationTree<'b, Graph> {
-        let n = graph.num_nodes();
+impl<'a, Graph: LinkIterGraph> EliminationTreeWalk<'a, Graph> {
+    pub fn query(
+        graph: &'a Graph,
+        elimination_tree: &'a [InRangeOption<NodeId>],
+        distances: &'a mut TimestampedVector<Weight>,
+        predecessors: &'a mut [NodeId],
+        from: NodeId,
+    ) -> Self {
+        // initialize
+        distances.reset();
 
-        SteppedEliminationTree {
+        // Starte with origin
+        distances[from as usize] = 0;
+
+        Self {
             graph,
-            // initialize tentative distances to INFINITY
-            distances: TimestampedVector::new(n, INFINITY),
-            predecessors: vec![n as NodeId; n],
+            distances,
+            predecessors,
             elimination_tree,
-            next: None,
-            origin: None,
+            next: Some(from),
         }
     }
 
-    pub fn initialize_query(&mut self, from: NodeId) {
-        // initialize
-        self.origin = Some(from);
-        self.next = Some(from);
-        self.distances.reset();
-
-        // Starte with origin
-        self.distances.set(from as usize, 0);
-    }
-
-    pub fn next_step(&mut self) -> QueryProgress<Weight> {
-        self.settle_next_node()
-    }
-
-    fn settle_next_node(&mut self) -> QueryProgress<Weight> {
+    fn settle_next_node(&mut self) -> Option<NodeId> {
         // Examine the next node on the path to the elimination tree node
         if let Some(node) = self.next {
             let distance = self.distances[node as usize];
@@ -52,26 +44,30 @@ impl<'b, Graph: LinkIterGraph> SteppedEliminationTree<'b, Graph> {
             // For each node we can reach, see if we can find a way with
             // a lower distance going through this node
             for edge in self.graph.link_iter(node) {
-                let next = State {
-                    key: distance + edge.weight,
-                    node: edge.node,
-                };
+                let next_dist = distance + edge.weight;
 
-                if next.key < self.distances[next.node as usize] {
+                if next_dist < self.distances[edge.node as usize] {
                     // Relaxation, we have now found a better way
-                    self.distances.set(next.node as usize, next.key);
-                    self.predecessors[next.node as usize] = node;
+                    self.distances[edge.node as usize] = next_dist;
+                    self.predecessors[edge.node as usize] = node;
                 }
             }
 
-            QueryProgress::Settled(State { key: distance, node })
+            Some(node)
         } else {
-            QueryProgress::Done(None) // TODO
+            None
         }
     }
 
-    pub fn next(&self) -> Option<NodeId> {
+    pub fn peek(&self) -> Option<NodeId> {
         self.next
+    }
+
+    pub fn skip_next(&mut self) {
+        // Iterator::skip(n) would still call `next` and thus relax edges, we want to actually skip them
+        if let Some(node) = self.next {
+            self.next = self.elimination_tree[node as usize].value();
+        }
     }
 
     pub fn tentative_distance(&self, node: NodeId) -> Weight {
@@ -81,50 +77,11 @@ impl<'b, Graph: LinkIterGraph> SteppedEliminationTree<'b, Graph> {
     pub fn predecessor(&self, node: NodeId) -> NodeId {
         self.predecessors[node as usize]
     }
-
-    pub fn parent(&self, node: NodeId) -> InRangeOption<NodeId> {
-        self.elimination_tree[node as usize]
-    }
-
-    pub fn origin(&self) -> NodeId {
-        self.origin.unwrap()
-    }
-
-    pub fn graph(&self) -> &Graph {
-        &self.graph
-    }
-
-    pub fn graph_mut(&mut self) -> &mut Graph {
-        &mut self.graph
-    }
 }
 
-impl<'b, FirstOutContainer, HeadContainer, WeightContainer> SteppedEliminationTree<'b, FirstOutGraph<FirstOutContainer, HeadContainer, WeightContainer>>
-where
-    FirstOutContainer: AsRef<[EdgeId]>,
-    HeadContainer: AsRef<[NodeId]>,
-    WeightContainer: AsRef<[Weight]>,
-{
-    /// Unpack path from a start node (the meeting node of the CCH query), so that parent pointers point along the unpacked path.
-    pub fn unpack_path(&mut self, target: NodeId, forward: bool, cch: &dyn CCHT, other_weights: &[Weight]) {
-        let origin = self.origin();
-        let mut current = target;
-        while current != origin {
-            let pred = self.predecessor(current);
-            let weight = self.tentative_distance(current) - self.tentative_distance(pred);
-
-            let unpacked = if forward {
-                cch.unpack_arc(pred, current, weight, self.graph.weight(), other_weights)
-            } else {
-                cch.unpack_arc(current, pred, weight, other_weights, self.graph.weight())
-            };
-            if let Some((middle, first_weight, second_weight)) = unpacked {
-                self.predecessors[current as usize] = middle;
-                self.predecessors[middle as usize] = pred;
-                self.distances[middle as usize] = self.tentative_distance(pred) + if forward { first_weight } else { second_weight };
-            } else {
-                current = pred;
-            }
-        }
+impl<'a, Graph: LinkIterGraph> Iterator for EliminationTreeWalk<'a, Graph> {
+    type Item = NodeId;
+    fn next(&mut self) -> Option<Self::Item> {
+        self.settle_next_node()
     }
 }
