@@ -105,7 +105,7 @@ impl TDCapacityGraph {
         ret
     }
 
-    /// Decompose the graph into its three seperate data containers
+    /// Decompose the graph into its data containers
     pub fn decompose(self) -> (Vec<EdgeId>, Vec<NodeId>, Vec<Vec<Timestamp>>, Vec<Vec<Weight>>) {
         (self.first_out, self.head, self.departure, self.travel_time)
     }

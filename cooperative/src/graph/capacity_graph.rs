@@ -5,9 +5,6 @@ use rust_road_router::io::{Deconstruct, Store};
 use rust_road_router::util::SlcsIdx;
 
 use crate::graph::ModifiableWeight;
-use crate::graph::conversion::to_velocity;
-use crate::graph::td_capacity_graph::MAX_BUCKETS;
-use conversion::speed_profile_to_tt_profile;
 
 pub type Capacity = u32;
 
@@ -29,7 +26,6 @@ impl CapacityGraph {
         first_out: Vec<EdgeId>,
         head: Vec<NodeId>,
         freeflow_time: Vec<Weight>,
-        distance: Vec<Weight>,
         max_capacity: Vec<Capacity>,
         weight_function: fn(Weight, Capacity, Capacity) -> Weight,
     ) -> CapacityGraph {
