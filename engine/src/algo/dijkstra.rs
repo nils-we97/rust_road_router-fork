@@ -10,7 +10,7 @@ pub mod query;
 
 pub use generic_dijkstra::DijkstraRun;
 pub use query::dijkstra::Server;
-use crate::datastr::graph::floating_time_dependent::{TTFPoint, Timestamp, FlWeight};
+use crate::datastr::graph::floating_time_dependent::{TTFPoint, FlWeight};
 
 /// Result of a single iteration
 #[derive(Debug, Clone)]
