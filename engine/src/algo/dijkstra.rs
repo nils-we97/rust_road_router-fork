@@ -10,6 +10,7 @@ pub mod query;
 
 pub use generic_dijkstra::DijkstraRun;
 pub use query::dijkstra::Server;
+use crate::datastr::graph::floating_time_dependent::{TTFPoint, Timestamp, FlWeight};
 
 /// Result of a single iteration
 #[derive(Debug, Clone)]
@@ -48,6 +49,20 @@ impl Label for Weight {
     #[inline(always)]
     fn key(&self) -> Self::Key {
         *self
+    }
+}
+
+impl Label for Vec<TTFPoint> {
+    type Key = FlWeight;
+
+    fn neutral() -> Self { Vec::new() }
+
+    fn key(&self) -> Self::Key {
+        self
+            .iter()
+            .map(|&point| point.val)
+            .min()
+            .unwrap_or(FlWeight::default())
     }
 }
 

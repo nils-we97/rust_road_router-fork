@@ -75,7 +75,7 @@ mod time {
     /// `f64` wrapper for time dependent edge weight values
     /// for some additional type safety.
     #[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
-    pub struct FlWeight(f64);
+    pub struct FlWeight(pub f64);
 
     /// Absolute epsilon for CATCHUp approximation in seconds.
     /// Can be overriden through the TDCCH_APPROX env var

@@ -121,6 +121,14 @@ impl TDCapacityGraph {
         self.travel_time_function(edge_id).eval(departure)
     }
 
+    pub fn departure_ref(&self) -> &Vec<Vec<Timestamp>> {
+        self.departure.as_ref()
+    }
+
+    pub fn travel_time_ref(&self) -> &Vec<Vec<Weight>> {
+        self.travel_time.as_ref()
+    }
+
     /// round timestamp to nearest bucket interval
     #[inline(always)]
     fn round_timestamp(&self, timestamp: Timestamp) -> Timestamp {
