@@ -123,7 +123,10 @@ impl<Profiles: AsRef<Vec<Vec<TTFPoint>>>> DijkstraOps<ReversedGraphWithEdgeIds> 
         let current_profile = PeriodicPiecewiseLinearFunction::new(label);
 
         //2. link (`prev_profile` and `label`)
-        prev_profile.link(&current_profile)
+        let link_result = prev_profile.link(&current_profile);
+
+        //3. apply douglas peuker approximation -> accelerates calculation by factor ~10
+        PeriodicPiecewiseLinearFunction::new(&link_result).approximate(&mut Vec::new()).to_vec()
     }
 
     fn merge(&mut self, label: &mut Self::Label, linked: Self::LinkResult) -> bool {
