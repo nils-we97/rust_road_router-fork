@@ -6,7 +6,7 @@ use cooperative::experiments::run_server_with_potentials::run_server_with_potent
 //use cooperative::experiments::run_server::run_server;
 
 fn main() -> Result<(), Box<dyn Error>> {
-    let graph_directory = env::current_dir()?.parent().unwrap().join("graphs").join("baden_wuerttemberg");
+    let graph_directory = env::current_dir()?.parent().unwrap().join("graphs").join("berlin");
 
     /*let population_directory = env::current_dir()?
         .parent().unwrap()

@@ -8,6 +8,7 @@ use rust_road_router::datastr::node_order::NodeOrder;
 
 use crate::dijkstra::potentials::TDPotential;
 use crate::graph::td_capacity_graph::TDCapacityGraph;
+use rust_road_router::report::measure;
 
 /// Basic implementation of a potential obtained by a backward profile search
 /// this version is not to be used, but provides a good starting point for further optimizations
@@ -68,13 +69,8 @@ impl TDPotential for TDBackwardProfilePotential {
         let mut run = DijkstraRun::query(self.backward_graph.borrow(), &mut self.dijkstra, &mut ops, query);
 
         // run through the whole graph
-        let mut counter = 0;
-        while let Some(_node) = run.next() {
-            counter += 1;
-            if counter % 1000 == 0 {
-                println!("Backward profile search - finished {} nodes", counter);
-            }
-        }
+        let (_, time) = measure(|| while let Some(_node) = run.next() {});
+        println!("Potential init took {} ms", time.to_std().unwrap().as_nanos() as f64 / 1_000_000.0);
     }
 
     // this is the easy part: lookup at profile of currently inspected node

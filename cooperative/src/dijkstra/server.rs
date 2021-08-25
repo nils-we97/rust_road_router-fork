@@ -1,9 +1,9 @@
 use std::borrow::Borrow;
 
-use rust_road_router::algo::dijkstra::{DefaultOpsWithLinkPath, DijkstraData, DijkstraRun};
+use rust_road_router::algo::dijkstra::{DefaultOpsWithLinkPath, DijkstraData, DijkstraRun, DijkstraOps, State, Label};
 use rust_road_router::algo::GenQuery;
 use rust_road_router::datastr::graph::time_dependent::Timestamp;
-use rust_road_router::datastr::graph::{EdgeId, EdgeIdT, Graph, Weight};
+use rust_road_router::datastr::graph::{EdgeId, EdgeIdT, Graph, Weight, LinkIterable, Arc, NodeIdT, NodeId};
 use rust_road_router::report;
 use rust_road_router::report::*;
 
@@ -13,6 +13,8 @@ use crate::graph::capacity_graph::CapacityGraph;
 use crate::graph::td_capacity_graph::TDCapacityGraph;
 use crate::graph::ModifiableWeight;
 use rust_road_router::algo::a_star::{Potential, ZeroPotential};
+use crate::dijkstra::potentials::TDPotential;
+use rust_road_router::datastr::index_heap::Indexing;
 
 pub struct CapacityServer<G, Pot = ZeroPotential> {
     graph: G,
@@ -127,7 +129,7 @@ impl<Pot> CapacityServerOps<CapacityGraph, PathResult, Pot> for CapacityServer<C
 }
 
 impl<Pot> CapacityServerOps<TDCapacityGraph, TDPathResult, Pot> for CapacityServer<TDCapacityGraph, Pot>
-    where Pot: Potential
+    where Pot: TDPotential
 {
     fn new(graph: TDCapacityGraph) -> CapacityServer<TDCapacityGraph> {
         let nodes = graph.num_nodes();
@@ -181,27 +183,66 @@ impl<Pot> CapacityServerOps<TDCapacityGraph, TDPathResult, Pot> for CapacityServ
     fn distance(&mut self, query: impl GenQuery<Weight>) -> Option<Weight> {
         report!("algo", "TD Dijkstra with Capacities");
 
+        let from = query.from();
+        let init = query.initial_state();
         let to = query.to();
+
         let mut ops = TDCapacityDijkstraOps::default();
-
-        let mut dijkstra = DijkstraRun::query(self.graph.borrow(), &mut self.dijkstra, &mut ops, query);
-
-        self.potential.init(to);
-        let pot = &mut self.potential;
 
         let mut result = None;
         let mut num_queue_pops = 0;
-        while let Some(node) = dijkstra.next_step_with_potential(|node| pot.potential(node)) {
+        let mut num_queue_pushs = 0;
+        let mut num_relaxed_arcs = 0;
+
+        // time-dependent potentials are a little bit more complicated
+        // for now, a slight modification of the generic dijkstra code should suffice
+
+        // prepro: initialize potential
+        self.potential.init(to, 0);
+        let pot = &mut self.potential;
+
+        // 1. reset data
+        self.dijkstra.queue.clear();
+        self.dijkstra.distances.reset();
+
+        // 2. init dijkstra from start node
+        self.dijkstra.queue.push(State { key: init.key(), node: from});
+        self.dijkstra.distances[from as usize] = init;
+        self.dijkstra.predecessors[from as usize].0 = from;
+
+        // 3. run query
+        while let Some(State {node, key}) = self.dijkstra.queue.pop() {
             num_queue_pops += 1;
+
             if node == to {
-                result = Some(*dijkstra.tentative_distance(node));
+                result = Some(self.dijkstra.distances[to as usize]);
                 break;
+            }
+
+            for link in get_neighbors(&self.graph, node) {
+                num_relaxed_arcs += 1;
+                let linked = ops.link(&self.graph, &self.dijkstra.distances[node as usize], &link);
+
+                if ops.merge(&mut self.dijkstra.distances[node as usize], linked) {
+                    self.dijkstra.predecessors[link.head() as usize] = (node, ops.predecessor_link(&link));
+                    let next_distance = &self.dijkstra.distances[link.head() as usize];
+
+                    if let Some(next_key) = pot.potential(link.head(), key).map(|p| p + next_distance.key()) {
+                        let next = State { node: link.head(), key: next_key };
+                        if self.dijkstra.queue.contains_index(next.as_index()) {
+                            self.dijkstra.queue.decrease_key(next);
+                        } else {
+                            num_queue_pushs += 1;
+                            self.dijkstra.queue.push(next);
+                        }
+                    }
+                }
             }
         }
 
         report!("num_queue_pops", num_queue_pops);
-        report!("num_queue_pushs", dijkstra.num_queue_pushs());
-        report!("num_relaxed_arcs", dijkstra.num_relaxed_arcs());
+        report!("num_queue_pushs", num_queue_pushs);
+        report!("num_relaxed_arcs", num_relaxed_arcs);
 
         result
     }
@@ -243,4 +284,9 @@ impl<Pot> CapacityServerOps<TDCapacityGraph, TDPathResult, Pot> for CapacityServ
             .map(|(idx, &edge_id)| self.graph.weight(edge_id, path.departure[idx]))
             .sum()
     }
+}
+
+// helper function
+fn get_neighbors<G: LinkIterable<(NodeIdT, EdgeIdT)>>(graph: &G, node: NodeId) -> G::Iter<'_> {
+    graph.link_iter(node)
 }
