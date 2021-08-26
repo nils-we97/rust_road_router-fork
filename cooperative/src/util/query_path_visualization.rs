@@ -1,6 +1,6 @@
 use rust_road_router::datastr::graph::NodeId;
 
-pub fn generate_visualization_data(path: &Vec<NodeId>, lat: &Vec<f32>, lon: &Vec<f32>) {
+pub fn print_path_coords(path: &[NodeId], lat: &[f32], lon: &[f32]) {
     print!("[");
     path.iter().cloned().for_each(|node| {
         let node = node as usize;

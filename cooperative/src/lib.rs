@@ -5,7 +5,7 @@ pub mod dijkstra;
 pub mod experiments;
 pub mod graph;
 pub mod io;
-pub mod visualization;
+pub mod util;
 
 #[cfg(test)]
 mod tests {
