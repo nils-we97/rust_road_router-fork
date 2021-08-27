@@ -2,9 +2,7 @@ use rust_road_router::datastr::graph::time_dependent::Timestamp;
 use rust_road_router::datastr::graph::EdgeId;
 
 pub mod capacity_graph;
-pub mod conversion;
-pub mod td_capacity_graph;
-pub mod traffic_functions;
+pub mod speed_functions;
 
 pub type Capacity = u32;
 pub type Velocity = u32;

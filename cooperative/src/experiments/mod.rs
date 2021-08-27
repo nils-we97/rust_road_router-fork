@@ -1,11 +1,11 @@
 pub mod compare_static_cooperative;
-pub mod evaluation;
-pub mod generate_queries;
-pub mod run_server;
-pub mod run_td_server;
-pub mod evaluate_td_impact;
-pub mod run_server_with_potentials;
 pub mod evaluate_potential_quality;
+pub mod evaluate_td_impact;
+pub mod evaluation;
+pub mod queries;
+pub mod run_server;
+pub mod run_server_with_potentials;
+pub mod run_td_server;
 
 #[derive(Copy, Clone, Debug)]
 pub struct PathCompareResult {
@@ -21,7 +21,7 @@ impl PathCompareResult {
             num_queries,
             dist_baseline,
             dist_algorithm,
-            improvement: dist_baseline as f64 / dist_algorithm as f64
+            improvement: dist_baseline as f64 / dist_algorithm as f64,
         }
     }
 }

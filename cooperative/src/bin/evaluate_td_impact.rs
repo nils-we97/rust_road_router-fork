@@ -1,8 +1,8 @@
-use std::error::Error;
-use std::env;
+use cooperative::util::cli_args::{parse_arg_optional, parse_arg_required, QueryType};
 use rust_road_router::cli::CliErr;
+use std::env;
+use std::error::Error;
 use std::str::FromStr;
-use cooperative::util::cli_args::{parse_arg_required, QueryType, parse_arg_optional};
 
 /// Evaluates the impact of time-dependent queries.
 /// Comparison is provided by a more static setting with only 1 bucket per edge.
@@ -19,7 +19,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let graph_directory: String = parse_arg_required(&mut args, "Graph Directory")?;
     let num_buckets: u32 = parse_arg_required(&mut args, "number of buckets")?;
     let num_queries: u32 = parse_arg_required(&mut args, "number of queries")?;
-    let query_mode: QueryType = parse_arg_optional(&mut args, QueryType::Uniform)?;
+    let query_mode = parse_arg_optional(&mut args, QueryType::Uniform);
 
     dbg!(graph_directory, num_buckets, num_queries, query_mode);
     Ok(())

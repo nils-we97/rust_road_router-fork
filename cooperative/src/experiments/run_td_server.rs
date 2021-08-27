@@ -6,8 +6,8 @@ use rust_road_router::report::measure;
 
 use crate::dijkstra::server::{CapacityServer, CapacityServerOps};
 use crate::experiments::evaluate_td_impact::evaluate_time_dependent_impact;
-use crate::experiments::generate_queries::departure_distributions::{ConstantDeparture, DepartureDistribution};
-use crate::experiments::generate_queries::random_uniform::generate_random_uniform_td_queries;
+use crate::experiments::queries::departure_distributions::{ConstantDeparture, DepartureDistribution};
+use crate::experiments::queries::random_uniform::generate_random_uniform_td_queries;
 use crate::graph::td_capacity_graph::TDCapacityGraph;
 use crate::graph::traffic_functions::speed_functions::bpr_speed_function;
 use crate::io::io_td_graph::load_td_capacity_graph;

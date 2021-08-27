@@ -3,7 +3,7 @@
 use rust_road_router::report::measure;
 
 use crate::dijkstra::server::{CapacityServer, CapacityServerOps};
-use crate::experiments::generate_queries::population_density_based::generate_uniform_population_density_based_queries;
+use crate::experiments::queries::population_density_based::generate_uniform_population_density_based_queries;
 use crate::graph::traffic_functions::time_functions::bpr_traffic_function;
 use crate::io::io_graph::load_capacity_graph;
 use crate::io::load_coords;

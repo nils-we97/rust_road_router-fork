@@ -19,18 +19,8 @@ pub struct CapacityServer<Pot = ZeroPotential> {
     potential: Pot,
 }
 
-pub trait CapacityServerOps<Pot = ZeroPotential> {
-    fn new(graph: CapacityGraph) -> CapacityServer;
-    fn new_with_potential(graph: CapacityGraph, potential: Pot) -> CapacityServer<Pot>;
-    fn query(&mut self, query: TDQuery<Timestamp>, update: bool) -> Option<CapacityQueryResult>;
-    fn update(&mut self, path: &PathResult);
-    fn distance(&mut self, query: TDQuery<Timestamp>) -> Option<Weight>;
-    fn path(&self, query: TDQuery<Timestamp>) -> PathResult;
-    fn path_distance(&self, path: &PathResult) -> Weight;
-}
-
-impl<Pot: TDPotential> CapacityServerOps<Pot> for CapacityServer<Pot> {
-    fn new(graph: CapacityGraph) -> CapacityServer {
+impl<Pot: TDPotential> CapacityServer<Pot> {
+    pub fn new(graph: CapacityGraph) -> CapacityServer {
         let nodes = graph.num_nodes();
 
         CapacityServer {
@@ -40,7 +30,7 @@ impl<Pot: TDPotential> CapacityServerOps<Pot> for CapacityServer<Pot> {
         }
     }
 
-    fn new_with_potential(graph: CapacityGraph, potential: Pot) -> CapacityServer<Pot> {
+    pub fn new_with_potential(graph: CapacityGraph, potential: Pot) -> CapacityServer<Pot> {
         let nodes = graph.num_nodes();
 
         CapacityServer {
@@ -50,6 +40,20 @@ impl<Pot: TDPotential> CapacityServerOps<Pot> for CapacityServer<Pot> {
         }
     }
 
+    pub fn decompose(self) -> CapacityGraph {
+        self.graph
+    }
+}
+
+pub trait CapacityServerOps<Pot = ZeroPotential> {
+    fn query(&mut self, query: TDQuery<Timestamp>, update: bool) -> Option<CapacityQueryResult>;
+    fn update(&mut self, path: &PathResult);
+    fn distance(&mut self, query: TDQuery<Timestamp>) -> Option<Weight>;
+    fn path(&self, query: TDQuery<Timestamp>) -> PathResult;
+    fn path_distance(&self, path: &PathResult) -> Weight;
+}
+
+impl<Pot: TDPotential> CapacityServerOps<Pot> for CapacityServer<Pot> {
     fn query(&mut self, query: TDQuery<Timestamp>, update: bool) -> Option<CapacityQueryResult> {
         let distance = self.distance(query.clone());
         //let (distance, time) = measure(|| self.distance(query));
@@ -122,7 +126,7 @@ impl<Pot: TDPotential> CapacityServerOps<Pot> for CapacityServer<Pot> {
                 num_relaxed_arcs += 1;
                 let linked = ops.link(&self.graph, &self.dijkstra.distances[node as usize], &link);
 
-                if ops.merge(&mut self.dijkstra.distances[node as usize], linked) {
+                if ops.merge(&mut self.dijkstra.distances[link.head() as usize], linked) {
                     self.dijkstra.predecessors[link.head() as usize] = (node, ops.predecessor_link(&link));
                     let next_distance = &self.dijkstra.distances[link.head() as usize];
 

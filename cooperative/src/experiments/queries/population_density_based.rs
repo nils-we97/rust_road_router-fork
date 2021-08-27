@@ -1,18 +1,21 @@
 use kdtree::kdtree::Kdtree;
 use rand::{thread_rng, Rng};
 
-use rust_road_router::algo::{GenQuery, Query};
+use rust_road_router::algo::{GenQuery, TDQuery};
 use rust_road_router::datastr::graph::NodeId;
 
-use crate::io::population_grid::PopulationGridEntry;
+use crate::experiments::queries::departure_distributions::DepartureDistribution;
+use crate::io::io_population_grid::PopulationGridEntry;
+use rust_road_router::datastr::graph::time_dependent::Timestamp;
 
-pub fn generate_uniform_population_density_based_queries(
+pub fn generate_uniform_population_density_based_queries<D: DepartureDistribution>(
     longitude: &Vec<f32>,
     latitude: &Vec<f32>,
     grid_tree: &Kdtree<PopulationGridEntry>,
     grid_population: &Vec<u32>,
     num_queries: u32,
-) -> Vec<Query> {
+    departure_distribution: D,
+) -> Vec<TDQuery<Timestamp>> {
     // distribute population into buckets
     let mut vertex_grid = vec![Vec::new(); grid_population.len()];
 
@@ -35,11 +38,11 @@ pub fn generate_uniform_population_density_based_queries(
     grid_population_intervals.push((population_counter, grid_population.len())); // sentinel element
 
     // generate queries based on population inside each grid
-    (0..num_queries)
+    let mut rng = thread_rng();
+    let mut queries = (0..num_queries)
         .into_iter()
         .map(|_| {
             // draw random start cell according to population density, pick a random node inside
-            let mut rng = thread_rng();
             let start_cell_id = find_interval(&grid_population_intervals, rng.gen_range(0..population_counter));
             let start_cell_vertex_pos = rng.gen_range(0..vertex_grid[start_cell_id].len());
             let from = vertex_grid[start_cell_id][start_cell_vertex_pos];
@@ -48,9 +51,14 @@ pub fn generate_uniform_population_density_based_queries(
             let target_cell_vertex_pos = rng.gen_range(0..vertex_grid[target_cell_id].len());
             let to = vertex_grid[target_cell_id][target_cell_vertex_pos];
 
-            Query::new(from, to, 0)
+            TDQuery::new(from, to, departure_distribution.rand(&mut rng))
         })
-        .collect::<Vec<Query>>()
+        .collect::<Vec<TDQuery<Timestamp>>>();
+
+    // sort queries by departure for a more realistic usage scenario
+    queries.sort_by_key(|query| query.departure);
+
+    queries
 }
 
 fn find_interval(vec: &Vec<(u32, usize)>, val: u32) -> usize {

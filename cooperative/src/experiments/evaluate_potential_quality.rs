@@ -1,8 +1,8 @@
 use rust_road_router::report::measure;
 
 use crate::dijkstra::server::CapacityServerOps;
-use crate::experiments::generate_queries::departure_distributions::{DepartureDistribution, UniformDeparture};
-use crate::experiments::generate_queries::random_uniform::generate_random_uniform_td_queries;
+use crate::experiments::queries::departure_distributions::{DepartureDistribution, UniformDeparture};
+use crate::experiments::queries::random_uniform::generate_random_uniform_queries;
 
 const NUM_QUERIES_PER_RUN: u32 = 1000;
 
@@ -31,7 +31,7 @@ pub fn evaluate_potential_quality<Pot>(server: &mut impl CapacityServerOps<Pot>,
 }
 
 fn get_chunked_runtime_in_millis<Pot>(server: &mut impl CapacityServerOps<Pot>, num_nodes: u32) -> f64 {
-    let queries = generate_random_uniform_td_queries(num_nodes, NUM_QUERIES_PER_RUN, UniformDeparture::new());
+    let queries = generate_random_uniform_queries(num_nodes, NUM_QUERIES_PER_RUN, UniformDeparture::new());
 
     // exclude query generation time
     let (_, time) = measure(|| {

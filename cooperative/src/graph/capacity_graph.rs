@@ -4,7 +4,6 @@ use conversion::speed_profile_to_tt_profile;
 use rust_road_router::datastr::graph::time_dependent::{PiecewiseLinearFunction, Timestamp};
 use rust_road_router::datastr::graph::{EdgeId, EdgeIdGraph, EdgeIdT, EdgeRandomAccessGraph, Graph, Link, LinkIterable, NodeId, NodeIdT, Weight};
 
-use crate::graph::conversion::to_velocity;
 use crate::graph::{Capacity, ModifiableWeight, Velocity, MAX_BUCKETS};
 
 /// Structure of a time-dependent graph with capacity buckets for each edge
@@ -69,7 +68,7 @@ impl CapacityGraph {
         let freeflow_speed = freeflow_time
             .iter()
             .zip(distance.iter())
-            .map(|(&time, &dist)| to_velocity(dist, time))
+            .map(|(&time, &dist)| convert_to_velocity(dist, time))
             .collect::<Vec<Velocity>>();
 
         // lowertime bounds, required for potential calculation
@@ -324,5 +323,16 @@ impl LinkIterable<Link> for CapacityGraph {
             node: self.head[idx],
             weight: self.lowerbound_time[idx],
         })
+    }
+}
+
+// additional helper functions
+/// determine the velocity in km_h for a given distance in meters and time in seconds
+fn convert_to_velocity(dist_m: Weight, time_s: Weight) -> Velocity {
+    assert!(dist_m < u32::MAX / 36, "integer overflow detected");
+    if dist_m == 0 || time_s == 0 {
+        1 // avoid division by zero exceptions. Travel time will be 0 anyway
+    } else {
+        (dist_m * 36) / (time_s * 10)
     }
 }

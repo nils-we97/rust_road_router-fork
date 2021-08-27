@@ -1,6 +1,7 @@
 use rust_road_router::datastr::graph::time_dependent::Timestamp;
 use rust_road_router::datastr::graph::{EdgeId, NodeId, Weight};
 
+#[derive(Debug)]
 pub struct CapacityQueryResult {
     pub distance: Weight,
     pub path: PathResult,
@@ -12,6 +13,7 @@ impl CapacityQueryResult {
     }
 }
 
+#[derive(Debug)]
 pub struct PathResult {
     pub node_path: Vec<NodeId>,
     pub edge_path: Vec<EdgeId>,
