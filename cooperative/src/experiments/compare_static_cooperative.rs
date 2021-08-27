@@ -1,13 +1,11 @@
-use rust_road_router::algo::GenQuery;
-use rust_road_router::datastr::graph::Weight;
+use rust_road_router::algo::TDQuery;
+use rust_road_router::datastr::graph::time_dependent::Timestamp;
 
+use crate::dijkstra::model::PathResult;
 use crate::dijkstra::server::CapacityServerOps;
 use crate::experiments::PathCompareResult;
 
-pub fn compare_static_cooperative<G, P, Pot>(
-    server: &mut impl CapacityServerOps<G, P, Pot>,
-    queries: &[impl GenQuery<Weight> + Clone],
-) -> PathCompareResult {
+pub fn compare_static_cooperative<Pot>(server: &mut impl CapacityServerOps<Pot>, queries: &[TDQuery<Timestamp>]) -> PathCompareResult {
     let static_paths = queries
         .iter()
         .cloned()
@@ -20,7 +18,7 @@ pub fn compare_static_cooperative<G, P, Pot>(
                 None
             }
         })
-        .collect::<Vec<P>>();
+        .collect::<Vec<PathResult>>();
 
     let dynamic_paths = queries
         .iter()
@@ -34,16 +32,12 @@ pub fn compare_static_cooperative<G, P, Pot>(
                 None
             }
         })
-        .collect::<Vec<P>>();
+        .collect::<Vec<PathResult>>();
 
     assert_eq!(static_paths.len(), dynamic_paths.len(), "number of paths should be the same!");
 
     let total_dist_static = static_paths.iter().map(|path| server.path_distance(path)).sum();
     let total_dist_dynamic = dynamic_paths.iter().map(|path| server.path_distance(path)).sum();
 
-    PathCompareResult::new(
-        static_paths.len() as u32,
-        total_dist_static,
-        total_dist_dynamic,
-    )
+    PathCompareResult::new(static_paths.len() as u32, total_dist_static, total_dist_dynamic)
 }

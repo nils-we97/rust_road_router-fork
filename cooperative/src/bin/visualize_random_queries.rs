@@ -1,10 +1,6 @@
-use std::error::Error;
+use cooperative::util::cli_args::{parse_arg_optional, parse_arg_required, QueryType};
 use std::env;
-use std::path::Path;
-use rust_road_router::cli::CliErr;
-use std::str::FromStr;
-use rust_road_router::report::measure;
-use cooperative::util::cli_args::{parse_arg_required, parse_arg_optional, QueryType};
+use std::error::Error;
 
 /// Runs a specified number of random queries on a given graph.
 /// Prints the resulting paths for further visualization.

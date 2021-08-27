@@ -3,7 +3,6 @@ use rust_road_router::datastr::graph::{Weight, INFINITY};
 use std::cmp::max;
 
 pub mod speed_functions;
-pub mod time_functions;
 
 /// clip speed in range [1, MAX_SPEED = inf], throw exception if speed is negative
 fn convert_to_weight(val: f64) -> Weight {

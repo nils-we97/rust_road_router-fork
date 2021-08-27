@@ -1,14 +1,14 @@
 use std::borrow::Borrow;
 
-use rust_road_router::algo::GenQuery;
 use rust_road_router::algo::dijkstra::{DijkstraData, DijkstraOps, DijkstraRun, Label};
+use rust_road_router::algo::GenQuery;
+use rust_road_router::datastr::graph::floating_time_dependent::{FlWeight, PeriodicPiecewiseLinearFunction, TTFPoint, Timestamp, PLF};
 use rust_road_router::datastr::graph::{BuildReversed, Graph, NodeId, NodeIdT, Reversed, ReversedGraphWithEdgeIds, Weight};
-use rust_road_router::datastr::graph::floating_time_dependent::{FlWeight, PeriodicPiecewiseLinearFunction, PLF, Timestamp, TTFPoint};
 use rust_road_router::datastr::node_order::NodeOrder;
+use rust_road_router::report::measure;
 
 use crate::dijkstra::potentials::TDPotential;
-use crate::graph::td_capacity_graph::TDCapacityGraph;
-use rust_road_router::report::measure;
+use crate::graph::capacity_graph::CapacityGraph;
 
 /// Basic implementation of a potential obtained by a backward profile search
 /// this version is not to be used, but provides a good starting point for further optimizations
@@ -26,12 +26,12 @@ pub struct TDBackwardProfilePotential {
 }
 
 impl TDBackwardProfilePotential {
-    pub fn new(graph: &TDCapacityGraph) -> Self {
+    pub fn new(graph: &CapacityGraph) -> Self {
         let num_nodes = graph.num_nodes();
         let backward_graph = ReversedGraphWithEdgeIds::reversed(graph);
 
-        let departure = graph.departure_ref();
-        let travel_time = graph.travel_time_ref();
+        let departure = graph.departure();
+        let travel_time = graph.travel_time();
 
         let mut ret = Self {
             backward_graph,
@@ -47,15 +47,17 @@ impl TDBackwardProfilePotential {
         self.travel_time_profile = departure
             .iter()
             .zip(travel_time.iter())
-            .map(|(node_departure, node_travel_time)|
+            .map(|(node_departure, node_travel_time)| {
                 node_departure
                     .iter()
                     .zip(node_travel_time.iter())
                     .map(|(&ts, &val)| TTFPoint {
                         at: Timestamp::new(convert_timestamp_u32_to_f64(ts)),
                         val: FlWeight::new(val as f64),
-                    }).collect::<Vec<TTFPoint>>()
-            ).collect::<Vec<Vec<TTFPoint>>>();
+                    })
+                    .collect::<Vec<TTFPoint>>()
+            })
+            .collect::<Vec<Vec<TTFPoint>>>();
     }
 }
 
@@ -96,15 +98,25 @@ pub struct TDBackwardProfilePotentialOps<Profiles>(Profiles);
 struct TDBackwardProfileQuery(NodeId);
 
 impl GenQuery<Vec<TTFPoint>> for TDBackwardProfileQuery {
-    fn new(_from: NodeId, _to: NodeId, _initial_state: Vec<TTFPoint>) -> Self { unimplemented!() } // not needed
+    fn new(_from: NodeId, _to: NodeId, _initial_state: Vec<TTFPoint>) -> Self {
+        unimplemented!()
+    } // not needed
 
-    fn from(&self) -> NodeId { self.0 }
+    fn from(&self) -> NodeId {
+        self.0
+    }
 
-    fn to(&self) -> NodeId { unimplemented!() }
+    fn to(&self) -> NodeId {
+        unimplemented!()
+    }
 
-    fn initial_state(&self) -> Vec<TTFPoint> { Vec::<TTFPoint>::neutral() }
+    fn initial_state(&self) -> Vec<TTFPoint> {
+        Vec::<TTFPoint>::neutral()
+    }
 
-    fn permutate(&mut self, _order: &NodeOrder) { unimplemented!() }
+    fn permutate(&mut self, _order: &NodeOrder) {
+        unimplemented!()
+    }
 }
 
 impl<Profiles: AsRef<Vec<Vec<TTFPoint>>>> DijkstraOps<ReversedGraphWithEdgeIds> for TDBackwardProfilePotentialOps<Profiles> {
@@ -117,9 +129,7 @@ impl<Profiles: AsRef<Vec<Vec<TTFPoint>>>> DijkstraOps<ReversedGraphWithEdgeIds> 
     // must be linked backward with (static) weight at previous edge
     fn link(&mut self, _graph: &ReversedGraphWithEdgeIds, label: &Self::Label, (_, prev_edge): &Self::Arc) -> Self::LinkResult {
         //1. obtain profile from `previous_node`
-        let prev_profile = PeriodicPiecewiseLinearFunction::new(
-            &self.0.as_ref()[prev_edge.0.0 as usize]
-        );
+        let prev_profile = PeriodicPiecewiseLinearFunction::new(&self.0.as_ref()[prev_edge.0 .0 as usize]);
         let current_profile = PeriodicPiecewiseLinearFunction::new(label);
 
         //2. link (`prev_profile` and `label`)
@@ -152,5 +162,7 @@ impl<Profiles: AsRef<Vec<Vec<TTFPoint>>>> DijkstraOps<ReversedGraphWithEdgeIds> 
         }
     }
 
-    fn predecessor_link(&self, _link: &Self::Arc) -> Self::PredecessorLink { () }
+    fn predecessor_link(&self, _link: &Self::Arc) -> Self::PredecessorLink {
+        ()
+    }
 }

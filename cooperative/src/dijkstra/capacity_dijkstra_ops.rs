@@ -1,17 +1,18 @@
-use crate::graph::td_capacity_graph::TDCapacityGraph;
 use rust_road_router::algo::dijkstra::DijkstraOps;
 use rust_road_router::datastr::graph::{EdgeIdT, NodeIdT, Weight};
 
-pub struct TDCapacityDijkstraOps();
+use crate::graph::capacity_graph::CapacityGraph;
 
-impl DijkstraOps<TDCapacityGraph> for TDCapacityDijkstraOps {
+pub struct CapacityDijkstraOps();
+
+impl DijkstraOps<CapacityGraph> for CapacityDijkstraOps {
     type Label = Weight;
     type Arc = (NodeIdT, EdgeIdT);
     type LinkResult = Weight;
     type PredecessorLink = EdgeIdT;
 
     #[inline(always)]
-    fn link(&mut self, graph: &TDCapacityGraph, label: &Weight, link: &Self::Arc) -> Self::LinkResult {
+    fn link(&mut self, graph: &CapacityGraph, label: &Weight, link: &Self::Arc) -> Self::LinkResult {
         label + graph.travel_time_function(link.1 .0).eval(*label)
     }
 
@@ -29,7 +30,7 @@ impl DijkstraOps<TDCapacityGraph> for TDCapacityDijkstraOps {
     }
 }
 
-impl Default for TDCapacityDijkstraOps {
+impl Default for CapacityDijkstraOps {
     fn default() -> Self {
         Self {}
     }

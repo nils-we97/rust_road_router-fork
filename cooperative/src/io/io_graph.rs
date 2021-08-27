@@ -1,21 +1,35 @@
+use std::cmp::max;
 use std::error::Error;
 use std::path::Path;
 
 use rust_road_router::datastr::graph::Weight;
+use rust_road_router::io::Load;
 
-use crate::graph::capacity_graph::{Capacity, CapacityGraph};
-use crate::io::io_raw_graph::load_capacity_graph_raw;
-use std::cmp::max;
+use crate::graph::capacity_graph::CapacityGraph;
+use crate::graph::{Capacity, Velocity};
 
-pub fn load_capacity_graph(graph_directory: &Path, traffic_function: fn(Weight, Capacity, Capacity) -> Weight) -> Result<CapacityGraph, Box<dyn Error>> {
-    let container = load_capacity_graph_raw(graph_directory)?;
-    let freeflow_time = container.travel_time.iter().map(|&time| max(time, 1)).collect::<Vec<u32>>();
+pub fn load_capacity_graph(
+    graph_directory: &Path,
+    num_buckets: u32,
+    speed_function: fn(Velocity, Capacity, Capacity) -> Weight,
+) -> Result<CapacityGraph, Box<dyn Error>> {
+    let first_out = Vec::load_from(graph_directory.join("first_out"))?;
+    let head = Vec::load_from(graph_directory.join("head"))?;
+    let geo_distance = Vec::load_from(graph_directory.join("geo_distance"))?;
+    let travel_time = Vec::load_from(graph_directory.join("travel_time"))?;
+    let capacity = Vec::load_from(graph_directory.join("capacity"))?;
+
+    // modify distance and travel_time to avoid divisions by zero
+    let distance = geo_distance.iter().map(|&dist| max(dist, 1)).collect::<Vec<u32>>();
+    let freeflow_time = travel_time.iter().map(|&time| max(time, 1)).collect::<Vec<u32>>();
 
     Ok(CapacityGraph::new(
-        container.first_out,
-        container.head,
+        num_buckets,
+        first_out,
+        head,
+        distance,
         freeflow_time,
-        container.capacity,
-        traffic_function,
+        capacity,
+        speed_function,
     ))
 }

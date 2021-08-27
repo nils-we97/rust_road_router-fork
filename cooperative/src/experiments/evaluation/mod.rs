@@ -1,6 +1,8 @@
+use rust_road_router::algo::TDQuery;
+use rust_road_router::datastr::graph::time_dependent::Timestamp;
+use rust_road_router::datastr::graph::Weight;
+
 use crate::dijkstra::server::CapacityServerOps;
-use rust_road_router::algo::GenQuery;
-use rust_road_router::datastr::graph::{NodeId, Weight};
 
 #[derive(Copy, Clone, Debug)]
 pub struct EvaluationResult<W> {
@@ -81,7 +83,7 @@ fn rel_deviation((algo, actual): (Weight, Weight)) -> f64 {
     abs_diff((algo, actual)) as f64 / algo as f64
 }
 
-pub fn evaluate_queries<G, P, Pot>(server: &mut impl CapacityServerOps<G, P, Pot>, queries: &[impl GenQuery<NodeId> + Clone]) -> EvaluationResult<Weight> {
+pub fn evaluate_queries<Pot>(server: &mut impl CapacityServerOps<Pot>, queries: &[TDQuery<Timestamp>]) -> EvaluationResult<Weight> {
     let distances_algo = queries
         .iter()
         .cloned()

@@ -1,9 +1,11 @@
-use crate::graph::capacity_graph::Capacity;
-use crate::io::load_coords;
-use rust_road_router::datastr::graph::{EdgeId, NodeId, Weight};
-use rust_road_router::io::{Load, Store};
 use std::error::Error;
 use std::path::Path;
+
+use rust_road_router::datastr::graph::{EdgeId, NodeId, Weight};
+use rust_road_router::io::{Load, Store};
+
+use crate::graph::Capacity;
+use crate::io::load_coords;
 
 pub struct RawCapacityGraphContainer {
     pub first_out: Vec<EdgeId>,

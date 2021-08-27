@@ -1,4 +1,4 @@
-use std::error::Error;
+/*use std::error::Error;
 use std::path::Path;
 
 use rust_road_router::io::{Load, Store};
@@ -36,4 +36,4 @@ pub fn convert_coord(coords: &Vec<i32>) -> Vec<f32> {
             f32::from_str(&float_str).unwrap()
         })
         .collect::<Vec<f32>>()
-}
+}*/

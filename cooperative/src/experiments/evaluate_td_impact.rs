@@ -1,18 +1,17 @@
-use rust_road_router::algo::GenQuery;
-use rust_road_router::datastr::graph::{NodeId, Weight};
+use rust_road_router::algo::TDQuery;
+use rust_road_router::datastr::graph::time_dependent::Timestamp;
+use rust_road_router::datastr::graph::Weight;
 
-use crate::dijkstra::model::TDPathResult;
+use crate::dijkstra::model::PathResult;
 use crate::dijkstra::server::CapacityServerOps;
 use crate::experiments::PathCompareResult;
-use crate::graph::td_capacity_graph::TDCapacityGraph;
 
 pub fn evaluate_time_dependent_impact<Pot>(
-    server: &mut impl CapacityServerOps<TDCapacityGraph, TDPathResult, Pot>,
-    td_server: &mut impl CapacityServerOps<TDCapacityGraph, TDPathResult, Pot>,
-    queries: &[impl GenQuery<NodeId> + Clone],
+    server: &mut impl CapacityServerOps<Pot>,
+    td_server: &mut impl CapacityServerOps<Pot>,
+    queries: &[TDQuery<Timestamp>],
 ) -> PathCompareResult {
-
-    //TODO auf größerem Graphen Routen vergleichen!!
+    //TODO compare paths on larger graphs!
 
     // calculate paths
     let paths = calculate_paths(server, queries);
@@ -31,26 +30,14 @@ pub fn evaluate_time_dependent_impact<Pot>(
     PathCompareResult::new(paths.len() as u32, distances, td_distances)
 }
 
-fn calculate_paths<Pot>(
-    server: &mut impl CapacityServerOps<TDCapacityGraph, TDPathResult, Pot>,
-    queries: &[impl GenQuery<NodeId> + Clone],
-) -> Vec<TDPathResult> {
+fn calculate_paths<Pot>(server: &mut impl CapacityServerOps<Pot>, queries: &[TDQuery<Timestamp>]) -> Vec<PathResult> {
     queries
         .iter()
         .cloned()
-        .filter_map(|query| server
-            .query(query, true)
-            .map(|result| result.path)
-        ).collect::<Vec<TDPathResult>>()
+        .filter_map(|query| server.query(query, true).map(|result| result.path))
+        .collect::<Vec<PathResult>>()
 }
 
-fn calculate_path_distances<Pot>(
-    compare_server: &mut impl CapacityServerOps<TDCapacityGraph, TDPathResult, Pot>,
-    paths: &Vec<TDPathResult>
-) -> Weight {
-
-    paths
-        .iter()
-        .map(|path| compare_server.path_distance(path))
-        .sum()
+fn calculate_path_distances<Pot>(compare_server: &mut impl CapacityServerOps<Pot>, paths: &Vec<PathResult>) -> Weight {
+    paths.iter().map(|path| compare_server.path_distance(path)).sum()
 }

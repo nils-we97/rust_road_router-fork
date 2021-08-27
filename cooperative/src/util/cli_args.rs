@@ -1,9 +1,7 @@
-use std::env::Args;
 use std::error::Error;
 use std::str::FromStr;
 
 use rust_road_router::cli::CliErr;
-use std::borrow::Borrow;
 
 #[derive(Debug, Clone)]
 pub enum QueryType {
@@ -30,15 +28,12 @@ impl FromStr for QueryType {
             "POPULATION_UNIFORM_CONSTANT_DEPARTURE" => Ok(QueryType::PopulationUniformConstantDep),
             "POPULATION_GEOMETRIC" => Ok(QueryType::PopulationGeometric),
             "POPULATION_GEOMETRIC_CONSTANT_DEPARTURE" => Ok(QueryType::PopulationGeometricConstantDep),*/
-            _ => Err(CliErr("Unknown Query Type!"))
+            _ => Err(CliErr("Unknown Query Type!")),
         }
     }
 }
 
-pub fn parse_arg_required<T: FromStr>(
-    args: &mut impl Iterator<Item=String>,
-    field_name: & str
-) -> Result<T, Box<dyn Error>> {
+pub fn parse_arg_required<T: FromStr>(args: &mut impl Iterator<Item = String>, field_name: &str) -> Result<T, Box<dyn Error>> {
     let next = args.next();
 
     if next.is_some() {
@@ -55,6 +50,6 @@ pub fn parse_arg_required<T: FromStr>(
     }
 }
 
-pub fn parse_arg_optional<T: FromStr + Clone>(args: &mut impl Iterator<Item=String>, default: T) -> T {
+pub fn parse_arg_optional<T: FromStr + Clone>(args: &mut impl Iterator<Item = String>, default: T) -> T {
     args.next().map(|s| T::from_str(&s).unwrap_or(default.clone())).unwrap_or(default)
 }

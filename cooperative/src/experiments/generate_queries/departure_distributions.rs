@@ -2,7 +2,7 @@ use rand::Rng;
 
 use rust_road_router::datastr::graph::time_dependent::Timestamp;
 
-use crate::graph::td_capacity_graph::MAX_BUCKETS;
+use crate::graph::MAX_BUCKETS;
 
 pub trait DepartureDistribution {
     fn new() -> Self;

@@ -1,4 +1,4 @@
-use crate::graph::conversion::to_velocity;
+/*use crate::graph::conversion::to_velocity;
 use crate::graph::ModifiableWeight;
 use conversion::speed_profile_to_tt_profile;
 use rust_road_router::datastr::graph::time_dependent::{PiecewiseLinearFunction, Timestamp};
@@ -327,4 +327,4 @@ impl LinkIterable<Link> for TDCapacityGraph {
             .into_iter()
             .map(move |idx| Link { node: self.head[idx], weight: self.lowerbound_time[idx] })
     }
-}
+}*/
