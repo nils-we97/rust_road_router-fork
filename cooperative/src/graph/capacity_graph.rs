@@ -5,6 +5,7 @@ use rust_road_router::datastr::graph::time_dependent::{PiecewiseLinearFunction, 
 use rust_road_router::datastr::graph::{EdgeId, EdgeIdGraph, EdgeIdT, EdgeRandomAccessGraph, Graph, Link, LinkIterable, NodeId, NodeIdT, Weight};
 
 use crate::graph::{Capacity, ModifiableWeight, Velocity, MAX_BUCKETS};
+use std::panic;
 
 /// Structure of a time-dependent graph with capacity buckets for each edge
 /// After each query, the capacities of all edges on the shortest path get modified

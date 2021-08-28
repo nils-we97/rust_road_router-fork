@@ -43,6 +43,10 @@ impl<Pot: TDPotential> CapacityServer<Pot> {
     pub fn decompose(self) -> CapacityGraph {
         self.graph
     }
+
+    pub fn borrow_graph(&self) -> &CapacityGraph {
+        &self.graph
+    }
 }
 
 pub trait CapacityServerOps<Pot = ZeroPotential> {
