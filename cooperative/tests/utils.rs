@@ -63,6 +63,8 @@ fn build_dummy_graph() {
     ];
 
     let graph = create_graph(1, edges);
-
     dbg!(&graph);
+
+    assert_eq!(graph.first_out(), &[0, 1, 2, 3]);
+    assert_eq!(graph.head(), &[1, 2, 3]);
 }
