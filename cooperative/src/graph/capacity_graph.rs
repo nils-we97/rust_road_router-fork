@@ -261,6 +261,12 @@ impl ModifiableWeight for CapacityGraph {
                             // case 1: speed bucket already exists -> update
                             speed_idx = speed_pos.unwrap();
                             speed[speed_idx] = (ts_rounded, (self.speed_function)(self.freeflow_speed[edge_id], self.max_capacity[edge_id], 1));
+
+                            // if the change occurs at midnight, then also update the sentinel element
+                            if speed_idx == 0 {
+                                let last_idx = speed.len() - 1;
+                                speed[last_idx].1 = speed[0].1;
+                            }
                         } else {
                             // case 2: speed bucket did not exist yet -> insert
                             speed_idx = speed_pos.unwrap_err();

@@ -185,6 +185,10 @@ impl<Pot: TDPotential> CapacityServerOps for CapacityServer<Pot> {
             edge_path.push(next_edge.0);
         }
 
+        // reverse paths
+        node_path.reverse();
+        edge_path.reverse();
+
         // determine timestamps of departures at each vertex
         let mut departure = Vec::with_capacity(node_path.len());
         let mut current_time = query.initial_state();
