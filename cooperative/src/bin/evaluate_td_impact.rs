@@ -1,6 +1,5 @@
 use std::env;
 use std::error::Error;
-use std::str::FromStr;
 
 use cooperative::dijkstra::model::PathResult;
 use cooperative::dijkstra::potentials::cch_potential_init::init_cch_potential;
@@ -12,7 +11,6 @@ use cooperative::io::io_graph::load_capacity_graph;
 use cooperative::io::io_node_order::load_node_order;
 use cooperative::util::cli_args::{parse_arg_optional, parse_arg_required};
 use rust_road_router::algo::TDQuery;
-use rust_road_router::cli::CliErr;
 use rust_road_router::datastr::graph::time_dependent::Timestamp;
 use rust_road_router::report::measure;
 use std::path::Path;

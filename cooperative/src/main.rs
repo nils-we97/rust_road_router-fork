@@ -2,10 +2,9 @@ use std::env;
 use std::error::Error;
 use std::path::Path;
 
-use cooperative::dijkstra::potentials::td_backward_profile_potential::TDBackwardProfilePotential;
 use cooperative::dijkstra::server::{CapacityServer, CapacityServerOps};
-use cooperative::experiments::generate_queries::departure_distributions::{DepartureDistribution, UniformDeparture};
-use cooperative::experiments::generate_queries::random_uniform::generate_random_uniform_td_queries;
+use cooperative::experiments::queries::departure_distributions::{DepartureDistribution, UniformDeparture};
+use cooperative::experiments::queries::random_uniform::generate_random_uniform_queries;
 use cooperative::graph::speed_functions::bpr_speed_function;
 use cooperative::io::io_graph::load_capacity_graph;
 use cooperative::io::io_node_order::load_node_order;
@@ -38,7 +37,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let mut server = CapacityServer::new_with_potential(graph, potential);
 
-    let queries = generate_random_uniform_td_queries(num_nodes as u32, 1000, UniformDeparture::new());
+    let queries = generate_random_uniform_queries(num_nodes as u32, 1000, UniformDeparture::new());
 
     let (_, time) = measure(|| {
         queries.iter().for_each(|query| {

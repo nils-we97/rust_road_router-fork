@@ -9,6 +9,7 @@ use std::panic;
 
 /// Structure of a time-dependent graph with capacity buckets for each edge
 /// After each query, the capacities of all edges on the shortest path get modified
+#[derive(Debug)]
 pub struct CapacityGraph {
     num_buckets: u32,
 
