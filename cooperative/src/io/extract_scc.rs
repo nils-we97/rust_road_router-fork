@@ -6,7 +6,7 @@ use rust_road_router::datastr::rank_select_map::{BitVec, RankSelectMap};
 use rust_road_router::io::{Load, Store};
 
 use crate::graph::Capacity;
-use crate::io::load_coords;
+use crate::io::io_coordinates::load_coords;
 
 /// Extract the largest strongly connected component of a given Graph.
 /// This preprocessing step avoids invalid (s,t)-queries where t is not reachable from s.

@@ -6,9 +6,9 @@ use cooperative::dijkstra::potentials::td_backward_profile_potential::TDBackward
 use cooperative::dijkstra::server::{CapacityServer, CapacityServerOps};
 use cooperative::experiments::generate_queries::departure_distributions::{DepartureDistribution, UniformDeparture};
 use cooperative::experiments::generate_queries::random_uniform::generate_random_uniform_td_queries;
+use cooperative::graph::speed_functions::bpr_speed_function;
 use cooperative::io::io_graph::load_capacity_graph;
 use cooperative::io::io_node_order::load_node_order;
-use cooperative::io::load_coords;
 use rust_road_router::algo::ch_potentials::CCHPotData;
 use rust_road_router::algo::customizable_contraction_hierarchy::CCH;
 use rust_road_router::cli::CliErr;
