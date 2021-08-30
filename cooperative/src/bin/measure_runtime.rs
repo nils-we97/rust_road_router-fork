@@ -10,6 +10,7 @@ use cooperative::io::io_graph::load_capacity_graph;
 use cooperative::io::io_node_order::load_node_order;
 use cooperative::util::cli_args::{parse_arg_optional, parse_arg_required};
 use rust_road_router::report::measure;
+use std::ops::Add;
 
 /// Compare runtimes of different speedup-techniques on the same graph with the same queries
 ///
@@ -32,15 +33,22 @@ fn main() -> Result<(), Box<dyn Error>> {
     // 1. speedup technique: cch potentials
     let mut server = CapacityServer::new_with_potential(graph, cch_pot_data.forward_potential());
 
-    let (_, time) = measure(|| {
+    let mut time_distances = time::Duration::zero();
+    let mut time_updates = time::Duration::zero();
+
+    let (_, time_total) = measure(|| {
         queries.iter().for_each(|query| {
-            server.query(*query, true);
+            let (time_distance, time_update, _) = server.query_measured(*query, true);
+            time_distances = time_distances.add(time_distance);
+            time_updates = time_updates.add(time_update);
         })
     });
     println!(
-        "CCH-Pot: {} queries took {} ms",
+        "CCH-Pot ({} queries): Total time: {} ms, queries: {} ms, updates: {} ms",
         num_queries,
-        time.to_std().unwrap().as_nanos() as f64 / 1_000_000.0
+        time_total.to_std().unwrap().as_nanos() as f64 / 1_000_000.0,
+        time_distances.to_std().unwrap().as_nanos() as f64 / 1_000_000.0,
+        time_updates.to_std().unwrap().as_nanos() as f64 / 1_000_000.0,
     );
 
     // TODO more speedup techniques

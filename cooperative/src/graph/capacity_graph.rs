@@ -250,7 +250,7 @@ impl ModifiableWeight for CapacityGraph {
     }
 }
 
-/// trait needed for .. TODO
+/// trait needed for `EdgeRandomAccessGraph` trait below
 impl EdgeIdGraph for CapacityGraph {
     #[rustfmt::skip]
     type IdxIter<'a> where Self: 'a = impl Iterator<Item=EdgeIdT> + 'a;
@@ -274,7 +274,7 @@ impl EdgeIdGraph for CapacityGraph {
     }
 }
 
-/// trait needed for .. TODO
+/// trait needed for CCH potentials
 impl EdgeRandomAccessGraph<Link> for CapacityGraph {
     #[inline(always)]
     fn link(&self, edge_id: u32) -> Link {
@@ -286,7 +286,7 @@ impl EdgeRandomAccessGraph<Link> for CapacityGraph {
     }
 }
 
-/// trait needed for .. TODO
+/// trait needed for CCH potentials
 impl LinkIterable<NodeIdT> for CapacityGraph {
     type Iter<'a> = impl Iterator<Item = NodeIdT> + 'a;
     //type Iter<'a> = std::iter::Cloned<std::iter::Map<std::slice::Iter<'a, NodeId>, fn(&NodeId) -> NodeIdT>>;
@@ -297,7 +297,7 @@ impl LinkIterable<NodeIdT> for CapacityGraph {
     }
 }
 
-/// trait needed for .. TODO
+/// trait needed for BackwardProfilePotential (creating reversed graph)
 impl LinkIterable<(NodeIdT, EdgeIdT)> for CapacityGraph {
     type Iter<'a> = impl Iterator<Item = (NodeIdT, EdgeIdT)> + 'a;
 
@@ -313,7 +313,7 @@ impl LinkIterable<(NodeIdT, EdgeIdT)> for CapacityGraph {
     }
 }
 
-/// trait needed for .. TODO
+/// trait needed for CCH potentials
 impl LinkIterable<Link> for CapacityGraph {
     #[allow(clippy::type_complexity)]
     type Iter<'a> = impl Iterator<Item = Link> + 'a;

@@ -49,31 +49,46 @@ impl<Pot: TDPotential> CapacityServer<Pot> {
     }
 }
 
-pub trait CapacityServerOps<Pot = ZeroPotential> {
+pub trait CapacityServerOps {
     fn query(&mut self, query: TDQuery<Timestamp>, update: bool) -> Option<CapacityQueryResult>;
+    fn query_measured(&mut self, query: TDQuery<Timestamp>, update: bool) -> (time::Duration, time::Duration, Option<CapacityQueryResult>);
     fn update(&mut self, path: &PathResult);
     fn distance(&mut self, query: TDQuery<Timestamp>) -> Option<Weight>;
     fn path(&self, query: TDQuery<Timestamp>) -> PathResult;
     fn path_distance(&self, path: &PathResult) -> Weight;
 }
 
-impl<Pot: TDPotential> CapacityServerOps<Pot> for CapacityServer<Pot> {
+impl<Pot: TDPotential> CapacityServerOps for CapacityServer<Pot> {
     fn query(&mut self, query: TDQuery<Timestamp>, update: bool) -> Option<CapacityQueryResult> {
         let distance = self.distance(query.clone());
-        //let (distance, time) = measure(|| self.distance(query));
-        //println!("//Query took {} ms", time.to_std().unwrap().as_nanos() as f64 / 1_000_000.0);
 
         if distance.is_some() {
             let path = self.path(query);
+            debug_assert_eq!(*path.departure.last().unwrap() - *path.departure.first().unwrap(), distance.unwrap());
             if update {
                 self.update(&path);
-                //let (_, time) = measure(|| self.update(&path));
-                //println!("//Update took {} ms", time.to_std().unwrap().as_nanos() as f64 / 1_000_000.0);
             }
             return Some(CapacityQueryResult::new(distance.unwrap(), path));
         }
 
         return None;
+    }
+
+    fn query_measured(&mut self, query: TDQuery<u32>, update: bool) -> (time::Duration, time::Duration, Option<CapacityQueryResult>) {
+        let (distance, time_distance) = measure(|| self.distance(query.clone()));
+
+        if distance.is_some() {
+            let path = self.path(query);
+
+            if update {
+                let (_, time_update) = measure(|| self.update(&path));
+                (time_distance, time_update, Some(CapacityQueryResult::new(distance.unwrap(), path)))
+            } else {
+                (time_distance, time::Duration::zero(), Some(CapacityQueryResult::new(distance.unwrap(), path)))
+            }
+        } else {
+            (time_distance, time::Duration::zero(), None)
+        }
     }
 
     fn update(&mut self, path: &PathResult) {
@@ -122,7 +137,8 @@ impl<Pot: TDPotential> CapacityServerOps<Pot> for CapacityServer<Pot> {
             num_queue_pops += 1;
 
             if node == to {
-                result = Some(self.dijkstra.distances[to as usize]);
+                // distance labels can be greater than `MAX_BUCKETS`, so simply taking the difference suffices (no modulo operations required!)
+                result = Some(self.dijkstra.distances[to as usize] - self.dijkstra.distances[from as usize]);
                 break;
             }
 
@@ -170,7 +186,6 @@ impl<Pot: TDPotential> CapacityServerOps<Pot> for CapacityServer<Pot> {
         }
 
         // determine timestamps of departures at each vertex
-        // TODO: verify distance == (departure[last] - departure[first])
         let mut departure = Vec::with_capacity(node_path.len());
         let mut current_time = query.initial_state();
 

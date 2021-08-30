@@ -254,6 +254,7 @@ dependencies = [
  "rand 0.8.4",
  "rand_distr 0.4.1",
  "rust_road_router",
+ "time",
 ]
 
 [[package]]
