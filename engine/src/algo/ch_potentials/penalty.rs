@@ -20,6 +20,7 @@ pub struct Penalty<P> {
     tail: Vec<NodeId>,
     times_penalized: Vec<u8>,
     nodes_to_reset: Vec<NodeId>,
+    reverse_dijkstra_data: DijkstraData<Weight>,
 }
 
 impl<P: Potential + Send + Clone> Penalty<P> {
@@ -71,6 +72,7 @@ impl<P: Potential + Send + Clone> Penalty<P> {
             times_penalized: vec![0; n],
             nodes_to_reset: Vec::new(),
             tail,
+            reverse_dijkstra_data: DijkstraData::new(n),
         }
     }
 
@@ -85,11 +87,11 @@ impl<P: Potential + Send + Clone> Penalty<P> {
             let base_dist = result.distance();
             report!("base_dist", base_dist);
 
-            let max_orig_dist = base_dist * 25 / 20;
+            let max_orig_dist = (base_dist as f64 * 1.25) as Weight;
             let rejoin_penalty = base_dist / 100;
 
-            let max_penalized_dist = max_orig_dist * 25 / 20 + 2 * rejoin_penalty;
-            let max_num_penalizations = 3;
+            let max_penalized_dist = (base_dist as f64 * 1.25 * 1.1) as Weight + 2 * rejoin_penalty;
+            let max_num_penalizations = 5;
 
             let mut path = result.node_path();
             let mut path_edges = result.edge_path();
@@ -117,7 +119,7 @@ impl<P: Potential + Send + Clone> Penalty<P> {
                         || self.times_penalized[alternative_graph_dijkstra.graph().graph.graph.head()[edge as usize] as usize] < max_num_penalizations
                     {
                         let weight = shortest_path_penalized.graph().graph.weight()[edge as usize];
-                        shortest_path_penalized.set_edge_weight(edge, weight * 25 / 20);
+                        shortest_path_penalized.set_edge_weight(edge, weight * 11 / 10);
                     }
                 }
                 let dists: Vec<_> = std::iter::once(0)
@@ -132,7 +134,10 @@ impl<P: Potential + Send + Clone> Penalty<P> {
                         for (NodeIdT(rev_head), Reversed(EdgeIdT(edge))) in self.reversed.link_iter(head) {
                             if rev_head != tail {
                                 let weight = shortest_path_penalized.graph().graph.weight()[edge as usize];
-                                shortest_path_penalized.set_edge_weight(edge, weight + rejoin_penalty * head_dist / total_penalized_dist);
+                                shortest_path_penalized.set_edge_weight(
+                                    edge,
+                                    weight + (rejoin_penalty as u64 * head_dist as u64 / *total_penalized_dist as u64) as Weight,
+                                );
                             }
                         }
                     }
@@ -143,7 +148,10 @@ impl<P: Potential + Send + Clone> Penalty<P> {
                         {
                             if edge_head != head {
                                 let weight = shortest_path_penalized.graph().graph.weight()[edge as usize];
-                                shortest_path_penalized.set_edge_weight(edge, weight + rejoin_penalty * tail_dist / total_penalized_dist);
+                                shortest_path_penalized.set_edge_weight(
+                                    edge,
+                                    weight + (rejoin_penalty as u64 * tail_dist as u64 / *total_penalized_dist as u64) as Weight,
+                                );
                             }
                         }
                     }
@@ -201,7 +209,7 @@ impl<P: Potential + Send + Clone> Penalty<P> {
                         .map(|&EdgeIdT(e)| alternative_graph_dijkstra.graph().graph.graph.weight()[e as usize])
                         .sum();
 
-                    if part_dist * 10 > base_dist {
+                    if part_dist * 20 > base_dist {
                         let _blocked = block_reporting();
                         if part_dist * 20
                             <= alternative_graph_dijkstra
@@ -214,16 +222,13 @@ impl<P: Potential + Send + Clone> Penalty<P> {
                                 .unwrap_or(INFINITY)
                         {
                             feasable = true;
-                            break;
+                            alternative_graph_dijkstra.graph_mut().add_edges(&new_part);
+                            s += 1;
                         }
                     }
                 }
 
                 report!("feasable", feasable);
-                if feasable {
-                    alternative_graph_dijkstra.graph_mut().add_edges(&path_edges);
-                    s += 1;
-                }
 
                 if path_orig_len > max_orig_dist || penalty_dist > max_penalized_dist || s >= 10 {
                     dbg!(path_orig_len > max_orig_dist);
@@ -237,7 +242,42 @@ impl<P: Potential + Send + Clone> Penalty<P> {
 
             report!("num_iterations", i);
 
-            // XBDV
+            let mut ops = DefaultOps();
+            let reversed_graph = ReversedAlternativeGraph {
+                graph: &self.reversed,
+                contained_edges: &alternative_graph_dijkstra.graph().contained_edges,
+                weights: &alternative_graph_dijkstra.graph().graph.graph.weight(),
+            };
+            let mut dijk_run = DijkstraRun::query(
+                &reversed_graph,
+                &mut self.reverse_dijkstra_data,
+                &mut ops,
+                Query {
+                    from: core_to,
+                    to: self.reversed.num_nodes() as NodeId,
+                },
+            );
+            while let Some(_) = dijk_run.next() {}
+            let forward_dists = alternative_graph_dijkstra.one_to_all(core_from);
+            let mut total_dist = 0.0;
+            let mut avg_dist = 0;
+            for e in forward_dists.graph().contained_edges.set_bits_iter() {
+                let weight = forward_dists.graph().graph.graph.weight()[e];
+                let head = forward_dists.graph().graph.graph.head()[e];
+                let tail = self.tail[e];
+                avg_dist += weight as u64;
+                total_dist += weight as f64 / (forward_dists.distance(tail) + weight + self.reverse_dijkstra_data.distances[head as usize]) as f64;
+            }
+            let avg_dist = avg_dist as f64 / (base_dist as f64 * total_dist);
+            let mut decision_edges = 0;
+            for &node in &self.nodes_to_reset {
+                decision_edges += LinkIterable::<NodeIdT>::link_iter(alternative_graph_dijkstra.graph(), node)
+                    .count()
+                    .saturating_sub(1);
+            }
+            report!("total_dist", total_dist);
+            report!("avg_dist", avg_dist);
+            report!("decision_edges", decision_edges);
 
             for node in self.nodes_to_reset.drain(..) {
                 self.times_penalized[node as usize] = 0;
@@ -331,5 +371,40 @@ impl<'a, L, I: Iterator<Item = L>> Iterator for FilteredLinkIter<'a, I> {
             }
         }
         None
+    }
+}
+
+struct ReversedAlternativeGraph<'a> {
+    graph: &'a ReversedGraphWithEdgeIds,
+    contained_edges: &'a FastClearBitVec,
+    weights: &'a [Weight],
+}
+
+impl Graph for ReversedAlternativeGraph<'_> {
+    fn num_nodes(&self) -> usize {
+        self.graph.num_nodes()
+    }
+    fn num_arcs(&self) -> usize {
+        self.graph.num_arcs()
+    }
+    fn degree(&self, node: NodeId) -> usize {
+        self.graph.degree(node)
+    }
+}
+
+impl LinkIterable<Link> for ReversedAlternativeGraph<'_> {
+    type Iter<'a> = impl Iterator<Item = Link> + 'a;
+
+    fn link_iter(&self, node: NodeId) -> Self::Iter<'_> {
+        self.graph.link_iter(node).filter_map(move |(NodeIdT(head), Reversed(EdgeIdT(edge_id)))| {
+            if self.contained_edges.get(edge_id as usize) {
+                Some(Link {
+                    node: head,
+                    weight: self.weights[edge_id as usize],
+                })
+            } else {
+                None
+            }
+        })
     }
 }

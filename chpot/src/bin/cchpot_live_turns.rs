@@ -1,14 +1,15 @@
 use rust_road_router::{
     algo::{
-        a_star::*,
         ch_potentials::{query::Server as TopoServer, *},
+        customizable_contraction_hierarchy::*,
         dijkstra::{
-            query::{dijkstra::Server as DijkServer, disconnected_targets::CatchDisconnectedTarget},
+            query::{dijkstra::Server as DijkServer, disconnected_targets::*},
             DefaultOps,
         },
     },
     cli::CliErr,
     datastr::graph::*,
+    datastr::node_order::*,
     experiments,
     io::*,
     report::*,
@@ -24,7 +25,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let arg = &env::args().skip(1).next().ok_or(CliErr("No graph directory arg given"))?;
     let path = Path::new(arg);
 
-    let graph = WeightedGraphReconstructor("travel_time").reconstruct_from(&path)?;
+    let graph = WeightedGraphReconstructor("live_travel_time").reconstruct_from(&path)?;
 
     let forbidden_turn_from_arc = Vec::<EdgeId>::load_from(path.join("forbidden_turn_from_arc"))?;
     let forbidden_turn_to_arc = Vec::<EdgeId>::load_from(path.join("forbidden_turn_to_arc"))?;
@@ -58,18 +59,29 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let mut algo_runs_ctxt = push_collection_context("algo_runs".to_string());
 
+    let cch = {
+        let _blocked = block_reporting();
+        let order = NodeOrder::from_node_order(Vec::load_from(path.join("cch_perm"))?);
+        CCH::fix_order_and_build(&graph, order)
+    };
+    let cch_pot_data = {
+        let _blocked = block_reporting();
+        CCHPotData::new(&cch, &graph)
+    };
+
     let core_ids = core_affinity::get_core_ids().unwrap();
     core_affinity::set_for_current(core_ids[0]);
 
-    let potential = TurnExpandedPotential::new(&graph, CHPotential::reconstruct_from(&path.join("lower_bound_ch"))?);
+    let potential = cch_pot_data.forward_potential();
 
     let virtual_topocore_ctxt = algo_runs_ctxt.push_collection_item();
     let topocore: TopoServer<OwnedGraph, _, _, true, true, true> = TopoServer::new(&exp_graph, potential, DefaultOps::default());
-    let mut topocore = CatchDisconnectedTarget::new(topocore, &exp_graph);
+    let mut topocore = CatchDisconnectedTarget::new(topocore, &graph);
     drop(virtual_topocore_ctxt);
 
+    let n = exp_graph.num_nodes();
     experiments::run_random_queries_with_callbacks(
-        exp_graph.num_nodes(),
+        n,
         &mut topocore,
         &mut rng,
         &mut algo_runs_ctxt,
@@ -96,7 +108,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut server = DijkServer::<_, DefaultOps>::new(exp_graph);
 
     experiments::run_random_queries(
-        graph.num_nodes(),
+        n,
         &mut server,
         &mut rng,
         &mut &mut algo_runs_ctxt,

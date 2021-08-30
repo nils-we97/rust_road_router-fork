@@ -1,11 +1,8 @@
 use rust_road_router::{
     algo::{
         a_star::*,
-        ch_potentials::{query::Server as TopoServer, *},
-        dijkstra::{
-            query::{dijkstra::Server as DijkServer, disconnected_targets::CatchDisconnectedTarget},
-            DefaultOps,
-        },
+        ch_potentials::{query::BiDirServer as BiDirTopo, *},
+        dijkstra::{query::bidirectional_dijkstra::Server as DijkServer, *},
     },
     cli::CliErr,
     datastr::graph::*,
@@ -61,16 +58,23 @@ fn main() -> Result<(), Box<dyn Error>> {
     let core_ids = core_affinity::get_core_ids().unwrap();
     core_affinity::set_for_current(core_ids[0]);
 
-    let potential = TurnExpandedPotential::new(&graph, CHPotential::reconstruct_from(&path.join("lower_bound_ch"))?);
+    let chpot_data = CHPotLoader::reconstruct_from(&path.join("lower_bound_ch"))?;
+    let pots = chpot_data.potentials();
+    let pots = (
+        TurnExpandedPotential::new(&graph, pots.0),
+        // since this is the reverse pot, head is the tail array of the reversed turn expanded graph
+        TurnExpandedPotential::new_with_tail(graph.head().to_vec(), pots.1),
+    );
 
     let virtual_topocore_ctxt = algo_runs_ctxt.push_collection_item();
-    let topocore: TopoServer<OwnedGraph, _, _, true, true, true> = TopoServer::new(&exp_graph, potential, DefaultOps::default());
-    let mut topocore = CatchDisconnectedTarget::new(topocore, &exp_graph);
+    let infinity_filtered = InfinityFilteringGraph(exp_graph);
+    let mut server = BiDirTopo::<_, AlternatingDirs>::new(&infinity_filtered, SymmetricBiDirPotential::<_, _>::new(pots.0, pots.1));
+    let InfinityFilteringGraph(exp_graph) = infinity_filtered;
     drop(virtual_topocore_ctxt);
 
     experiments::run_random_queries_with_callbacks(
-        exp_graph.num_nodes(),
-        &mut topocore,
+        graph.num_nodes(),
+        &mut server,
         &mut rng,
         &mut algo_runs_ctxt,
         experiments::chpot::num_queries(),
@@ -93,13 +97,13 @@ fn main() -> Result<(), Box<dyn Error>> {
         |_, _| None,
     );
 
-    let mut server = DijkServer::<_, DefaultOps>::new(exp_graph);
+    let mut server = DijkServer::<_, _>::new(exp_graph);
 
     experiments::run_random_queries(
         graph.num_nodes(),
         &mut server,
         &mut rng,
-        &mut &mut algo_runs_ctxt,
+        &mut algo_runs_ctxt,
         rust_road_router::experiments::num_dijkstra_queries(),
     );
 

@@ -1,6 +1,5 @@
 use super::*;
 
-use crate::datastr::rank_select_map::FastClearBitVec;
 use crate::{
     algo::{a_star::*, dijkstra::gen_topo_dijkstra::*, topocore::*},
     datastr::graph::time_dependent::*,
@@ -128,8 +127,6 @@ where
                 &mut core_search,
                 core_query,
                 potential,
-                &mut self.core_search.visited,
-                &self.core_search.reversed,
                 |n, d, p| inspect(n, &virtual_topocore.order, d, p),
                 INFINITY,
             )
@@ -363,9 +360,6 @@ where
     dijkstra_data: DijkstraData<Ops::Label, Ops::PredecessorLink>,
     ops: Ops,
     potential: P,
-
-    reversed: UnweightedOwnedGraph,
-    visited: FastClearBitVec,
 }
 
 impl<Graph, Ops: DijkstraOps<Graph, Label = Timestamp>, P: Potential, const SKIP_DEG_2: bool, const SKIP_DEG_3: bool>
@@ -375,28 +369,11 @@ where
 {
     pub fn new(graph: Graph, potential: P, ops: Ops) -> Self {
         let n = graph.num_nodes();
-        let reversed = UnweightedOwnedGraph::reversed(&graph);
         Self {
             graph,
             dijkstra_data: DijkstraData::new(n),
             ops,
             potential,
-
-            reversed,
-            visited: FastClearBitVec::new(n),
-        }
-    }
-
-    fn dfs(graph: &UnweightedOwnedGraph, node: NodeId, visited: &mut FastClearBitVec, in_core: &mut impl FnMut(NodeId) -> bool) {
-        if visited.get(node as usize) {
-            return;
-        }
-        visited.set(node as usize);
-        if in_core(node) {
-            return;
-        }
-        for NodeIdT(head) in LinkIterable::<NodeIdT>::link_iter(graph, node) {
-            Self::dfs(graph, head, visited, in_core);
         }
     }
 
@@ -416,15 +393,13 @@ where
     ) -> Option<Weight> {
         let mut dijkstra = TopoDijkstraRun::query(&self.graph, &mut self.dijkstra_data, &mut self.ops, query);
         self.potential.init(query.to());
-        Self::distance_manually_initialized(&mut dijkstra, query, &mut self.potential, &mut self.visited, &self.reversed, inspect, cap)
+        Self::distance_manually_initialized(&mut dijkstra, query, &mut self.potential, inspect, cap)
     }
 
     fn distance_manually_initialized(
         dijkstra: &mut TopoDijkstraRun<Graph, Ops, SKIP_DEG_2, SKIP_DEG_3>,
         query: impl GenQuery<Timestamp> + Copy,
         potential: &mut P,
-        visited: &mut FastClearBitVec,
-        reversed: &UnweightedOwnedGraph,
         mut inspect: impl FnMut(NodeId, &TopoDijkstraRun<Graph, Ops, SKIP_DEG_2, SKIP_DEG_3>, &mut P),
         cap: Weight,
     ) -> Option<Weight> {
@@ -433,22 +408,6 @@ where
 
         let departure = *dijkstra.tentative_distance(query.from());
         let target_pot = potential.potential(query.to())?;
-
-        if dijkstra.graph().num_nodes() > 1000 {
-            let mut counter = 0;
-            visited.clear();
-            Self::dfs(reversed, query.to(), visited, &mut |_| {
-                if counter < 100 {
-                    counter += 1;
-                    false
-                } else {
-                    true
-                }
-            });
-            if counter < 100 {
-                return None;
-            }
-        }
 
         while let Some(node) = dijkstra.next_step_with_potential(|node| potential.potential(node)) {
             num_queue_pops += 1;
@@ -508,6 +467,26 @@ where
             lng[query.to() as usize]
         );
         res
+    }
+
+    pub fn one_to_all(&mut self, from: NodeId) -> BiconnectedPathServerWrapper<Graph, Ops, P, Query, SKIP_DEG_2, SKIP_DEG_3> {
+        let mut dijkstra = TopoDijkstraRun::<Graph, Ops, SKIP_DEG_2, SKIP_DEG_3>::query(
+            &self.graph,
+            &mut self.dijkstra_data,
+            &mut self.ops,
+            Query {
+                from,
+                to: self.graph.num_nodes() as NodeId,
+            },
+        );
+        while let Some(_) = dijkstra.next_step() {}
+        BiconnectedPathServerWrapper(
+            self,
+            Query {
+                from,
+                to: self.graph.num_nodes() as NodeId,
+            },
+        )
     }
 
     fn node_path(&self, query: impl GenQuery<Timestamp>) -> Vec<NodeId> {
@@ -603,6 +582,10 @@ where
 
     pub fn lower_bound(&mut self, node: NodeId) -> Option<Weight> {
         self.0.potential.potential(node)
+    }
+
+    pub fn graph(&self) -> &G {
+        self.0.graph()
     }
 }
 
@@ -1025,6 +1008,7 @@ pub struct MultiThreadedBiDirSkipLowDegServer<P = BiDirZeroPot> {
     bw_potential: P,
     forward_to_backward_edge_ids: Vec<EdgeId>,
     backward_to_forward_edge_ids: Vec<EdgeId>,
+    thread_pool: rayon::ThreadPool,
 }
 
 impl<P: BiDirPotential + Clone + Send> MultiThreadedBiDirSkipLowDegServer<P> {
@@ -1061,6 +1045,7 @@ impl<P: BiDirPotential + Clone + Send> MultiThreadedBiDirSkipLowDegServer<P> {
             meeting_node: n as NodeId,
             forward_to_backward_edge_ids: forward_to_backward,
             backward_to_forward_edge_ids: backward_to_forward,
+            thread_pool: rayon::ThreadPoolBuilder::new().num_threads(2).build().unwrap(),
         }
     }
 
@@ -1115,7 +1100,7 @@ impl<P: BiDirPotential + Clone + Send> MultiThreadedBiDirSkipLowDegServer<P> {
         let fw_potential = &mut self.fw_potential;
         let bw_potential = &mut self.bw_potential;
 
-        let ((fw_meeting, fw_num_queue_pops), (bw_meeting, bw_num_queue_pops)) = rayon::join(
+        let ((fw_meeting, fw_num_queue_pops), (bw_meeting, bw_num_queue_pops)) = self.thread_pool.join(
             || {
                 let mut fw_potential = RefCell::new(fw_potential);
                 let mut num_queue_pops = 0;
