@@ -38,7 +38,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let (_, time_total) = measure(|| {
         queries.iter().for_each(|query| {
-            let (time_distance, time_update, _) = server.query_measured(*query, true);
+            let (time_distance, time_update, _, _) = server.query_measured(*query, true);
             time_distances = time_distances.add(time_distance);
             time_updates = time_updates.add(time_update);
         })

@@ -51,8 +51,8 @@ impl<Pot: TDPotential> CapacityServer<Pot> {
 
 pub trait CapacityServerOps {
     fn query(&mut self, query: TDQuery<Timestamp>, update: bool) -> Option<CapacityQueryResult>;
-    fn query_measured(&mut self, query: TDQuery<Timestamp>, update: bool) -> (time::Duration, time::Duration, Option<CapacityQueryResult>);
-    fn update(&mut self, path: &PathResult);
+    fn query_measured(&mut self, query: TDQuery<Timestamp>, update: bool) -> (time::Duration, time::Duration, time::Duration, Option<CapacityQueryResult>);
+    fn update(&mut self, path: &PathResult) -> (time::Duration, time::Duration);
     fn distance(&mut self, query: TDQuery<Timestamp>) -> Option<Weight>;
     fn path(&self, query: TDQuery<Timestamp>) -> PathResult;
     fn path_distance(&self, path: &PathResult) -> Weight;
@@ -74,24 +74,29 @@ impl<Pot: TDPotential> CapacityServerOps for CapacityServer<Pot> {
         return None;
     }
 
-    fn query_measured(&mut self, query: TDQuery<u32>, update: bool) -> (time::Duration, time::Duration, Option<CapacityQueryResult>) {
+    fn query_measured(&mut self, query: TDQuery<u32>, update: bool) -> (time::Duration, time::Duration, time::Duration, Option<CapacityQueryResult>) {
         let (distance, time_distance) = measure(|| self.distance(query.clone()));
 
         if distance.is_some() {
             let path = self.path(query);
 
             if update {
-                let (_, time_update) = measure(|| self.update(&path));
-                (time_distance, time_update, Some(CapacityQueryResult::new(distance.unwrap(), path)))
+                let (time_buckets, time_ttf) = self.update(&path);
+                (time_distance, time_buckets, time_ttf, Some(CapacityQueryResult::new(distance.unwrap(), path)))
             } else {
-                (time_distance, time::Duration::zero(), Some(CapacityQueryResult::new(distance.unwrap(), path)))
+                (
+                    time_distance,
+                    time::Duration::zero(),
+                    time::Duration::zero(),
+                    Some(CapacityQueryResult::new(distance.unwrap(), path)),
+                )
             }
         } else {
-            (time_distance, time::Duration::zero(), None)
+            (time_distance, time::Duration::zero(), time::Duration::zero(), None)
         }
     }
 
-    fn update(&mut self, path: &PathResult) {
+    fn update(&mut self, path: &PathResult) -> (time::Duration, time::Duration) {
         let edges_with_timestamps = path
             .edge_path
             .iter()
@@ -99,7 +104,7 @@ impl<Pot: TDPotential> CapacityServerOps for CapacityServer<Pot> {
             .map(|(&a, &b)| (a, b))
             .collect::<Vec<(EdgeId, Timestamp)>>();
 
-        self.graph.increase_weights(&edges_with_timestamps);
+        self.graph.increase_weights(&edges_with_timestamps)
     }
 
     fn distance(&mut self, query: TDQuery<Timestamp>) -> Option<Weight> {

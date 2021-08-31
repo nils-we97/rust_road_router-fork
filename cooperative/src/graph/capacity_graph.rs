@@ -1,4 +1,4 @@
-use std::ops::Range;
+use std::ops::{Add, Range};
 
 use conversion::speed_profile_to_tt_profile;
 use rust_road_router::datastr::graph::time_dependent::{PiecewiseLinearFunction, Timestamp};
@@ -6,6 +6,7 @@ use rust_road_router::datastr::graph::{EdgeId, EdgeIdGraph, EdgeIdT, EdgeRandomA
 
 use crate::graph::edge_buckets::{CapacityBuckets, SpeedBuckets};
 use crate::graph::{Capacity, ModifiableWeight, Velocity, MAX_BUCKETS};
+use rust_road_router::report::measure;
 use std::panic;
 
 /// Structure of a time-dependent graph with capacity buckets for each edge
@@ -161,13 +162,10 @@ impl CapacityGraph {
             }
         };
 
-        self.departure[edge_id] = Vec::with_capacity(profile.len());
-        self.travel_time[edge_id] = Vec::with_capacity(profile.len());
+        let (departure, travel_time): (Vec<Timestamp>, Vec<Weight>) = profile.iter().cloned().unzip();
 
-        profile.iter().cloned().for_each(|(timestamp, weight)| {
-            self.departure[edge_id].push(timestamp);
-            self.travel_time[edge_id].push(weight);
-        });
+        self.departure[edge_id] = departure;
+        self.travel_time[edge_id] = travel_time;
     }
 }
 
@@ -188,79 +186,64 @@ impl Graph for CapacityGraph {
 }
 
 impl ModifiableWeight for CapacityGraph {
-    fn increase_weights(&mut self, path: &[(EdgeId, Timestamp)]) {
+    fn increase_weights(&mut self, path: &[(EdgeId, Timestamp)]) -> (time::Duration, time::Duration) {
+        let mut time_buckets = time::Duration::zero();
+        let mut time_ttf = time::Duration::zero();
+
         path.iter().cloned().for_each(|(edge_id, timestamp)| {
             let edge_id = edge_id as usize;
-            let ts_rounded = self.round_timestamp(timestamp);
-            let next_ts = (ts_rounded + (MAX_BUCKETS / self.num_buckets)) % MAX_BUCKETS;
+            let (_, time_bucket_update) = measure(|| {
+                let ts_rounded = self.round_timestamp(timestamp);
+                let next_ts = (ts_rounded + (MAX_BUCKETS / self.num_buckets)) % MAX_BUCKETS;
 
-            match &mut self.used_capacity[edge_id] {
-                CapacityBuckets::Unused => {
-                    // edge hasn't been used yet
-                    self.used_capacity[edge_id] = CapacityBuckets::Used(vec![(ts_rounded, 1)]);
+                match &mut self.used_capacity[edge_id] {
+                    CapacityBuckets::Unused => {
+                        // edge hasn't been used yet
+                        self.used_capacity[edge_id] = CapacityBuckets::Used(vec![(ts_rounded, 1)]);
 
-                    // also update speeds
-                    let adjusted_speed = (self.speed_function)(self.freeflow_speed[edge_id], self.max_capacity[edge_id], 1);
+                        // also update speeds
+                        let adjusted_speed = (self.speed_function)(self.freeflow_speed[edge_id], self.max_capacity[edge_id], 1);
 
-                    // this is a bit nasty: depending on the daytime, several speed buckets have to be created
-                    if ts_rounded == 0 {
-                        // case 1: adjustment at midnight bucket => also consider last sentinel element!
-                        self.speed[edge_id] = SpeedBuckets::Many(vec![
-                            (0, adjusted_speed),
-                            (next_ts, self.freeflow_speed[edge_id]),
-                            (MAX_BUCKETS, adjusted_speed),
-                        ]);
-                    } else if next_ts == 0 {
-                        // case 2: next period would be midnight => don't create midnight bucket twice!
-                        self.speed[edge_id] = SpeedBuckets::Many(vec![
-                            (0, self.freeflow_speed[edge_id]),
-                            (ts_rounded, adjusted_speed),
-                            (MAX_BUCKETS, self.freeflow_speed[edge_id]),
-                        ]);
-                    } else {
-                        // case 3 (standard): edge gets passed nowhere close to midnight
-                        self.speed[edge_id] = SpeedBuckets::Many(vec![
-                            (0, self.freeflow_speed[edge_id]),
-                            (ts_rounded, adjusted_speed),
-                            (next_ts, self.freeflow_speed[edge_id]),
-                            (MAX_BUCKETS, self.freeflow_speed[edge_id]),
-                        ]);
-                    }
-                }
-                CapacityBuckets::Used(capacity) => {
-                    // edge has been used before => update speed buckets!
-                    let speed = self.speed[edge_id].many();
-
-                    // check whether the respective bucket already exists
-                    let position = capacity.binary_search_by_key(&ts_rounded, |&(ts, _)| ts);
-                    if position.is_ok() {
-                        // bucket exists => increase capacity by 1 vehicle and update speed
-                        // note: neighboring speed buckets can be left untouched because they already exist!
-                        let capacity_idx = position.unwrap();
-
-                        capacity[capacity_idx].1 += 1;
-
-                        let speed_idx = speed.binary_search_by_key(&ts_rounded, |&(ts, _)| ts).ok().unwrap();
-                        speed[speed_idx].1 = (self.speed_function)(self.freeflow_speed[edge_id], self.max_capacity[edge_id], capacity[capacity_idx].1);
-
-                        // if the change occurs at midnight, then also update the sentinel element
-                        if speed_idx == 0 {
-                            let last_idx = speed.len() - 1;
-                            speed[last_idx].1 = speed[0].1;
+                        // this is a bit nasty: depending on the daytime, several speed buckets have to be created
+                        if ts_rounded == 0 {
+                            // case 1: adjustment at midnight bucket => also consider last sentinel element!
+                            self.speed[edge_id] = SpeedBuckets::Many(vec![
+                                (0, adjusted_speed),
+                                (next_ts, self.freeflow_speed[edge_id]),
+                                (MAX_BUCKETS, adjusted_speed),
+                            ]);
+                        } else if next_ts == 0 {
+                            // case 2: next period would be midnight => don't create midnight bucket twice!
+                            self.speed[edge_id] = SpeedBuckets::Many(vec![
+                                (0, self.freeflow_speed[edge_id]),
+                                (ts_rounded, adjusted_speed),
+                                (MAX_BUCKETS, self.freeflow_speed[edge_id]),
+                            ]);
+                        } else {
+                            // case 3 (standard): edge gets passed nowhere close to midnight
+                            self.speed[edge_id] = SpeedBuckets::Many(vec![
+                                (0, self.freeflow_speed[edge_id]),
+                                (ts_rounded, adjusted_speed),
+                                (next_ts, self.freeflow_speed[edge_id]),
+                                (MAX_BUCKETS, self.freeflow_speed[edge_id]),
+                            ]);
                         }
-                    } else {
-                        // no traffic flow at `ts_rounded` yet => insert capacity
-                        let capacity_idx = position.unwrap_err();
-                        capacity.insert(capacity_idx, (ts_rounded, 1));
+                    }
+                    CapacityBuckets::Used(capacity) => {
+                        // edge has been used before => update speed buckets!
+                        let speed = self.speed[edge_id].many();
 
-                        // update speed - careful: bucket may already exist!
-                        let speed_pos = speed.binary_search_by_key(&ts_rounded, |&(ts, _)| ts);
-                        let speed_idx: usize;
+                        // check whether the respective bucket already exists
+                        let position = capacity.binary_search_by_key(&ts_rounded, |&(ts, _)| ts);
+                        if position.is_ok() {
+                            // bucket exists => increase capacity by 1 vehicle and update speed
+                            // note: neighboring speed buckets can be left untouched because they already exist!
+                            let capacity_idx = position.unwrap();
 
-                        if speed_pos.is_ok() {
-                            // case 1: speed bucket already exists -> update
-                            speed_idx = speed_pos.unwrap();
-                            speed[speed_idx] = (ts_rounded, (self.speed_function)(self.freeflow_speed[edge_id], self.max_capacity[edge_id], 1));
+                            capacity[capacity_idx].1 += 1;
+
+                            let speed_idx = speed.binary_search_by_key(&ts_rounded, |&(ts, _)| ts).ok().unwrap();
+                            speed[speed_idx].1 = (self.speed_function)(self.freeflow_speed[edge_id], self.max_capacity[edge_id], capacity[capacity_idx].1);
 
                             // if the change occurs at midnight, then also update the sentinel element
                             if speed_idx == 0 {
@@ -268,28 +251,53 @@ impl ModifiableWeight for CapacityGraph {
                                 speed[last_idx].1 = speed[0].1;
                             }
                         } else {
-                            // case 2: speed bucket did not exist yet -> insert
-                            speed_idx = speed_pos.unwrap_err();
-                            speed.insert(
-                                speed_idx,
-                                (ts_rounded, (self.speed_function)(self.freeflow_speed[edge_id], self.max_capacity[edge_id], 1)),
-                            );
-                        }
+                            // no traffic flow at `ts_rounded` yet => insert capacity
+                            let capacity_idx = position.unwrap_err();
+                            capacity.insert(capacity_idx, (ts_rounded, 1));
 
-                        // additionally, it is required to check whether the neighboring bucket already exists
-                        // if this bucket does not exist already, the TTF algorithm would falsely
-                        // assume that the speed is the same within the next bucket(s)
-                        if next_ts != 0 && speed[speed_idx + 1].0 != next_ts {
-                            // only update if the next existing bucket ts != `next_ts`
-                            speed.insert(speed_idx + 1, (next_ts, self.freeflow_speed[edge_id]));
+                            // update speed - careful: bucket may already exist!
+                            let speed_pos = speed.binary_search_by_key(&ts_rounded, |&(ts, _)| ts);
+                            let speed_idx: usize;
+
+                            if speed_pos.is_ok() {
+                                // case 1: speed bucket already exists -> update
+                                speed_idx = speed_pos.unwrap();
+                                speed[speed_idx] = (ts_rounded, (self.speed_function)(self.freeflow_speed[edge_id], self.max_capacity[edge_id], 1));
+
+                                // if the change occurs at midnight, then also update the sentinel element
+                                if speed_idx == 0 {
+                                    let last_idx = speed.len() - 1;
+                                    speed[last_idx].1 = speed[0].1;
+                                }
+                            } else {
+                                // case 2: speed bucket did not exist yet -> insert
+                                speed_idx = speed_pos.unwrap_err();
+                                speed.insert(
+                                    speed_idx,
+                                    (ts_rounded, (self.speed_function)(self.freeflow_speed[edge_id], self.max_capacity[edge_id], 1)),
+                                );
+                            }
+
+                            // additionally, it is required to check whether the neighboring bucket already exists
+                            // if this bucket does not exist already, the TTF algorithm would falsely
+                            // assume that the speed is the same within the next bucket(s)
+                            if next_ts != 0 && speed[speed_idx + 1].0 != next_ts {
+                                // only update if the next existing bucket ts != `next_ts`
+                                speed.insert(speed_idx + 1, (next_ts, self.freeflow_speed[edge_id]));
+                            }
                         }
                     }
                 }
-            }
+            });
 
             //TODO this must definitely be optimized (don't re-create the ttf in every step!)
-            self.update_travel_time_profile(edge_id);
+            let (_, time_ttf_update) = measure(|| self.update_travel_time_profile(edge_id));
+
+            time_buckets = time_buckets.add(time_bucket_update);
+            time_ttf = time_ttf.add(time_ttf_update);
         });
+
+        (time_buckets, time_ttf)
     }
 
     fn reset_weights(&mut self) {

@@ -9,6 +9,7 @@ use cooperative::util::cli_args::{parse_arg_optional, parse_arg_required};
 use rust_road_router::report::measure;
 use std::env;
 use std::error::Error;
+use std::ops::Add;
 use std::path::Path;
 
 const NUM_QUERIES_PER_RUN: u32 = 1000;
@@ -43,16 +44,24 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut server = CapacityServer::new_with_potential(graph, cch_pot_data.forward_potential());
 
     // initial run that serves as benchmark for future runs
-    let initial_runtime = get_chunked_runtime_in_millis(&mut server, query_type.clone());
-    println!("Initial Run (Benchmark): {} ms", initial_runtime);
+    let (initial_runtime, time_distances, time_buckets, time_ttf) = get_chunked_runtime_in_millis(&mut server, query_type.clone());
+    println!(
+        "Initial Run (Benchmark): {} ms (Queries: {}, Buckets: {}, TTF: {})",
+        initial_runtime, time_distances, time_buckets, time_ttf
+    );
 
     let mut runtime = initial_runtime;
     let mut num_runs = 1;
 
     while runtime < slowdown_factor * initial_runtime {
         num_runs += 1;
-        runtime = get_chunked_runtime_in_millis(&mut server, query_type.clone());
-        println!("Run {}: {} ms", num_runs, runtime);
+        let (total_time, time_distances, time_buckets, time_ttf) = get_chunked_runtime_in_millis(&mut server, query_type.clone());
+        println!(
+            "Run {}: {} ms (Queries: {}, Buckets: {}, TTF: {})",
+            num_runs, total_time, time_distances, time_buckets, time_ttf
+        );
+
+        runtime = total_time;
     }
 
     println!("Total #queries until slowdown of {}: {}", slowdown_factor, num_runs * NUM_QUERIES_PER_RUN);
@@ -60,17 +69,28 @@ fn main() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn get_chunked_runtime_in_millis<Pot: TDPotential>(server: &mut CapacityServer<Pot>, query_type: QueryType) -> f64 {
+fn get_chunked_runtime_in_millis<Pot: TDPotential>(server: &mut CapacityServer<Pot>, query_type: QueryType) -> (f64, f64, f64, f64) {
     let queries = generate_queries(server.borrow_graph(), query_type.clone(), NUM_QUERIES_PER_RUN);
 
-    // TODO: measure time inside server (to neglect re-allocation effects on runtime)
-    let (_, time) = measure(|| {
+    let mut time_distances = time::Duration::zero();
+    let mut time_buckets = time::Duration::zero();
+    let mut time_ttfs = time::Duration::zero();
+
+    let (_, total_time) = measure(|| {
         queries.iter().for_each(|&query| {
-            server.query(query, true);
+            let (time_distance, time_bucket, time_ttf, _) = server.query_measured(query, true);
+            time_distances = time_distances.add(time_distance);
+            time_buckets = time_buckets.add(time_bucket);
+            time_ttfs = time_ttfs.add(time_ttf);
         })
     });
 
-    time.to_std().unwrap().as_nanos() as f64 / 1_000_000.0
+    (
+        total_time.to_std().unwrap().as_nanos() as f64 / 1_000_000.0,
+        time_distances.to_std().unwrap().as_nanos() as f64 / 1_000_000.0,
+        time_buckets.to_std().unwrap().as_nanos() as f64 / 1_000_000.0,
+        time_ttfs.to_std().unwrap().as_nanos() as f64 / 1_000_000.0,
+    )
 }
 
 fn parse_args() -> Result<(String, u32, f64, QueryType), Box<dyn Error>> {
