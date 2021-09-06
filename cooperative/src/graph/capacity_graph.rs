@@ -1,11 +1,9 @@
-use std::ops::Range;
-
 use conversion::speed_profile_to_tt_profile;
 use rust_road_router::datastr::graph::time_dependent::{PiecewiseLinearFunction, Timestamp};
-use rust_road_router::datastr::graph::{EdgeId, EdgeIdGraph, EdgeIdT, EdgeRandomAccessGraph, Graph, Link, LinkIterable, NodeId, NodeIdT, Weight};
+use rust_road_router::datastr::graph::{EdgeId, Graph, NodeId, Weight};
 
 use crate::graph::edge_buckets::{CapacityBuckets, SpeedBuckets};
-use crate::graph::{Capacity, ModifiableWeight, Velocity, MAX_BUCKETS};
+use crate::graph::{Capacity, ExportableCapacity, ModifiableWeight, Velocity, MAX_BUCKETS};
 use rust_road_router::report::measure;
 use std::panic;
 
@@ -28,7 +26,7 @@ pub struct CapacityGraph {
     distance: Vec<Weight>,
     freeflow_speed: Vec<Weight>,
     max_capacity: Vec<Capacity>,
-    lowerbound_time: Vec<Weight>,
+    freeflow_time: Vec<Weight>,
 
     speed_function: fn(Velocity, Capacity, Capacity) -> Weight,
 }
@@ -60,34 +58,28 @@ impl CapacityGraph {
         // bucket containers with used capacities
         let used_capacity = vec![CapacityBuckets::Unused; max_capacity.len()];
 
-        // adjust capacity of each edge such that more buckets do not allow more traffic flow
+        // adjust capacity of each edge -> more buckets do not allow more traffic flow
         let capacity_adjustment_factor = (num_buckets as f64) / 24.0;
-
         let max_capacity = max_capacity
             .iter()
             .map(|&capacity| (capacity as f64 * capacity_adjustment_factor) as Capacity)
             .collect::<Vec<Capacity>>();
 
-        // calculate freeflow speed along each edge
+        // calculate freeflow speed along each edge (assuming distance in meters and time in seconds!)
         let freeflow_speed = freeflow_time
             .iter()
             .zip(distance.iter())
-            .map(|(&time, &dist)| convert_to_velocity(dist, time))
-            .collect::<Vec<Velocity>>();
-
-        // lowertime bounds, required for potential calculation
-        let lowerbound_time = freeflow_speed
-            .iter()
-            .zip(distance.iter())
-            .map(|(&velocity, &distance)| {
-                let speeds = [(0, velocity), (MAX_BUCKETS, velocity)];
-                let tt_profile = speed_profile_to_tt_profile(&speeds, distance);
-                tt_profile.first().map(|&(_, time)| time).unwrap_or(1)
+            .map(|(&time_s, &dist_m)| {
+                debug_assert!(dist_m > 0 && time_s > 0, "Invalid distance/time values! (must be > 0)");
+                (dist_m * 36) / (time_s * 10)
             })
-            .collect::<Vec<Weight>>();
+            .collect::<Vec<Velocity>>();
 
         // container for actual speed, initially equivalent to freeflow speed
         let speed = freeflow_speed.iter().map(|&speed| SpeedBuckets::One(speed)).collect::<Vec<SpeedBuckets>>();
+
+        // adjust initial freeflow time (assuming it is given in seconds and needed in milliseconds!)
+        let freeflow_time = freeflow_time.iter().map(|&val| val * 1000).collect::<Vec<Weight>>();
 
         let departure = vec![Vec::new(); head.len()];
         let travel_time = vec![Vec::new(); head.len()];
@@ -103,20 +95,13 @@ impl CapacityGraph {
             distance,
             freeflow_speed,
             max_capacity,
-            lowerbound_time,
+            freeflow_time,
             speed_function,
         };
 
         (0..ret.num_arcs()).into_iter().for_each(|i| ret.update_travel_time_profile(i));
 
         ret
-    }
-
-    /// Borrow an individual travel time function.
-    #[inline(always)]
-    pub fn travel_time_function(&self, edge_id: EdgeId) -> PiecewiseLinearFunction {
-        let edge_id = edge_id as usize;
-        PiecewiseLinearFunction::new(&self.departure[edge_id], &self.travel_time[edge_id])
     }
 
     /// Borrow a slice of `first_out`
@@ -144,6 +129,18 @@ impl CapacityGraph {
         &self.travel_time
     }
 
+    /// Borrow a slice of `freeflow_time`: useful as lowerbound time for potentials
+    pub fn freeflow_time(&self) -> &Vec<Weight> {
+        &self.freeflow_time
+    }
+
+    /// Borrow an individual travel time function.
+    #[inline(always)]
+    pub fn travel_time_function(&self, edge_id: EdgeId) -> PiecewiseLinearFunction {
+        let edge_id = edge_id as usize;
+        PiecewiseLinearFunction::new(&self.departure[edge_id], &self.travel_time[edge_id])
+    }
+
     /// round timestamp to nearest bucket interval
     #[inline(always)]
     fn round_timestamp(&self, timestamp: Timestamp) -> Timestamp {
@@ -163,22 +160,6 @@ impl CapacityGraph {
 
         self.departure[edge_id] = departure;
         self.travel_time[edge_id] = travel_time;
-    }
-}
-
-impl Graph for CapacityGraph {
-    fn num_nodes(&self) -> usize {
-        self.first_out.len() - 1
-    }
-
-    fn num_arcs(&self) -> usize {
-        self.head.len()
-    }
-
-    fn degree(&self, node: NodeId) -> usize {
-        let node = node as usize;
-        assert!(node < self.num_nodes());
-        (self.first_out[node + 1] - self.first_out[node]) as usize
     }
 }
 
@@ -300,105 +281,29 @@ impl ModifiableWeight for CapacityGraph {
     }
 }
 
-/// trait needed for `EdgeRandomAccessGraph` trait below
-impl EdgeIdGraph for CapacityGraph {
-    #[rustfmt::skip]
-    type IdxIter<'a> where Self: 'a = impl Iterator<Item=EdgeIdT> + 'a;
-
-    fn edge_indices(&self, from: NodeId, to: NodeId) -> Self::IdxIter<'_> {
-        self.neighbor_edge_indices(from)
-            .filter(move |&edge_id| self.head[edge_id as usize] == to)
-            .map(EdgeIdT)
-    }
-
-    #[inline(always)]
-    fn neighbor_edge_indices(&self, node: NodeId) -> Range<u32> {
-        let node = node as usize;
-        (self.first_out[node])..(self.first_out[node + 1])
-    }
-
-    #[inline(always)]
-    fn neighbor_edge_indices_usize(&self, node: NodeId) -> Range<usize> {
-        let node = node as usize;
-        (self.first_out[node] as usize)..(self.first_out[node + 1] as usize)
-    }
-}
-
-/// trait needed for CCH potentials
-impl EdgeRandomAccessGraph<Link> for CapacityGraph {
-    #[inline(always)]
-    fn link(&self, edge_id: u32) -> Link {
-        let edge_id = edge_id as usize;
-        Link {
-            node: self.head[edge_id],
-            weight: self.lowerbound_time[edge_id],
-        }
-    }
-}
-
-/// trait needed for CCH potentials
-impl LinkIterable<NodeIdT> for CapacityGraph {
-    type Iter<'a> = impl Iterator<Item = NodeIdT> + 'a;
-    //type Iter<'a> = std::iter::Cloned<std::iter::Map<std::slice::Iter<'a, NodeId>, fn(&NodeId) -> NodeIdT>>;
-
-    #[inline(always)]
-    fn link_iter(&self, node: NodeId) -> Self::Iter<'_> {
-        self.head[self.neighbor_edge_indices_usize(node)].iter().map(|&l| NodeIdT(l))
-    }
-}
-
-/// trait needed for BackwardProfilePotential (creating reversed graph)
-impl LinkIterable<(NodeIdT, EdgeIdT)> for CapacityGraph {
-    type Iter<'a> = impl Iterator<Item = (NodeIdT, EdgeIdT)> + 'a;
-
-    //type Iter<'a> = std::iter::Zip<std::iter::Cloned<std::slice::Iter<'a, NodeId>>, std::ops::Range<EdgeIdT>>;
-
-    #[inline(always)]
-    fn link_iter(&self, node: NodeId) -> Self::Iter<'_> {
-        self.head[self.neighbor_edge_indices_usize(node)]
+impl ExportableCapacity for CapacityGraph {
+    fn export_capacities(&self) -> Vec<Vec<(u32, u32)>> {
+        self.used_capacity
             .iter()
-            .cloned()
-            .zip(self.neighbor_edge_indices(node))
-            .map(|(node, edge)| (NodeIdT(node), EdgeIdT(edge)))
+            .map(|bucket| match bucket {
+                CapacityBuckets::Unused => Vec::new(),
+                CapacityBuckets::Used(inner) => inner.clone(),
+            })
+            .collect::<Vec<Vec<(Timestamp, Capacity)>>>()
     }
-}
 
-/// trait needed for CCH potentials
-impl LinkIterable<Link> for CapacityGraph {
-    #[allow(clippy::type_complexity)]
-    type Iter<'a> = impl Iterator<Item = Link> + 'a;
+    /// update: adjust capacity buckets, update speed buckets and TTFs
+    fn update_capacities(&mut self, capacities: Vec<Vec<(u32, u32)>>) {
+        assert_eq!(capacities.len(), self.num_arcs(), "Failed to provide a capacity bucket for each edge.");
 
-    #[inline(always)]
-    fn link_iter(&self, node: u32) -> Self::Iter<'_> {
-        self.neighbor_edge_indices_usize(node).into_iter().map(move |idx| Link {
-            node: self.head[idx],
-            weight: self.lowerbound_time[idx],
+        capacities.iter().enumerate().for_each(|(edge_id, capacity)| {
+            // case 1: bucket is empty
+            if capacity.is_empty() {
+                self.used_capacity[edge_id] = CapacityBuckets::Unused;
+            } else {
+                self.used_capacity[edge_id] = CapacityBuckets::Used(capacity.clone());
+            }
         })
+        // TODO update speeds too
     }
 }
-
-// additional helper functions
-/// determine the velocity in km_h for a given distance in meters and time in seconds
-fn convert_to_velocity(dist_m: Weight, time_s: Weight) -> Velocity {
-    assert!(dist_m < u32::MAX / 36, "integer overflow detected");
-    if dist_m == 0 || time_s == 0 {
-        1 // avoid division by zero exceptions. Travel time will be 0 anyway
-    } else {
-        (dist_m * 36) / (time_s * 10)
-    }
-}
-
-/*/// simplify the speed profile. if two neighboring speeds are the same, the later entry can be ignored
-fn simplify_speed_profile(speeds: &[(Timestamp, Velocity)]) -> Vec<(Timestamp, Velocity)> {
-    let mut ret = Vec::new();
-    ret.push(speeds[0]);
-
-    for i in 1..speeds.len() - 1 {
-        if *ret.last().unwrap() != speeds[i] {
-            ret.push(speeds[i]);
-        }
-    }
-
-    ret.push(*speeds.last().unwrap());
-    ret
-}*/
