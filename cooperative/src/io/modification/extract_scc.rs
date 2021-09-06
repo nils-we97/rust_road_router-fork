@@ -67,13 +67,13 @@ pub fn extract_largest_scc(graph_directory: &Path, out_directory: &Path) -> Resu
         }
     }
 
-    first_out.write_to(&out_directory.join("first_out"))?;
-    head.write_to(&out_directory.join("head"))?;
-    geo_distance.write_to(&out_directory.join("geo_distance"))?;
-    travel_time.write_to(&out_directory.join("travel_time"))?;
-    capacity.write_to(&out_directory.join("capacity"))?;
-    longitude.write_to(&out_directory.join("longitude"))?;
-    latitude.write_to(&out_directory.join("latitude"))?;
+    new_first_out.write_to(&out_directory.join("first_out"))?;
+    new_head.write_to(&out_directory.join("head"))?;
+    new_distance.write_to(&out_directory.join("geo_distance"))?;
+    new_time.write_to(&out_directory.join("travel_time"))?;
+    new_capacity.write_to(&out_directory.join("capacity"))?;
+    new_longitude.write_to(&out_directory.join("longitude"))?;
+    new_latitude.write_to(&out_directory.join("latitude"))?;
 
     Ok(())
 }
