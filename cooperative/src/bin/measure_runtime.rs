@@ -38,8 +38,8 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let (_, time_total) = measure(|| {
         queries.iter().for_each(|query| {
-            let (time_distance, time_update, _, _) = server.query_measured(*query, true);
-            time_distances = time_distances.add(time_distance);
+            let (time_potentials, time_queries, time_update, _, _) = server.query_measured(*query, true);
+            time_distances = time_distances.add(time_potentials).add(time_queries);
             time_updates = time_updates.add(time_update);
         })
     });

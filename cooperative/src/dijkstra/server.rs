@@ -2,7 +2,7 @@ use rust_road_router::algo::a_star::ZeroPotential;
 use rust_road_router::algo::dijkstra::{DijkstraData, DijkstraOps, Label, State};
 use rust_road_router::algo::{GenQuery, TDQuery};
 use rust_road_router::datastr::graph::time_dependent::Timestamp;
-use rust_road_router::datastr::graph::{Arc, EdgeId, EdgeIdT, Graph, LinkIterable, NodeId, NodeIdT, Weight};
+use rust_road_router::datastr::graph::{Arc, EdgeIdT, Graph, LinkIterable, NodeId, NodeIdT, Weight};
 use rust_road_router::datastr::index_heap::Indexing;
 use rust_road_router::report;
 use rust_road_router::report::*;
@@ -12,6 +12,7 @@ use crate::dijkstra::model::{CapacityQueryResult, PathResult};
 use crate::dijkstra::potentials::TDPotential;
 use crate::graph::capacity_graph::CapacityGraph;
 use crate::graph::ModifiableWeight;
+use std::ops::Add;
 
 pub struct CapacityServer<Pot = ZeroPotential> {
     graph: CapacityGraph,
@@ -40,8 +41,8 @@ impl<Pot: TDPotential> CapacityServer<Pot> {
         }
     }
 
-    pub fn decompose(self) -> CapacityGraph {
-        self.graph
+    pub fn decompose(self) -> (CapacityGraph, Pot) {
+        (self.graph, self.potential)
     }
 
     pub fn borrow_graph(&self) -> &CapacityGraph {
@@ -51,16 +52,20 @@ impl<Pot: TDPotential> CapacityServer<Pot> {
 
 pub trait CapacityServerOps {
     fn query(&mut self, query: TDQuery<Timestamp>, update: bool) -> Option<CapacityQueryResult>;
-    fn query_measured(&mut self, query: TDQuery<Timestamp>, update: bool) -> (time::Duration, time::Duration, time::Duration, Option<CapacityQueryResult>);
+    fn query_measured(
+        &mut self,
+        query: TDQuery<Timestamp>,
+        update: bool,
+    ) -> (time::Duration, time::Duration, time::Duration, time::Duration, Option<CapacityQueryResult>);
     fn update(&mut self, path: &PathResult) -> (time::Duration, time::Duration);
-    fn distance(&mut self, query: TDQuery<Timestamp>) -> Option<Weight>;
+    fn distance(&mut self, query: TDQuery<Timestamp>) -> (time::Duration, time::Duration, Option<Weight>);
     fn path(&self, query: TDQuery<Timestamp>) -> PathResult;
     fn path_distance(&self, path: &PathResult) -> Weight;
 }
 
 impl<Pot: TDPotential> CapacityServerOps for CapacityServer<Pot> {
     fn query(&mut self, query: TDQuery<Timestamp>, update: bool) -> Option<CapacityQueryResult> {
-        let distance = self.distance(query.clone());
+        let (_, _, distance) = self.distance(query.clone());
 
         if distance.is_some() {
             let path = self.path(query);
@@ -74,47 +79,51 @@ impl<Pot: TDPotential> CapacityServerOps for CapacityServer<Pot> {
         return None;
     }
 
-    fn query_measured(&mut self, query: TDQuery<u32>, update: bool) -> (time::Duration, time::Duration, time::Duration, Option<CapacityQueryResult>) {
-        let (distance, time_distance) = measure(|| self.distance(query.clone()));
+    fn query_measured(
+        &mut self,
+        query: TDQuery<u32>,
+        update: bool,
+    ) -> (time::Duration, time::Duration, time::Duration, time::Duration, Option<CapacityQueryResult>) {
+        let (time_potential, time_query, distance) = self.distance(query.clone());
 
         if distance.is_some() {
-            let path = self.path(query);
+            let (path, time_path) = measure(|| self.path(query));
 
             if update {
                 let (time_buckets, time_ttf) = self.update(&path);
-                (time_distance, time_buckets, time_ttf, Some(CapacityQueryResult::new(distance.unwrap(), path)))
+                (
+                    time_potential,
+                    time_query.add(time_path),
+                    time_buckets,
+                    time_ttf,
+                    Some(CapacityQueryResult::new(distance.unwrap(), path)),
+                )
             } else {
                 (
-                    time_distance,
+                    time_potential,
+                    time_query.add(time_path),
                     time::Duration::zero(),
                     time::Duration::zero(),
                     Some(CapacityQueryResult::new(distance.unwrap(), path)),
                 )
             }
         } else {
-            (time_distance, time::Duration::zero(), time::Duration::zero(), None)
+            (time_potential, time_query, time::Duration::zero(), time::Duration::zero(), None)
         }
     }
 
     fn update(&mut self, path: &PathResult) -> (time::Duration, time::Duration) {
-        let edges_with_timestamps = path
-            .edge_path
-            .iter()
-            .zip(path.departure.iter())
-            .map(|(&a, &b)| (a, b))
-            .collect::<Vec<(EdgeId, Timestamp)>>();
-
-        self.graph.increase_weights(&edges_with_timestamps)
+        //let (_, t) = measure(|| self.graph.increase_weights(&path.edge_path, &path.departure));
+        //(t, time::Duration::zero())
+        self.graph.increase_weights(&path.edge_path, &path.departure)
     }
 
-    fn distance(&mut self, query: TDQuery<Timestamp>) -> Option<Weight> {
+    fn distance(&mut self, query: TDQuery<Timestamp>) -> (time::Duration, time::Duration, Option<Weight>) {
         report!("algo", "TD Dijkstra with Capacities");
 
         let from = query.from();
         let init = query.initial_state();
         let to = query.to();
-
-        let mut ops = CapacityDijkstraOps::default();
 
         let mut result = None;
         let mut num_queue_pops = 0;
@@ -125,8 +134,11 @@ impl<Pot: TDPotential> CapacityServerOps for CapacityServer<Pot> {
         // for now, a slight modification of the generic dijkstra code should suffice
 
         // prepro: initialize potential
-        self.potential.init(to, 0);
+        let (_, time_potential) = measure(|| self.potential.init(to, 0));
         let pot = &mut self.potential;
+
+        let start = time::now();
+        let mut ops = CapacityDijkstraOps::default();
 
         // 1. reset data
         self.dijkstra.queue.clear();
@@ -171,11 +183,12 @@ impl<Pot: TDPotential> CapacityServerOps for CapacityServer<Pot> {
             }
         }
 
+        let time_dijkstra = time::now() - start;
         report!("num_queue_pops", num_queue_pops);
         report!("num_queue_pushs", num_queue_pushs);
         report!("num_relaxed_arcs", num_relaxed_arcs);
 
-        result
+        (time_potential, time_dijkstra, result)
     }
 
     fn path(&self, query: TDQuery<Timestamp>) -> PathResult {

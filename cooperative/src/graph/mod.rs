@@ -10,7 +10,7 @@ pub type Velocity = u32;
 pub const MAX_BUCKETS: u32 = 86400000; //max timestamp
 
 pub trait ModifiableWeight {
-    fn increase_weights(&mut self, path: &[(EdgeId, Timestamp)]) -> (time::Duration, time::Duration);
+    fn increase_weights(&mut self, edges: &[EdgeId], departure: &[Timestamp]) -> (time::Duration, time::Duration);
     //fn decrease_weights(&mut self, path: &[(EdgeId, Timestamp)]); TODO implement as soon as needed!
     fn reset_weights(&mut self);
 }

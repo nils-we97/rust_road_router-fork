@@ -2,13 +2,14 @@ use std::borrow::Borrow;
 
 use rust_road_router::algo::dijkstra::{DijkstraData, DijkstraOps, DijkstraRun, Label};
 use rust_road_router::algo::GenQuery;
-use rust_road_router::datastr::graph::floating_time_dependent::{FlWeight, PeriodicPiecewiseLinearFunction, TTFPoint, Timestamp, PLF};
+use rust_road_router::datastr::graph::floating_time_dependent::{FlWeight, PeriodicPiecewiseLinearFunction, TTFPoint, Timestamp};
 use rust_road_router::datastr::graph::{BuildReversed, Graph, NodeId, NodeIdT, Reversed, ReversedGraphWithEdgeIds, Weight};
 use rust_road_router::datastr::node_order::NodeOrder;
-use rust_road_router::report::measure;
 
 use crate::dijkstra::potentials::TDPotential;
 use crate::graph::capacity_graph::CapacityGraph;
+use crate::graph::MAX_BUCKETS;
+use crate::util::profile_search::find_profile_index;
 
 /// Basic implementation of a potential obtained by a backward profile search
 /// this version is not to be used, but provides a good starting point for further optimizations
@@ -53,7 +54,7 @@ impl TDBackwardProfilePotential {
                     .zip(node_travel_time.iter())
                     .map(|(&ts, &val)| TTFPoint {
                         at: Timestamp::new(convert_timestamp_u32_to_f64(ts)),
-                        val: FlWeight::new(val as f64),
+                        val: FlWeight::new((val as f64) / 1000.0),
                     })
                     .collect::<Vec<TTFPoint>>()
             })
@@ -71,23 +72,44 @@ impl TDPotential for TDBackwardProfilePotential {
         let mut run = DijkstraRun::query(self.backward_graph.borrow(), &mut self.dijkstra, &mut ops, query);
 
         // run through the whole graph
-        let (_, time) = measure(|| while let Some(_node) = run.next() {});
-        println!("Potential init took {} ms", time.to_std().unwrap().as_nanos() as f64 / 1_000_000.0);
+        while let Some(_node) = run.next() {}
+        //let (_, time) = measure(|| while let Some(_node) = run.next() {});
+        //println!("Potential init took {} ms", time.to_std().unwrap().as_nanos() as f64 / 1_000_000.0);
     }
 
     // this is the easy part: lookup at profile of currently inspected node
     fn potential(&mut self, node: u32, timestamp: u32) -> Option<u32> {
+        let timestamp = timestamp % MAX_BUCKETS;
+
         // get profile of current node
         let profile = &self.dijkstra.distances[node as usize];
 
-        // get timestamp
-        let ts = Timestamp::new(convert_timestamp_u32_to_f64(timestamp));
+        // easy case: profile only contains sentinels -> don't do expensive interpolation
+        if profile.len() == 2 {
+            Some((1000.0 * profile[0].val.0) as u32)
+        } else {
+            // get timestamp
+            let ts = Timestamp::new(convert_timestamp_u32_to_f64(timestamp));
 
-        // get travel time at `ts`
-        let travel_time = PeriodicPiecewiseLinearFunction::new(profile).evaluate(ts);
+            // get travel time at `ts`, do something more efficient than PLF evaluation
+            let intersect = find_profile_index(profile, ts.0);
+            if intersect.is_ok() {
+                Some((1000.0 * profile[intersect.unwrap()].val.0) as u32)
+            } else {
+                // interpolate between next two points
+                let intersect = intersect.unwrap_err();
+                assert!(intersect > 0 && intersect < profile.len());
 
-        // wrap as Option
-        Some(travel_time.0 as u32)
+                let interpolation_factor = (ts.0 - profile[intersect - 1].at.0) / (profile[intersect].at.0 - profile[intersect - 1].at.0);
+                assert!(
+                    interpolation_factor >= 0.0 && interpolation_factor <= 1.0,
+                    "{:#?}",
+                    (interpolation_factor, intersect, &profile)
+                );
+
+                Some((((1.0 - interpolation_factor) * profile[intersect - 1].val.0 + interpolation_factor * profile[intersect].val.0) * 1000.0) as u32)
+            }
+        }
     }
 }
 

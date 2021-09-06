@@ -44,10 +44,10 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut server = CapacityServer::new_with_potential(graph, cch_pot_data.forward_potential());
 
     // initial run that serves as benchmark for future runs
-    let (initial_runtime, time_distances, time_buckets, time_ttf) = get_chunked_runtime_in_millis(&mut server, query_type.clone());
+    let (initial_runtime, time_potentials, time_queries, time_buckets, time_ttf) = get_chunked_runtime_in_millis(&mut server, query_type.clone());
     println!(
-        "Initial Run (Benchmark): {} ms (Queries: {}, Buckets: {}, TTF: {})",
-        initial_runtime, time_distances, time_buckets, time_ttf
+        "Initial Run (Benchmark): {} ms (Potentials: {}, Queries: {}, Buckets: {}, TTF: {})",
+        initial_runtime, time_potentials, time_queries, time_buckets, time_ttf
     );
 
     let mut runtime = initial_runtime;
@@ -55,12 +55,11 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     while runtime < slowdown_factor * initial_runtime {
         num_runs += 1;
-        let (total_time, time_distances, time_buckets, time_ttf) = get_chunked_runtime_in_millis(&mut server, query_type.clone());
+        let (total_time, time_potentials, time_queries, time_buckets, time_ttf) = get_chunked_runtime_in_millis(&mut server, query_type.clone());
         println!(
-            "Run {}: {} ms (Queries: {}, Buckets: {}, TTF: {})",
-            num_runs, total_time, time_distances, time_buckets, time_ttf
+            "Run {}: {} ms (Potentials: {}, Queries: {}, Buckets: {}, TTF: {})",
+            num_runs, total_time, time_potentials, time_queries, time_buckets, time_ttf
         );
-
         runtime = total_time;
     }
 
@@ -69,17 +68,19 @@ fn main() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn get_chunked_runtime_in_millis<Pot: TDPotential>(server: &mut CapacityServer<Pot>, query_type: QueryType) -> (f64, f64, f64, f64) {
+fn get_chunked_runtime_in_millis<Pot: TDPotential>(server: &mut CapacityServer<Pot>, query_type: QueryType) -> (f64, f64, f64, f64, f64) {
     let queries = generate_queries(server.borrow_graph(), query_type.clone(), NUM_QUERIES_PER_RUN);
 
-    let mut time_distances = time::Duration::zero();
+    let mut time_potentials = time::Duration::zero();
+    let mut time_queries = time::Duration::zero();
     let mut time_buckets = time::Duration::zero();
     let mut time_ttfs = time::Duration::zero();
 
     let (_, total_time) = measure(|| {
         queries.iter().for_each(|&query| {
-            let (time_distance, time_bucket, time_ttf, _) = server.query_measured(query, true);
-            time_distances = time_distances.add(time_distance);
+            let (time_potential, time_query, time_bucket, time_ttf, _) = server.query_measured(query, true);
+            time_potentials = time_potentials.add(time_potential);
+            time_queries = time_queries.add(time_query);
             time_buckets = time_buckets.add(time_bucket);
             time_ttfs = time_ttfs.add(time_ttf);
         })
@@ -87,7 +88,8 @@ fn get_chunked_runtime_in_millis<Pot: TDPotential>(server: &mut CapacityServer<P
 
     (
         total_time.to_std().unwrap().as_nanos() as f64 / 1_000_000.0,
-        time_distances.to_std().unwrap().as_nanos() as f64 / 1_000_000.0,
+        time_potentials.to_std().unwrap().as_nanos() as f64 / 1_000_000.0,
+        time_queries.to_std().unwrap().as_nanos() as f64 / 1_000_000.0,
         time_buckets.to_std().unwrap().as_nanos() as f64 / 1_000_000.0,
         time_ttfs.to_std().unwrap().as_nanos() as f64 / 1_000_000.0,
     )

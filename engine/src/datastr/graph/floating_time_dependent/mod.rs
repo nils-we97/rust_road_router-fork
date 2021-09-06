@@ -210,7 +210,7 @@ mod time {
 
     /// `f64` wrapper for points in time for additional type safety
     #[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
-    pub struct Timestamp(f64);
+    pub struct Timestamp(pub f64);
 
     impl Timestamp {
         /// Sentinel value for infinity/never timestamps, chosen to match the regular `Weight`s `INFINITY`.
