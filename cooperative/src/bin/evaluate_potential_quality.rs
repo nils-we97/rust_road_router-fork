@@ -3,7 +3,7 @@ use cooperative::dijkstra::potentials::TDPotential;
 use cooperative::dijkstra::server::{CapacityServer, CapacityServerOps};
 use cooperative::experiments::queries::{generate_queries, QueryType};
 use cooperative::graph::speed_functions::bpr_speed_function;
-use cooperative::io::io_graph::load_capacity_graph;
+use cooperative::io::io_graph::{load_capacity_graph, store_capacity_buckets};
 use cooperative::io::io_node_order::load_node_order;
 use cooperative::util::cli_args::{parse_arg_optional, parse_arg_required};
 use rust_road_router::report::measure;
@@ -65,6 +65,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     println!("Total #queries until slowdown of {}: {}", slowdown_factor, num_runs * NUM_QUERIES_PER_RUN);
 
+    store_capacity_buckets(server.borrow_graph(), graph_directory)?;
     Ok(())
 }
 
