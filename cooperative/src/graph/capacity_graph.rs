@@ -168,27 +168,37 @@ impl ModifiableWeight for CapacityGraph {
         let start = time::now();
         edges.iter().zip(departure.iter()).for_each(|(&edge_id, &timestamp)| {
             let edge_id = edge_id as usize;
-            let ts_rounded = self.round_timestamp(timestamp);
-            let next_ts = (ts_rounded + (MAX_BUCKETS / self.num_buckets)) % MAX_BUCKETS;
 
-            // update capacity
-            self.used_capacity[edge_id].increment(ts_rounded);
+            if self.num_buckets == 1 {
+                // special case treatment: graph has only one capacity/speed bucket per edge
+                // in this case, some edge cases can be avoided, thus making the updates more efficient
+                let prev_capacity = self.used_capacity[edge_id].get(0).unwrap_or(0);
+                self.used_capacity[edge_id] = CapacityBuckets::Used(vec![(0, prev_capacity + 1)]);
 
-            // update velocity: get adjusted speed along segment, update only if it differs from freeflow
-            let updated_capacity = self.used_capacity[edge_id].get(ts_rounded);
-            debug_assert!(updated_capacity.is_some());
-            let adjusted_speed = (self.speed_function)(self.freeflow_speed[edge_id], self.max_capacity[edge_id], updated_capacity.unwrap());
+                let adjusted_speed = (self.speed_function)(self.freeflow_speed[edge_id], self.max_capacity[edge_id], prev_capacity + 1);
+                self.speed[edge_id] = SpeedBuckets::One(adjusted_speed);
+            } else {
+                let ts_rounded = self.round_timestamp(timestamp);
+                let next_ts = (ts_rounded + (MAX_BUCKETS / self.num_buckets)) % MAX_BUCKETS;
 
-            // optimization: only update if the adjusted speed differs from the freeflow speed!
-            // this reduces the number of TTF breakpoints significantly and thus improves the runtime significantly
-            if adjusted_speed != self.freeflow_speed[edge_id] {
-                self.speed[edge_id].update(ts_rounded, adjusted_speed, next_ts, self.freeflow_speed[edge_id]);
+                // update capacity
+                self.used_capacity[edge_id].increment(ts_rounded);
+
+                // update velocity: get adjusted speed along segment
+                let updated_capacity = self.used_capacity[edge_id].get(ts_rounded);
+                debug_assert!(updated_capacity.is_some());
+                let adjusted_speed = (self.speed_function)(self.freeflow_speed[edge_id], self.max_capacity[edge_id], updated_capacity.unwrap());
+
+                // optimization: only update if the adjusted speed differs from the freeflow speed!
+                // this reduces the number of TTF breakpoints significantly and thus improves the runtime significantly
+                if adjusted_speed != self.freeflow_speed[edge_id] {
+                    self.speed[edge_id].update(ts_rounded, adjusted_speed, next_ts, self.freeflow_speed[edge_id]);
+                }
             }
         });
         let time_buckets = time::now() - start;
 
         let (_, time_ttf) = measure(|| edges.iter().for_each(|&edge_id| self.update_travel_time_profile(edge_id as usize)));
-        //let (_, time_ttf_update) = measure(|| self.update_travel_time_profile(edge_id));
 
         (time_buckets, time_ttf)
     }
@@ -218,13 +228,78 @@ impl ExportableCapacity for CapacityGraph {
         assert_eq!(capacities.len(), self.num_arcs(), "Failed to provide a capacity bucket for each edge.");
 
         capacities.iter().enumerate().for_each(|(edge_id, capacity)| {
-            // case 1: bucket is empty
+            debug_assert!(
+                capacity.len() as u32 <= self.num_buckets,
+                "Invalid number of buckets detected ({}, max. allowed: {})",
+                capacity.len(),
+                self.num_buckets
+            );
+            debug_assert!((*capacity.last().unwrap_or(&(0, 0))).0 < MAX_BUCKETS, "Sentinel element must not be present!");
+
+            // update capacities and speeds
             if capacity.is_empty() {
                 self.used_capacity[edge_id] = CapacityBuckets::Unused;
+                self.speed[edge_id] = SpeedBuckets::One(self.freeflow_speed[edge_id]);
             } else {
                 self.used_capacity[edge_id] = CapacityBuckets::Used(capacity.clone());
+
+                // create speed profile, special case treatment for single-bucket graphs
+                if self.num_buckets == 1 {
+                    let velocity = (self.speed_function)(self.freeflow_speed[edge_id], self.max_capacity[edge_id], capacity[0].1);
+                    self.speed[edge_id] = SpeedBuckets::One(velocity);
+                } else {
+                    let step_ts = MAX_BUCKETS / self.num_buckets;
+                    let mut speed_profile = Vec::new();
+
+                    // initial breakpoint
+                    if capacity[0].0 == 0 {
+                        let adjusted_speed = (self.speed_function)(self.freeflow_speed[edge_id], self.max_capacity[edge_id], capacity[0].1);
+                        speed_profile.push((0, adjusted_speed));
+
+                        if adjusted_speed != self.freeflow_speed[edge_id] {
+                            speed_profile.push((step_ts, self.freeflow_speed[edge_id]));
+                        }
+                    } else {
+                        speed_profile.push((0, self.freeflow_speed[edge_id]));
+                    }
+
+                    // for all following points, just iterate over the remaining capacity items
+                    capacity[1..].iter().for_each(|&(bucket_ts, bucket_capacity)| {
+                        // only extend speed function if new speed differs from freeflow speed!
+                        // otherwise, this just blows up the travel time function
+                        let adjusted_speed = (self.speed_function)(self.freeflow_speed[edge_id], self.max_capacity[edge_id], bucket_capacity);
+                        if adjusted_speed != self.freeflow_speed[edge_id] {
+                            if (*speed_profile.last().unwrap()).0 == bucket_ts {
+                                // adjust last entry
+                                (*speed_profile.last_mut().unwrap()).1 = adjusted_speed;
+                            } else {
+                                // push new entry
+                                speed_profile.push((bucket_ts, adjusted_speed));
+                            }
+
+                            // add additional breakpoint at next bucket
+                            if bucket_ts + step_ts < MAX_BUCKETS {
+                                speed_profile.push((bucket_ts + step_ts, self.freeflow_speed[edge_id]));
+                            }
+                        }
+                    });
+
+                    // add sentinel element for last breakpoint
+                    speed_profile.push((MAX_BUCKETS, speed_profile[0].1));
+
+                    // update speed profile with as little space consumption if possible,
+                    // i.e. if the constructed function is equal to the constant freeflow speed,
+                    // then use the shortcut version of `One`
+                    self.speed[edge_id] = if speed_profile.len() == 2 && speed_profile[0].1 == self.freeflow_speed[edge_id] {
+                        SpeedBuckets::One(speed_profile[0].1)
+                    } else {
+                        SpeedBuckets::Many(speed_profile)
+                    };
+                }
             }
-        })
-        // TODO update speeds too
+
+            // update TTF
+            self.update_travel_time_profile(edge_id);
+        });
     }
 }
