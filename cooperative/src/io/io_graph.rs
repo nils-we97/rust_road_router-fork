@@ -77,7 +77,7 @@ pub fn load_used_capacity_graph(
 }
 
 /// Stores the current capacity buckets
-pub fn store_capacity_buckets(graph: &CapacityGraph, directory: &Path) -> Result<(), Box<dyn Error>> {
+pub fn store_capacity_buckets(graph: &CapacityGraph, num_buckets: u32, directory: &Path) -> Result<(), Box<dyn Error>> {
     let capacities = graph.export_capacities();
 
     // create a prefix-sum over the entries (similar to the `first_out` array)
@@ -89,7 +89,8 @@ pub fn store_capacity_buckets(graph: &CapacityGraph, directory: &Path) -> Result
 
     let (timestamps, capacities): (Vec<Timestamp>, Vec<Capacity>) = capacities.iter().flatten().cloned().unzip();
 
-    let output_dir = directory.join(time::get_time().sec.to_string());
+    let subfolder = format!("{}_{}", num_buckets, time::get_time().sec);
+    let output_dir = directory.join(subfolder);
     std::fs::create_dir(&output_dir)?;
 
     prefix_sum.write_to(&output_dir.join("prefix_sum"))?;

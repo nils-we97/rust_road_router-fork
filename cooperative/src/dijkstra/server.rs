@@ -134,7 +134,7 @@ impl<Pot: TDPotential> CapacityServerOps for CapacityServer<Pot> {
         // for now, a slight modification of the generic dijkstra code should suffice
 
         // prepro: initialize potential
-        let (_, time_potential) = measure(|| self.potential.init(to, 0));
+        let (_, time_potential) = measure(|| self.potential.init(from, to, query.departure));
         let pot = &mut self.potential;
 
         let start = time::now();

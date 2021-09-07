@@ -65,7 +65,7 @@ impl TDBackwardProfilePotential {
 impl TDPotential for TDBackwardProfilePotential {
     // this is the complicated (and time-intensive) part: calculate the whole profile from the target to all vertices
     // timestamp is not required in basic version as we're not using corridors
-    fn init(&mut self, target: NodeId, _timestamp: u32) {
+    fn init(&mut self, _source: NodeId, target: NodeId, _timestamp: u32) {
         //initialize backwards profile dijkstra
         let query = TDBackwardProfileQuery(target);
         let mut ops = TDBackwardProfilePotentialOps(&self.travel_time_profile);
@@ -157,8 +157,11 @@ impl<Profiles: AsRef<Vec<Vec<TTFPoint>>>> DijkstraOps<ReversedGraphWithEdgeIds> 
         //2. link (`prev_profile` and `label`)
         let link_result = prev_profile.link(&current_profile);
 
+        PeriodicPiecewiseLinearFunction::new(&link_result).to_vec()
+
         //3. apply douglas peuker approximation -> accelerates calculation by factor ~10
-        PeriodicPiecewiseLinearFunction::new(&link_result).approximate(&mut Vec::new()).to_vec()
+        // approximation does currently not work! TODO fix this
+        //PeriodicPiecewiseLinearFunction::new(&link_result).approximate(&mut Vec::new()).to_vec()
     }
 
     fn merge(&mut self, label: &mut Self::Label, linked: Self::LinkResult) -> bool {

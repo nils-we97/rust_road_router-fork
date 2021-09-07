@@ -6,12 +6,12 @@ pub mod cch_potential_init;
 pub mod td_backward_profile_potential;
 
 pub trait TDPotential {
-    fn init(&mut self, target: NodeId, timestamp: Timestamp);
+    fn init(&mut self, source: NodeId, target: NodeId, timestamp: Timestamp);
     fn potential(&mut self, node: NodeId, timestamp: Timestamp) -> Option<Weight>;
 }
 
 impl<T: Potential> TDPotential for T {
-    fn init(&mut self, target: u32, _timestamp: u32) {
+    fn init(&mut self, _source: u32, target: u32, _timestamp: u32) {
         self.init(target)
     }
 
