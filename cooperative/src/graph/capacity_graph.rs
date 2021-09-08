@@ -3,7 +3,7 @@ use rust_road_router::datastr::graph::time_dependent::{PiecewiseLinearFunction, 
 use rust_road_router::datastr::graph::{EdgeId, Graph, NodeId, Weight};
 
 use crate::graph::edge_buckets::{CapacityBuckets, SpeedBuckets};
-use crate::graph::{Capacity, ExportableCapacity, ModifiableWeight, Velocity, MAX_BUCKETS};
+use crate::graph::{travel_time, velocity, Capacity, ExportableCapacity, ModifiableWeight, Velocity, MAX_BUCKETS};
 use rust_road_router::report::measure;
 use std::panic;
 
@@ -69,10 +69,7 @@ impl CapacityGraph {
         let freeflow_speed = freeflow_time
             .iter()
             .zip(distance.iter())
-            .map(|(&time_s, &dist_m)| {
-                debug_assert!(dist_m > 0 && time_s > 0, "Invalid distance/time values! (must be > 0)");
-                (dist_m * 36) / (time_s * 10)
-            })
+            .map(|(&time_s, &len_m)| velocity(len_m, time_s))
             .collect::<Vec<Velocity>>();
 
         // container for actual speed, initially equivalent to freeflow speed
@@ -114,11 +111,6 @@ impl CapacityGraph {
         &self.head
     }
 
-    /// Borrow a slice of `weight` TODO
-    pub fn weight(&self, edge_id: EdgeId, departure: Timestamp) -> Weight {
-        self.travel_time_function(edge_id).eval(departure)
-    }
-
     /// Borrow a slice of `departure` TODO
     pub fn departure(&self) -> &Vec<Vec<Timestamp>> {
         &self.departure
@@ -149,17 +141,25 @@ impl CapacityGraph {
     }
 
     fn update_travel_time_profile(&mut self, edge_id: usize) {
-        // TODO improve performance
-        // profile contains all points + (max_ts, speed[0])
-        let profile = match &self.speed[edge_id] {
-            SpeedBuckets::One(speed) => speed_profile_to_tt_profile(&vec![(0, *speed), (MAX_BUCKETS, *speed)], self.distance[edge_id]),
-            SpeedBuckets::Many(speeds) => speed_profile_to_tt_profile(speeds, self.distance[edge_id]),
-        };
+        match &self.speed[edge_id] {
+            SpeedBuckets::One(speed) => {
+                // avoid expensive calculations for the easy case, TTF is trivial here :)
+                let travel_time = travel_time(*speed, self.distance[edge_id]);
+                debug_assert!(travel_time < MAX_BUCKETS, "travel time must not exceed 24 hours!");
 
-        let (departure, travel_time): (Vec<Timestamp>, Vec<Weight>) = profile.iter().cloned().unzip();
+                self.departure[edge_id] = vec![0, MAX_BUCKETS];
+                self.travel_time[edge_id] = vec![travel_time, travel_time];
+            }
+            SpeedBuckets::Many(speed_profile) => {
+                // for multiple entries, a more complex travel time profile is required
+                // TODO avoid updating the whole profile
+                let tt_profile = speed_profile_to_tt_profile(speed_profile, self.distance[edge_id]);
+                let (departure, travel_time): (Vec<Timestamp>, Vec<Weight>) = tt_profile.iter().cloned().unzip();
 
-        self.departure[edge_id] = departure;
-        self.travel_time[edge_id] = travel_time;
+                self.departure[edge_id] = departure;
+                self.travel_time[edge_id] = travel_time;
+            }
+        }
     }
 }
 
@@ -190,7 +190,7 @@ impl ModifiableWeight for CapacityGraph {
                 let adjusted_speed = (self.speed_function)(self.freeflow_speed[edge_id], self.max_capacity[edge_id], updated_capacity.unwrap());
 
                 // optimization: only update if the adjusted speed differs from the freeflow speed!
-                // this reduces the number of TTF breakpoints significantly and thus improves the runtime significantly
+                // this reduces the number of TTF breakpoints and thus improves the overall runtime significantly
                 if adjusted_speed != self.freeflow_speed[edge_id] {
                     self.speed[edge_id].update(ts_rounded, adjusted_speed, next_ts, self.freeflow_speed[edge_id]);
                 }

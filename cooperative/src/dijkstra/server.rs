@@ -228,7 +228,7 @@ impl<Pot: TDPotential> CapacityServerOps for CapacityServer<Pot> {
         path.edge_path
             .iter()
             .enumerate()
-            .map(|(idx, &edge_id)| self.graph.weight(edge_id, path.departure[idx]))
+            .map(|(idx, &edge_id)| self.graph.travel_time_function(edge_id).eval(path.departure[idx]))
             .sum()
     }
 }

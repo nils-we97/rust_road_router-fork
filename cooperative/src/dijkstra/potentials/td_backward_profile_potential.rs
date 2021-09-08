@@ -48,7 +48,7 @@ impl TDBackwardProfilePotential {
                     .zip(node_travel_time.iter())
                     .map(|(&ts, &val)| TTFPoint {
                         at: Timestamp::new(convert_timestamp_u32_to_f64(ts)),
-                        val: FlWeight::new((val as f64) / 1000.0),
+                        val: FlWeight::new(convert_timestamp_u32_to_f64(val)),
                     })
                     .collect::<Vec<TTFPoint>>()
             })
