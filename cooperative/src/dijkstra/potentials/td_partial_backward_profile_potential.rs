@@ -4,12 +4,9 @@ use crate::graph::MAX_BUCKETS;
 use crate::util::profile_search::find_profile_index;
 use rust_road_router::algo::dijkstra::{DijkstraData, DijkstraOps, DijkstraRun, Label, Server};
 use rust_road_router::algo::{GenQuery, Query, QueryServer};
-use rust_road_router::datastr::graph::floating_time_dependent::{
-    ATTFContainer, FlWeight, PartialATTF, PartialPiecewiseLinearFunction, PeriodicPiecewiseLinearFunction, TTFPoint, Timestamp,
-};
+use rust_road_router::datastr::graph::floating_time_dependent::{ATTFContainer, FlWeight, PartialATTF, PartialPiecewiseLinearFunction, TTFPoint, Timestamp};
 use rust_road_router::datastr::graph::{BuildReversed, EdgeId, FirstOutGraph, Graph, NodeId, NodeIdT, Reversed, ReversedGraphWithEdgeIds, Weight};
 use rust_road_router::datastr::node_order::NodeOrder;
-use rust_road_router::report::measure;
 use std::borrow::Borrow;
 use std::cmp::{max, min};
 
@@ -56,14 +53,26 @@ impl TDPartialBackwardProfilePotential {
             .iter()
             .zip(travel_time.iter())
             .map(|(node_departure, node_travel_time)| {
-                node_departure
+                let edge_tt_profile = node_departure
                     .iter()
                     .zip(node_travel_time.iter())
                     .map(|(&ts, &val)| TTFPoint {
                         at: Timestamp::new(convert_timestamp_u32_to_f64(ts)),
                         val: FlWeight::new((val as f64) / 1000.0),
                     })
-                    .collect::<Vec<TTFPoint>>()
+                    .collect::<Vec<TTFPoint>>();
+
+                // extend profile by another day to simplify linking
+                /*for i in 1..edge_tt_profile.len() {
+                    let prev_day = edge_tt_profile[i].clone();
+
+                    edge_tt_profile.push(TTFPoint {
+                        at: Timestamp(prev_day.at.0 + 86400.0),
+                        val: prev_day.val,
+                    });
+                }*/
+
+                edge_tt_profile
             })
             .collect::<Vec<Vec<TTFPoint>>>();
     }
@@ -77,20 +86,27 @@ impl TDPotential for TDPartialBackwardProfilePotential {
         let earliest_arrival_distance = self.forward_server.query(Query::new(source, target, 0)).distance().unwrap();
 
         // initialize backwards profile dijkstra
-        // initial time corridor: 3 * lowerbound travel time
+        // initial time corridor: 2 * lowerbound travel time, but at least 30 minutes
         let query = TDPartialBackwardProfileQuery {
             target,
             earliest_arrival: Timestamp(convert_timestamp_u32_to_f64(timestamp + earliest_arrival_distance)),
-            initial_timeframe: Timestamp(convert_timestamp_u32_to_f64(3 * earliest_arrival_distance)),
+            initial_timeframe: Timestamp(convert_timestamp_u32_to_f64(max(2 * earliest_arrival_distance, 1800))),
         };
-        let mut ops = TDPartialBackwardProfilePotentialOps(&self.travel_time_profile);
+
+        let mut ops = TDPartialBackwardProfilePotentialOps {
+            query_start: Timestamp(convert_timestamp_u32_to_f64(timestamp)),
+            corridor_max: Timestamp(query.earliest_arrival.0 + query.initial_timeframe.0),
+            profiles: &self.travel_time_profile,
+        };
+
+        dbg!(&ops.query_start, &ops.corridor_max, &query.earliest_arrival, source, target);
         let mut run = DijkstraRun::query(self.backward_graph.borrow(), &mut self.dijkstra, &mut ops, query);
 
         // run through the whole graph
         let mut counter = 0;
         while let Some(_node) = run.next() {
             counter += 1;
-            if counter % 1000 == 0 {
+            if counter % 10000 == 0 {
                 println!("Finished {} nodes", counter);
             }
         }
@@ -136,7 +152,11 @@ impl TDPotential for TDPartialBackwardProfilePotential {
 
 /* ------------------------------------------------------------------------------------------- */
 
-pub struct TDPartialBackwardProfilePotentialOps<Profiles>(Profiles);
+pub struct TDPartialBackwardProfilePotentialOps<Profiles> {
+    query_start: Timestamp,
+    corridor_max: Timestamp,
+    profiles: Profiles,
+}
 
 struct TDPartialBackwardProfileQuery {
     target: NodeId,
@@ -184,53 +204,105 @@ impl<Profiles: AsRef<Vec<Vec<TTFPoint>>>> DijkstraOps<ReversedGraphWithEdgeIds> 
     // label = state at currently processed node
     // must be linked backward with (static) weight at previous edge
     fn link(&mut self, _graph: &ReversedGraphWithEdgeIds, label: &Self::Label, (_, prev_edge): &Self::Arc) -> Self::LinkResult {
-        // 1. obtain profile from `previous_node`
-        let prev_edge_profile = PartialATTF::Exact(PartialPiecewiseLinearFunction::new(&self.0.as_ref()[prev_edge.0 .0 as usize]));
+        // 1. obtain partial profiles: a) previous edge, b) label at current node
+        let prev_edge_ipps = &self.profiles.as_ref()[prev_edge.0 .0 as usize];
+        let prev_edge_profile = PartialATTF::Exact(PartialPiecewiseLinearFunction::new(prev_edge_ipps));
+
         let current_node_profile = PartialATTF::Exact(PartialPiecewiseLinearFunction::new(label));
 
-        // 2. link (`prev_profile` and `label`)
-        // TODO verify correctness of bounds `start` and `end`
-        let upper_bound = prev_edge_profile.static_upper_bound();
-        let start = label[0].at - upper_bound;
-        let end = (*label.last().unwrap()).at + prev_edge_profile.static_upper_bound();
+        // 2. obtain start/end timestamp for linking
+        // use earliest-arrival-query information to limit the corridor!
+        let ts_start = max(self.query_start, backward_link_interval(prev_edge_ipps, label[0].at).unwrap_or(Timestamp::ZERO));
+        let ts_end = min(
+            self.corridor_max,
+            backward_link_interval(prev_edge_ipps, label.last().unwrap().at).unwrap_or(Timestamp::NEVER),
+        );
 
-        let link_result = prev_edge_profile.link(&current_node_profile, start, end);
+        if ts_start < ts_end {
+            println!("Linking: {} {}", ts_start.0, ts_end.0);
 
-        return match link_result {
-            ATTFContainer::Exact(inner) => inner,
-            ATTFContainer::Approx(_, _) => panic!("Result must be exact!"),
-        };
+            // 3. link (`prev_profile` and `label`)
+            let link_result = prev_edge_profile.link(&current_node_profile, ts_start, ts_end);
 
-        // 3. TODO consider using douglas peuker approximation
+            match link_result {
+                ATTFContainer::Exact(inner) => inner,
+                ATTFContainer::Approx(_, _) => panic!("Result must be exact!"),
+            }
+        } else {
+            // this edge is not relevant!
+            // Even for the latest relevant arrival at this edge, the start takes place before the query's departure
+            Self::LinkResult::neutral()
+        }
+
+        // 4. TODO consider using douglas peuker approximation
     }
 
-    fn merge(&mut self, label: &mut Self::Label, linked: Self::LinkResult) -> bool {
-        // easy case: label is empty -> simply uses recently linked profile
-        if *label == Self::Label::neutral() {
+    fn merge(&mut self, label: &mut Self::Label, mut linked: Self::LinkResult) -> bool {
+        // easy cases: label or linked result is empty
+        if linked == Self::LinkResult::neutral() {
+            return false;
+        } else if *label == Self::Label::neutral() {
             *label = linked;
             return true;
         }
 
         // more complex case requires actual merging
+        // TODO verify whether the following assumption is correct
+        // in order to merge within bounds, we first assure that each PLF spans over the same interval
+        // as soon as we have to extend `label`, we can assume that changes will be made
+        let mut label_adjusted = false;
+
+        // extend functions to the same start timestamp
+        let start_ts = min(label[0].at, linked[0].at);
+        if label[0].at.fuzzy_lt(linked[0].at) {
+            // add FIFO-conform weight at beginning, equal to "waiting"
+            linked.insert(
+                0,
+                TTFPoint {
+                    at: label[0].at,
+                    val: linked[0].val + linked[0].at - label[0].at,
+                },
+            );
+        } else if linked[0].at.fuzzy_lt(label[0].at) {
+            label.insert(
+                0,
+                TTFPoint {
+                    at: linked[0].at,
+                    val: label[0].val + label[0].at - linked[0].at,
+                },
+            );
+            label_adjusted = true;
+        }
+
+        // TODO is it necessary to extend functions to the same end timestamp?
+        let end_ts = min(label.last().unwrap().at, linked.last().unwrap().at);
+        /*let label_last = label.last().unwrap().clone();
+        let linked_last = linked.last().unwrap().clone();
+
+        if label_last.at.fuzzy_lt(linked_last.at) {
+            label.push(TTFPoint {
+                at: linked_last.at,
+                val: label_last.val + linked_last.at - label_last.at,
+            });
+            label_adjusted = true;
+        } else if linked_last.at.fuzzy_lt(label_last.at) {
+            linked.push(TTFPoint {
+                at: label_last.at,
+                val: linked_last.val + label_last.at - linked_last.at,
+            });
+        }*/
+
+        // with the same start & end timestamp, we can just take the merge result
         let linked_profile = PartialPiecewiseLinearFunction::new(&linked);
         let current_profile = PartialPiecewiseLinearFunction::new(label);
 
-        // TODO verify correctness of bounds
-        let start = min(
-            linked_profile.first().map(|p| p.at).unwrap_or(Timestamp::NEVER),
-            current_profile.first().map(|p| p.at).unwrap_or(Timestamp::NEVER),
-        );
-        let end = max(
-            linked_profile.last().map(|p| p.at).unwrap_or(Timestamp::ZERO),
-            current_profile.last().map(|p| p.at).unwrap_or(Timestamp::ZERO),
-        );
-        debug_assert!(start != Timestamp::NEVER && end != Timestamp::ZERO);
-
-        let (result, changes) = current_profile.merge(&linked_profile, start, end, &mut Vec::new());
+        //println!("Merging in interval [{}, {}]", start_ts.0, end_ts.0);
+        let (result, changes) = current_profile.merge(&linked_profile, start_ts, end_ts, &mut Vec::new());
 
         // merging takes place if there is any point where the linked profile is 'better',
         // i.e. the current profile does not dominate all the time
-        if changes.iter().any(|&(_, b)| !b) {
+        // even if the current profile dominates all the time, we might have adjusted the time bounds!
+        if label_adjusted || changes.iter().any(|&(_, b)| !b) {
             *label = result.to_vec();
             true
         } else {
@@ -240,5 +312,36 @@ impl<Profiles: AsRef<Vec<Vec<TTFPoint>>>> DijkstraOps<ReversedGraphWithEdgeIds> 
 
     fn predecessor_link(&self, _link: &Self::Arc) -> Self::PredecessorLink {
         ()
+    }
+}
+
+// helper functions
+fn backward_link_interval(prev_edge_ipps: &Vec<TTFPoint>, reference_ts: Timestamp) -> Option<Timestamp> {
+    // clip the reference timestamp to [0, 86400.0]
+    let clipped_ts = if Timestamp::new(86400.0).fuzzy_lt(reference_ts) {
+        Timestamp::new(reference_ts.0 - 86400.0)
+    } else {
+        reference_ts
+    };
+
+    // find profile breakpoints in relevant interval
+    let idx_start = prev_edge_ipps.binary_search_by_key(&clipped_ts, |p| p.at + p.val);
+    if idx_start.is_ok() {
+        // easy, but very rare case: previous edge contains TTF point that directly links with start of current profile
+        Some(prev_edge_ipps[idx_start.unwrap()].at)
+    } else if idx_start.unwrap_err() == 0 {
+        None
+    } else {
+        // more complex, general case: interpolate between the two point that are in between the desired solution
+        // goal: for interpolation function f, find timestamp t such that: t + f(t) = reference_ts
+        let ipp1 = &prev_edge_ipps[idx_start.unwrap_err() - 1];
+        let ipp2 = &prev_edge_ipps[idx_start.unwrap_err()];
+
+        // fortunately, there is a closed solution formula to obtain the desired point
+        // get slope of TTF interval
+        let delta = (ipp2.val.0 - ipp1.val.0) / (ipp2.at.0 - ipp1.at.0);
+        assert_ne!(delta, -1.0, "slope must not be -1 here!");
+
+        Some(Timestamp((reference_ts.0 - ipp1.val.0 + ipp1.at.0 * delta) / (1.0 + delta)))
     }
 }
