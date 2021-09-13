@@ -6,8 +6,11 @@ use rust_road_router::datastr::graph::time_dependent::Timestamp;
 use rust_road_router::datastr::graph::{Link, LinkIterable};
 
 use crate::experiments::queries::departure_distributions::{ConstantDeparture, DepartureDistribution, UniformDeparture};
+use crate::experiments::queries::population_density_based::generate_uniform_population_density_based_queries;
 use crate::experiments::queries::random_geometric::generate_random_geometric_queries;
 use crate::experiments::queries::random_uniform::generate_random_uniform_queries;
+use crate::io::io_population_grid::PopulationGridEntry;
+use kdtree::kdtree::Kdtree;
 
 pub mod departure_distributions;
 pub mod population_density_based;
@@ -35,10 +38,10 @@ impl FromStr for QueryType {
             "UNIFORM_CONSTANT_DEPARTURE" => Ok(QueryType::UniformConstantDep),
             "GEOMETRIC" => Ok(QueryType::Geometric),
             "GEOMETRIC_CONSTANT_DEPARTURE" => Ok(QueryType::GeometricConstantDep),
-            /*"POPULATION_UNIFORM" => Ok(QueryType::PopulationUniform),
+            "POPULATION_UNIFORM" => Ok(QueryType::PopulationUniform),
             "POPULATION_UNIFORM_CONSTANT_DEPARTURE" => Ok(QueryType::PopulationUniformConstantDep),
             "POPULATION_GEOMETRIC" => Ok(QueryType::PopulationGeometric),
-            "POPULATION_GEOMETRIC_CONSTANT_DEPARTURE" => Ok(QueryType::PopulationGeometricConstantDep),*/
+            "POPULATION_GEOMETRIC_CONSTANT_DEPARTURE" => Ok(QueryType::PopulationGeometricConstantDep),
             _ => Err(CliErr("Unknown Query Type!")),
         }
     }
@@ -50,6 +53,29 @@ pub fn generate_queries<G: LinkIterable<Link>>(graph: &G, query_type: QueryType,
         QueryType::UniformConstantDep => generate_random_uniform_queries(graph.num_nodes() as u32, num_queries, ConstantDeparture::new()),
         QueryType::Geometric => generate_random_geometric_queries(graph, num_queries, UniformDeparture::new()),
         QueryType::GeometricConstantDep => generate_random_geometric_queries(graph, num_queries, ConstantDeparture::new()),
+        _ => unimplemented!(),
+    }
+}
+
+pub fn generate_population_queries<G: LinkIterable<Link>>(
+    _graph: &G,
+    query_type: QueryType,
+    num_queries: u32,
+    grid_tree: &Kdtree<PopulationGridEntry>,
+    grid_population: &Vec<u32>,
+    longitude: &Vec<f32>,
+    latitude: &Vec<f32>,
+) -> Vec<TDQuery<Timestamp>> {
+    // TODO implementation for geometric queries
+    match query_type {
+        QueryType::PopulationUniform => {
+            generate_uniform_population_density_based_queries(longitude, latitude, grid_tree, grid_population, num_queries, UniformDeparture::new())
+        }
+        QueryType::PopulationUniformConstantDep => {
+            generate_uniform_population_density_based_queries(longitude, latitude, grid_tree, grid_population, num_queries, ConstantDeparture::new())
+        }
+        /*QueryType::PopulationGeometric => {}
+        QueryType::PopulationGeometricConstantDep => {}*/
         _ => unimplemented!(),
     }
 }
