@@ -1,11 +1,13 @@
 use cooperative::dijkstra::potentials::cch_potential_init::init_cch_potential;
+use cooperative::dijkstra::potentials::td_partial_backward_profile_potential::TDPartialBackwardProfilePotential;
 use cooperative::dijkstra::potentials::TDPotential;
 use cooperative::dijkstra::server::{CapacityServer, CapacityServerOps};
 use cooperative::experiments::queries::{generate_queries, QueryType};
 use cooperative::graph::speed_functions::bpr_speed_function;
-use cooperative::io::io_graph::{load_capacity_graph, store_capacity_buckets};
+use cooperative::io::io_graph::{load_used_capacity_graph, store_capacity_buckets};
 use cooperative::io::io_node_order::load_node_order;
 use cooperative::util::cli_args::{parse_arg_optional, parse_arg_required};
+use rust_road_router::algo::{GenQuery, TDQuery};
 use rust_road_router::report::measure;
 use std::env;
 use std::error::Error;
@@ -34,14 +36,18 @@ fn main() -> Result<(), Box<dyn Error>> {
     assert!(slowdown_factor > 1.0, "Slowdown Factor must be greater than 1!");
 
     // load graph
-    let (graph, time) = measure(|| load_capacity_graph(graph_directory, num_buckets, bpr_speed_function).unwrap());
+    //let (graph, time) = measure(|| load_capacity_graph(graph_directory, num_buckets, bpr_speed_function).unwrap());
+    let (graph, time) = measure(|| load_used_capacity_graph(graph_directory, num_buckets, bpr_speed_function, "100_1631011530").unwrap());
+
     println!("Graph loaded in {} ms", time.to_std().unwrap().as_nanos() as f64 / 1_000_000.0);
 
     // init potential
     let order = load_node_order(graph_directory)?;
     let cch_pot_data = init_cch_potential(&graph, order);
+    let potential = cch_pot_data.forward_potential();
+    //let potential = TDPartialBackwardProfilePotential::new(&graph);
 
-    let mut server = CapacityServer::new_with_potential(graph, cch_pot_data.forward_potential());
+    let mut server = CapacityServer::new_with_potential(graph, potential);
 
     // initial run that serves as benchmark for future runs
     let (initial_runtime, time_potentials, time_queries, time_buckets, time_ttf) = get_chunked_runtime_in_millis(&mut server, query_type.clone());
@@ -65,7 +71,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     println!("Total #queries until slowdown of {}: {}", slowdown_factor, num_runs * NUM_QUERIES_PER_RUN);
 
-    store_capacity_buckets(server.borrow_graph(), graph_directory)?;
+    store_capacity_buckets(server.borrow_graph(), num_buckets, graph_directory)?;
     Ok(())
 }
 

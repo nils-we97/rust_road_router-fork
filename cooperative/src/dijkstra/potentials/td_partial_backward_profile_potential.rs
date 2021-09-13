@@ -1,14 +1,14 @@
-use crate::dijkstra::potentials::{convert_timestamp_u32_to_f64, TDPotential};
-use crate::graph::capacity_graph::CapacityGraph;
-use crate::graph::MAX_BUCKETS;
-use crate::util::profile_search::find_profile_index;
+use std::borrow::Borrow;
+use std::cmp::{max, min};
+
 use rust_road_router::algo::dijkstra::{DijkstraData, DijkstraOps, DijkstraRun, Label, Server};
 use rust_road_router::algo::{GenQuery, Query, QueryServer};
 use rust_road_router::datastr::graph::floating_time_dependent::{ATTFContainer, FlWeight, PartialATTF, PartialPiecewiseLinearFunction, TTFPoint, Timestamp};
 use rust_road_router::datastr::graph::{BuildReversed, EdgeId, FirstOutGraph, Graph, NodeId, NodeIdT, Reversed, ReversedGraphWithEdgeIds, Weight};
 use rust_road_router::datastr::node_order::NodeOrder;
-use std::borrow::Borrow;
-use std::cmp::{max, min};
+
+use crate::dijkstra::potentials::{convert_timestamp_u32_to_f64, TDPotential};
+use crate::graph::capacity_graph::CapacityGraph;
 
 /// Basic implementation of a potential obtained by a backward profile search
 /// this version is not to be used, but provides a good starting point for further optimizations
@@ -61,17 +61,6 @@ impl TDPartialBackwardProfilePotential {
                         val: FlWeight::new((val as f64) / 1000.0),
                     })
                     .collect::<Vec<TTFPoint>>();
-
-                // extend profile by another day to simplify linking
-                /*for i in 1..edge_tt_profile.len() {
-                    let prev_day = edge_tt_profile[i].clone();
-
-                    edge_tt_profile.push(TTFPoint {
-                        at: Timestamp(prev_day.at.0 + 86400.0),
-                        val: prev_day.val,
-                    });
-                }*/
-
                 edge_tt_profile
             })
             .collect::<Vec<Vec<TTFPoint>>>();
@@ -79,8 +68,6 @@ impl TDPartialBackwardProfilePotential {
 }
 
 impl TDPotential for TDPartialBackwardProfilePotential {
-    // this is the complicated (and time-intensive) part: calculate the whole profile from the target to all vertices
-    // timestamp is not required in basic version as we're not using corridors
     fn init(&mut self, source: NodeId, target: NodeId, timestamp: u32) {
         // 1. earliest arrival query on lowerbound graph
         let earliest_arrival_distance = self.forward_server.query(Query::new(source, target, 0)).distance().unwrap();
@@ -114,38 +101,25 @@ impl TDPotential for TDPartialBackwardProfilePotential {
         //println!("Potential init took {} ms", time.to_std().unwrap().as_nanos() as f64 / 1_000_000.0);
     }
 
-    // this is the easy part: lookup at profile of currently inspected node
     fn potential(&mut self, node: u32, timestamp: u32) -> Option<u32> {
-        let timestamp = timestamp % MAX_BUCKETS;
+        let node_profile = &self.dijkstra.distances[node as usize];
+        let timestamp = Timestamp(convert_timestamp_u32_to_f64(timestamp));
 
-        // get profile of current node
-        let profile = &self.dijkstra.distances[node as usize];
-
-        // easy case: profile only contains sentinels -> don't do expensive interpolation
-        if profile.len() == 2 {
-            Some((1000.0 * profile[0].val.0) as u32)
+        // check if timestamp is inside the profile's boundaries
+        if node_profile.first().unwrap().at.fuzzy_leq(timestamp) && timestamp.fuzzy_leq(node_profile.last().unwrap().at) {
+            // interpolate between the respective profile breakpoints
+            let pot = PartialPiecewiseLinearFunction::new(node_profile).eval(timestamp);
+            Some((1000.0 * pot.0) as u32)
         } else {
-            // get timestamp
-            let ts = Timestamp::new(convert_timestamp_u32_to_f64(timestamp));
-
-            // get travel time at `ts`, do something more efficient than PLF evaluation
-            let intersect = find_profile_index(profile, ts.0);
-            if intersect.is_ok() {
-                Some((1000.0 * profile[intersect.unwrap()].val.0) as u32)
-            } else {
-                // interpolate between next two points
-                let intersect = intersect.unwrap_err();
-                assert!(intersect > 0 && intersect < profile.len());
-
-                let interpolation_factor = (ts.0 - profile[intersect - 1].at.0) / (profile[intersect].at.0 - profile[intersect - 1].at.0);
-                assert!(
-                    interpolation_factor >= 0.0 && interpolation_factor <= 1.0,
-                    "{:#?}",
-                    (interpolation_factor, intersect, &profile)
-                );
-
-                Some((((1.0 - interpolation_factor) * profile[intersect - 1].val.0 + interpolation_factor * profile[intersect].val.0) * 1000.0) as u32)
-            }
+            // otherwise, there is no potential for this node
+            // this could happen if the profile corridors are set too tightly
+            panic!(
+                "Failed to find the potential for {} at ts {}: Partial profile spans range [{}, {}]",
+                node,
+                timestamp.0,
+                node_profile.first().unwrap().at.0,
+                node_profile.last().unwrap().at.0
+            )
         }
     }
 }
@@ -204,29 +178,29 @@ impl<Profiles: AsRef<Vec<Vec<TTFPoint>>>> DijkstraOps<ReversedGraphWithEdgeIds> 
     // label = state at currently processed node
     // must be linked backward with (static) weight at previous edge
     fn link(&mut self, _graph: &ReversedGraphWithEdgeIds, label: &Self::Label, (_, prev_edge): &Self::Arc) -> Self::LinkResult {
-        // 1. obtain partial profiles: a) previous edge, b) label at current node
+        // 1. obtain profile for previous edge, expand it if needed
         let prev_edge_ipps = &self.profiles.as_ref()[prev_edge.0 .0 as usize];
-        let prev_edge_profile = PartialATTF::Exact(PartialPiecewiseLinearFunction::new(prev_edge_ipps));
-
-        let current_node_profile = PartialATTF::Exact(PartialPiecewiseLinearFunction::new(label));
+        let extended_profile = extend_edge_profile(prev_edge_ipps, label.last().unwrap().at);
+        let prev_edge_ipps = extended_profile.as_ref().unwrap_or(prev_edge_ipps);
 
         // 2. obtain start/end timestamp for linking
         // use earliest-arrival-query information to limit the corridor!
-        let ts_start = max(self.query_start, backward_link_interval(prev_edge_ipps, label[0].at).unwrap_or(Timestamp::ZERO));
-        let ts_end = min(
-            self.corridor_max,
-            backward_link_interval(prev_edge_ipps, label.last().unwrap().at).unwrap_or(Timestamp::NEVER),
-        );
+        let backward_start = backward_link_interval(prev_edge_ipps, label[0].at);
+        let ts_start = max(self.query_start, backward_start.unwrap_or(Timestamp::ZERO));
 
-        if ts_start < ts_end {
-            println!("Linking: {} {}", ts_start.0, ts_end.0);
+        let backward_end = backward_link_interval(prev_edge_ipps, label.last().unwrap().at);
+        let ts_end = min(self.corridor_max, backward_end.unwrap_or(Timestamp::NEVER));
 
-            // 3. link (`prev_profile` and `label`)
+        if ts_start.fuzzy_lt(ts_end) && backward_end.is_some() {
+            // 3. link the previous edge profile with the current node profile
+            let prev_edge_profile = PartialATTF::Exact(PartialPiecewiseLinearFunction::new(prev_edge_ipps));
+            let current_node_profile = PartialATTF::Exact(PartialPiecewiseLinearFunction::new(label));
+
             let link_result = prev_edge_profile.link(&current_node_profile, ts_start, ts_end);
 
             match link_result {
                 ATTFContainer::Exact(inner) => inner,
-                ATTFContainer::Approx(_, _) => panic!("Result must be exact!"),
+                ATTFContainer::Approx(_, _) => panic!("Result must be exact, this should not happen!"),
             }
         } else {
             // this edge is not relevant!
@@ -234,69 +208,28 @@ impl<Profiles: AsRef<Vec<Vec<TTFPoint>>>> DijkstraOps<ReversedGraphWithEdgeIds> 
             Self::LinkResult::neutral()
         }
 
-        // 4. TODO consider using douglas peuker approximation
+        // 4. TODO consider using some approximation
     }
 
     fn merge(&mut self, label: &mut Self::Label, mut linked: Self::LinkResult) -> bool {
         // easy cases: label or linked result is empty
         if linked == Self::LinkResult::neutral() {
+            // no linking happened, so we can simply take the previous result
             return false;
         } else if *label == Self::Label::neutral() {
+            // first non-empty adjustment, so we can simply take the new linked PLF
             *label = linked;
             return true;
         }
 
         // more complex case requires actual merging
-        // TODO verify whether the following assumption is correct
-        // in order to merge within bounds, we first assure that each PLF spans over the same interval
-        // as soon as we have to extend `label`, we can assume that changes will be made
-        let mut label_adjusted = false;
-
-        // extend functions to the same start timestamp
-        let start_ts = min(label[0].at, linked[0].at);
-        if label[0].at.fuzzy_lt(linked[0].at) {
-            // add FIFO-conform weight at beginning, equal to "waiting"
-            linked.insert(
-                0,
-                TTFPoint {
-                    at: label[0].at,
-                    val: linked[0].val + linked[0].at - label[0].at,
-                },
-            );
-        } else if linked[0].at.fuzzy_lt(label[0].at) {
-            label.insert(
-                0,
-                TTFPoint {
-                    at: linked[0].at,
-                    val: label[0].val + label[0].at - linked[0].at,
-                },
-            );
-            label_adjusted = true;
-        }
-
-        // TODO is it necessary to extend functions to the same end timestamp?
-        let end_ts = min(label.last().unwrap().at, linked.last().unwrap().at);
-        /*let label_last = label.last().unwrap().clone();
-        let linked_last = linked.last().unwrap().clone();
-
-        if label_last.at.fuzzy_lt(linked_last.at) {
-            label.push(TTFPoint {
-                at: linked_last.at,
-                val: label_last.val + linked_last.at - label_last.at,
-            });
-            label_adjusted = true;
-        } else if linked_last.at.fuzzy_lt(label_last.at) {
-            linked.push(TTFPoint {
-                at: label_last.at,
-                val: linked_last.val + label_last.at - linked_last.at,
-            });
-        }*/
+        // first of all, adjust labels to span the same range (by adding fifo-conform breakpoints at start/end of shorter profile)
+        let (start_ts, end_ts, label_adjusted) = adjust_labels_to_merge(label, &mut linked);
 
         // with the same start & end timestamp, we can just take the merge result
         let linked_profile = PartialPiecewiseLinearFunction::new(&linked);
         let current_profile = PartialPiecewiseLinearFunction::new(label);
 
-        //println!("Merging in interval [{}, {}]", start_ts.0, end_ts.0);
         let (result, changes) = current_profile.merge(&linked_profile, start_ts, end_ts, &mut Vec::new());
 
         // merging takes place if there is any point where the linked profile is 'better',
@@ -316,20 +249,18 @@ impl<Profiles: AsRef<Vec<Vec<TTFPoint>>>> DijkstraOps<ReversedGraphWithEdgeIds> 
 }
 
 // helper functions
-fn backward_link_interval(prev_edge_ipps: &Vec<TTFPoint>, reference_ts: Timestamp) -> Option<Timestamp> {
-    // clip the reference timestamp to [0, 86400.0]
-    let clipped_ts = if Timestamp::new(86400.0).fuzzy_lt(reference_ts) {
-        Timestamp::new(reference_ts.0 - 86400.0)
-    } else {
-        reference_ts
-    };
 
+/// finds the timestamp in an (extended) edge profile needed for backward linking
+fn backward_link_interval(prev_edge_ipps: &Vec<TTFPoint>, reference_ts: Timestamp) -> Option<Timestamp> {
     // find profile breakpoints in relevant interval
-    let idx_start = prev_edge_ipps.binary_search_by_key(&clipped_ts, |p| p.at + p.val);
+    // as the profile is already extended, we do not have to care about clipping the timestamp to [0, 86400.0]
+    let idx_start = prev_edge_ipps.binary_search_by_key(&reference_ts, |p| p.at + p.val);
     if idx_start.is_ok() {
         // easy, but very rare case: previous edge contains TTF point that directly links with start of current profile
         Some(prev_edge_ipps[idx_start.unwrap()].at)
     } else if idx_start.unwrap_err() == 0 {
+        // no backward link found: if the element would have to be inserted at the first slot,
+        // it is impossible to reach the reference timestamp when starting at this edge (even at midnight!)
         None
     } else {
         // more complex, general case: interpolate between the two point that are in between the desired solution
@@ -340,8 +271,91 @@ fn backward_link_interval(prev_edge_ipps: &Vec<TTFPoint>, reference_ts: Timestam
         // fortunately, there is a closed solution formula to obtain the desired point
         // get slope of TTF interval
         let delta = (ipp2.val.0 - ipp1.val.0) / (ipp2.at.0 - ipp1.at.0);
-        assert_ne!(delta, -1.0, "slope must not be -1 here!");
+        debug_assert_ne!(delta, -1.0, "slope must not be -1 here!");
 
         Some(Timestamp((reference_ts.0 - ipp1.val.0 + ipp1.at.0 * delta) / (1.0 + delta)))
     }
+}
+
+/// extends a given edge profile over midnight to cover at least `last_required_ts`
+fn extend_edge_profile(profile: &Vec<TTFPoint>, last_required_ts: Timestamp) -> Option<Vec<TTFPoint>> {
+    if last_required_ts.fuzzy_lt(Timestamp(86400.0)) {
+        None
+    } else {
+        // reserve more space than needed to avoid re-allocs
+        // TODO consider making this more efficient by removing unnecessary elements at the beginning!
+        let num_rounds = (last_required_ts.0 / 86400.0) as usize + 1;
+        let mut ret = Vec::with_capacity(num_rounds * profile.len());
+
+        ret.extend_from_slice(profile);
+
+        // extend `ret` until `last_required_ts` is covered
+        let mut current_round = 86400.0;
+        let mut current_profile_idx = 1; // ignore the first entry because it is equal to the sentinel at the end!
+
+        while ret.last().unwrap().at < last_required_ts {
+            ret.push(TTFPoint {
+                at: Timestamp(current_round + ret[current_profile_idx].at.0),
+                val: ret[current_profile_idx].val,
+            });
+            current_profile_idx += 1;
+            if current_profile_idx == profile.len() {
+                current_profile_idx = 1;
+                current_round += 86400.0;
+            }
+        }
+
+        Some(ret)
+    }
+}
+
+/// adjust the labels to span the same interval
+/// additional return values: (common start timestamp, common end time stamp, adjustments to `label`)
+fn adjust_labels_to_merge(label: &mut Vec<TTFPoint>, linked: &mut Vec<TTFPoint>) -> (Timestamp, Timestamp, bool) {
+    // TODO verify whether the following assumption is correct
+    // in order to merge within bounds, we first assure that each PLF spans the same interval
+    // as soon as we have to extend `label`, we can assume that changes will be made
+    let mut label_adjusted = false;
+
+    // extend functions to the same start timestamp
+    if label[0].at.fuzzy_lt(linked[0].at) {
+        // add FIFO-conform weight at beginning, equal to "waiting"
+        // time difference is (linked[0].at - label[0].at),
+        // hence linked gets a new starting point at label[0].at with additional waiting time equal to the time difference
+        linked.insert(
+            0,
+            TTFPoint {
+                at: label[0].at,
+                val: linked[0].val + linked[0].at - label[0].at,
+            },
+        );
+    } else if linked[0].at.fuzzy_lt(label[0].at) {
+        label.insert(
+            0,
+            TTFPoint {
+                at: linked[0].at,
+                val: label[0].val + label[0].at - linked[0].at,
+            },
+        );
+        label_adjusted = true;
+    }
+
+    // TODO is it necessary to extend functions to the same end timestamp?
+    let label_last = label.last().unwrap().clone();
+    let linked_last = linked.last().unwrap().clone();
+
+    if label_last.at.fuzzy_lt(linked_last.at) {
+        label.push(TTFPoint {
+            at: linked_last.at,
+            val: label_last.val + linked_last.at - label_last.at,
+        });
+        label_adjusted = true;
+    } else if linked_last.at.fuzzy_lt(label_last.at) {
+        linked.push(TTFPoint {
+            at: label_last.at,
+            val: linked_last.val + label_last.at - linked_last.at,
+        });
+    }
+
+    (label.first().unwrap().at, label.last().unwrap().at, label_adjusted)
 }
