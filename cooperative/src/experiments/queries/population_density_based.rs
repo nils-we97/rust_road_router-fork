@@ -62,25 +62,14 @@ pub fn generate_uniform_population_density_based_queries<D: DepartureDistributio
 }
 
 fn find_interval(vec: &Vec<(u32, usize)>, val: u32) -> usize {
-    let mut left = 0;
-    let mut right = vec.len() - 2; // also consider sentinel element!
+    let idx = vec.binary_search_by_key(&val, |&(prefix_sum, _)| prefix_sum);
 
-    while left <= right {
-        let mid = ((right - left) / 2) + left;
-        //println!("mid: {}, right: {} , left: {}, next value: {}", mid, right, left, vec[mid].0);
-
-        //correct interval is found if vec[mid]->prefix_sum <= val < vec[mid + 1]->prefix_sum
-        if vec[mid].0 <= val && val < vec[mid + 1].0 {
-            return vec[mid].1;
-        } else if val < vec[mid].0 {
-            right = mid - 1;
-        } else {
-            left = mid + 1;
-        }
+    if idx.is_ok() {
+        vec[idx.unwrap()].1
+    } else {
+        debug_assert!(idx.unwrap_err() >= 1 && idx.unwrap_err() < vec.len(), "Missing sentinel elements!");
+        vec[idx.unwrap_err() - 1].1
     }
-
-    println!("value: {} , min: {:?}, max: {:?}", val, vec.first().unwrap(), vec.last().unwrap());
-    panic!("Illegal State! Make sure that the sentinel elements are set properly!")
 }
 
-// TODO geometric queries, ... , also consider time-dependence
+// TODO geometric queries, ...
