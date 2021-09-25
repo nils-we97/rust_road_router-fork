@@ -3,6 +3,7 @@ use rust_road_router::datastr::graph::floating_time_dependent::{FlWeight, TTFPoi
 use rust_road_router::datastr::graph::NodeId;
 use rust_road_router::datastr::node_order::NodeOrder;
 
+#[derive(Clone, Debug)]
 pub struct TDPartialBackwardProfileQuery {
     pub target: NodeId,
     pub earliest_arrival: Timestamp,

@@ -1,16 +1,14 @@
 use std::cmp::max;
 
-use rust_road_router::algo::dijkstra::{DefaultOps, DijkstraData, DijkstraOps, Label, Server, State};
-use rust_road_router::algo::{GenQuery, Query, QueryServer};
-use rust_road_router::datastr::graph::floating_time_dependent::{FlWeight, PartialPiecewiseLinearFunction, TTFPoint, Timestamp};
-use rust_road_router::datastr::graph::{Arc, BuildReversed, EdgeId, FirstOutGraph, Graph, NodeId, OwnedGraph, Weight};
-
-use crate::dijkstra::get_neighbors;
 use crate::dijkstra::potentials::directed_partial_backward_profile::ops::{DirectedPartialBackwardProfileLabel, TDDirectedPartialBackwardProfilePotentialOps};
 use crate::dijkstra::potentials::partial_backward_profile::query::TDPartialBackwardProfileQuery;
 use crate::dijkstra::potentials::{convert_timestamp_u32_to_f64, TDPotential};
 use crate::graph::capacity_graph::CapacityGraph;
 use rust_road_router::algo::ch_potentials::{CCHPotData, CCHPotential};
+use rust_road_router::algo::dijkstra::{DefaultOps, DijkstraData, DijkstraOps, Label, Server, State};
+use rust_road_router::algo::{GenQuery, Query, QueryServer};
+use rust_road_router::datastr::graph::floating_time_dependent::{FlWeight, PartialPiecewiseLinearFunction, TTFPoint, Timestamp};
+use rust_road_router::datastr::graph::{Arc, BuildReversed, EdgeId, FirstOutGraph, Graph, LinkIterable, NodeId, OwnedGraph, ReversedGraphWithEdgeIds, Weight};
 use rust_road_router::datastr::index_heap::Indexing;
 
 /// Basic implementation of a potential obtained by a backward profile search
@@ -22,7 +20,7 @@ pub struct TDDirectedPartialBackwardProfilePotential<'a> {
         CCHPotential<'a, FirstOutGraph<&'a [EdgeId], &'a [NodeId], &'a [Weight]>, FirstOutGraph<&'a [EdgeId], &'a [NodeId], &'a [Weight]>>,
         OwnedGraph,
     >,
-    backward_graph: OwnedGraph,
+    backward_graph: ReversedGraphWithEdgeIds,
     lowerbound_potential: &'a CCHPotData, // for directed backward profile search
     travel_time_profile: Vec<Vec<TTFPoint>>,
     dijkstra: DijkstraData<DirectedPartialBackwardProfileLabel>,
@@ -42,7 +40,7 @@ impl<'a> TDDirectedPartialBackwardProfilePotential<'a> {
 
         // init forward and backward graph
         let forward_graph = OwnedGraph::new(first_out, head, weight);
-        let backward_graph = OwnedGraph::reversed(graph);
+        let backward_graph = ReversedGraphWithEdgeIds::reversed(graph);
         let forward_server = Server::with_potential(forward_graph, cch_pot_data.forward_potential());
 
         // create struct, customize and return
@@ -138,13 +136,13 @@ impl<'a> TDPotential for TDDirectedPartialBackwardProfilePotential<'a> {
                 let current_node_min_dist = current_node_label.ttf.iter().map(|p| p.val).min().unwrap();
 
                 if max_tent_dist.fuzzy_lt(current_node_min_dist) {
-                    dbg!("Pruned node!", current_node_min_dist, &max_tent_dist);
+                    //dbg!("Pruned node!", current_node_min_dist, &max_tent_dist);
                     continue;
                 }
             }
 
             // relax outgoing edges
-            for link in get_neighbors(&self.backward_graph, node) {
+            for link in self.backward_graph.link_iter(node) {
                 let linked = ops.link(&self.backward_graph, &self.dijkstra.distances[node as usize], &link);
 
                 if ops.merge(&mut self.dijkstra.distances[link.head() as usize], linked) {

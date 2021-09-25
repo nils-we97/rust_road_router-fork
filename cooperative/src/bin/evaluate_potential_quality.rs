@@ -1,3 +1,4 @@
+use cooperative::dijkstra::potentials::directed_partial_backward_profile::potential::TDDirectedPartialBackwardProfilePotential;
 use cooperative::dijkstra::potentials::lowerbound_cch::init_cch_potential;
 use cooperative::dijkstra::potentials::TDPotential;
 use cooperative::dijkstra::server::{CapacityServer, CapacityServerOps};
@@ -42,8 +43,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     // init potential
     let order = load_node_order(graph_directory)?;
     let cch_pot_data = init_cch_potential(&graph, order);
-    let potential = cch_pot_data.forward_potential();
-    //let potential = TDPartialBackwardProfilePotential::new(&graph);
+    //let potential = cch_pot_data.forward_potential();
+    let potential = TDDirectedPartialBackwardProfilePotential::new(&graph, &cch_pot_data);
 
     let mut server = CapacityServer::new_with_potential(graph, potential);
 

@@ -1,6 +1,6 @@
 use rust_road_router::algo::dijkstra::{DijkstraOps, Label};
 use rust_road_router::datastr::graph::floating_time_dependent::{ATTFContainer, FlWeight, PartialATTF, PartialPiecewiseLinearFunction, TTFPoint, Timestamp};
-use rust_road_router::datastr::graph::{EdgeIdT, NodeIdT, OwnedGraph};
+use rust_road_router::datastr::graph::{NodeIdT, Reversed, ReversedGraphWithEdgeIds};
 use std::cmp::{max, min};
 
 /// extend label of `Vec<TTFPoint>` by saving the lowerbound distance
@@ -31,17 +31,17 @@ pub struct TDDirectedPartialBackwardProfilePotentialOps<Profiles> {
     pub profiles: Profiles,
 }
 
-impl<Profiles: AsRef<Vec<Vec<TTFPoint>>>> DijkstraOps<OwnedGraph> for TDDirectedPartialBackwardProfilePotentialOps<Profiles> {
+impl<Profiles: AsRef<Vec<Vec<TTFPoint>>>> DijkstraOps<ReversedGraphWithEdgeIds> for TDDirectedPartialBackwardProfilePotentialOps<Profiles> {
     type Label = DirectedPartialBackwardProfileLabel;
-    type Arc = (NodeIdT, EdgeIdT);
+    type Arc = (NodeIdT, Reversed);
     type LinkResult = Vec<TTFPoint>;
     type PredecessorLink = (); // no paths are calculated here => not needed
 
     // label = state at currently processed node
     // must be linked backward with (static) weight at previous edge
-    fn link(&mut self, _graph: &OwnedGraph, label: &Self::Label, (_, prev_edge_id): &Self::Arc) -> Self::LinkResult {
+    fn link(&mut self, _graph: &ReversedGraphWithEdgeIds, label: &Self::Label, (_, prev_edge_id): &Self::Arc) -> Self::LinkResult {
         // 1. obtain profile for previous edge, expand it if needed
-        let prev_edge_ipps = &self.profiles.as_ref()[prev_edge_id.0 as usize];
+        let prev_edge_ipps = &self.profiles.as_ref()[prev_edge_id.0 .0 as usize];
         let extended_profile = extend_edge_profile(prev_edge_ipps, label.ttf.last().unwrap().at);
         let prev_edge_ipps = extended_profile.as_ref().unwrap_or(prev_edge_ipps);
 

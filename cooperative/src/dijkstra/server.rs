@@ -2,13 +2,12 @@ use rust_road_router::algo::a_star::ZeroPotential;
 use rust_road_router::algo::dijkstra::{DijkstraData, DijkstraOps, Label, State};
 use rust_road_router::algo::{GenQuery, TDQuery};
 use rust_road_router::datastr::graph::time_dependent::Timestamp;
-use rust_road_router::datastr::graph::{Arc, EdgeIdT, Graph, Weight};
+use rust_road_router::datastr::graph::{Arc, EdgeIdT, Graph, LinkIterable, NodeId, NodeIdT, Weight};
 use rust_road_router::datastr::index_heap::Indexing;
 use rust_road_router::report;
 use rust_road_router::report::*;
 
 use crate::dijkstra::capacity_dijkstra_ops::CapacityDijkstraOps;
-use crate::dijkstra::get_neighbors;
 use crate::dijkstra::model::{CapacityQueryResult, PathResult};
 use crate::dijkstra::potentials::TDPotential;
 use crate::graph::capacity_graph::CapacityGraph;
@@ -232,4 +231,9 @@ impl<Pot: TDPotential> CapacityServerOps for CapacityServer<Pot> {
             .map(|(idx, &edge_id)| self.graph.travel_time_function(edge_id).eval(path.departure[idx]))
             .sum()
     }
+}
+
+// convert graph to LinkIterable in order to avoid compiler errors
+fn get_neighbors<G: LinkIterable<(NodeIdT, EdgeIdT)>>(graph: &G, node: NodeId) -> G::Iter<'_> {
+    graph.link_iter(node)
 }
