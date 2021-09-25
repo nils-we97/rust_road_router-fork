@@ -1,1 +1,3 @@
-pub mod td_partial_backward_profile_potential;
+mod ops;
+pub mod potential;
+pub mod query;

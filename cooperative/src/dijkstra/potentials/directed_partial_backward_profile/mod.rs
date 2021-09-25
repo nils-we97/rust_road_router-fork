@@ -1,1 +1,3 @@
-pub mod td_directed_partial_profile_potential;
+mod ops;
+pub mod potential;
+mod query;

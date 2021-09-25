@@ -1,11 +1,11 @@
 use std::borrow::Borrow;
 
-use rust_road_router::algo::dijkstra::{DijkstraData, DijkstraOps, DijkstraRun, Label};
-use rust_road_router::algo::GenQuery;
-use rust_road_router::datastr::graph::floating_time_dependent::{FlWeight, PeriodicPiecewiseLinearFunction, TTFPoint, Timestamp};
-use rust_road_router::datastr::graph::{BuildReversed, Graph, NodeId, NodeIdT, Reversed, ReversedGraphWithEdgeIds, Weight};
-use rust_road_router::datastr::node_order::NodeOrder;
+use rust_road_router::algo::dijkstra::{DijkstraData, DijkstraRun};
+use rust_road_router::datastr::graph::floating_time_dependent::{FlWeight, TTFPoint, Timestamp};
+use rust_road_router::datastr::graph::{BuildReversed, Graph, NodeId, ReversedGraphWithEdgeIds, Weight};
 
+use crate::dijkstra::potentials::backward_profile::ops::TDBackwardProfilePotentialOps;
+use crate::dijkstra::potentials::backward_profile::query::TDBackwardProfileQuery;
 use crate::dijkstra::potentials::{convert_timestamp_u32_to_f64, TDPotential};
 use crate::graph::capacity_graph::CapacityGraph;
 use crate::graph::MAX_BUCKETS;
@@ -110,84 +110,5 @@ impl TDPotential for TDBackwardProfilePotential {
                 Some((((1.0 - interpolation_factor) * profile[intersect - 1].val.0 + interpolation_factor * profile[intersect].val.0) * 1000.0) as u32)
             }
         }
-    }
-}
-
-/* ------------------------------------------------------------------------------------------- */
-
-pub struct TDBackwardProfilePotentialOps<Profiles>(Profiles);
-
-struct TDBackwardProfileQuery(NodeId);
-
-impl GenQuery<Vec<TTFPoint>> for TDBackwardProfileQuery {
-    fn new(_from: NodeId, _to: NodeId, _initial_state: Vec<TTFPoint>) -> Self {
-        unimplemented!()
-    } // not needed
-
-    fn from(&self) -> NodeId {
-        self.0
-    }
-
-    fn to(&self) -> NodeId {
-        unimplemented!()
-    }
-
-    fn initial_state(&self) -> Vec<TTFPoint> {
-        Vec::<TTFPoint>::neutral()
-    }
-
-    fn permutate(&mut self, _order: &NodeOrder) {
-        unimplemented!()
-    }
-}
-
-impl<Profiles: AsRef<Vec<Vec<TTFPoint>>>> DijkstraOps<ReversedGraphWithEdgeIds> for TDBackwardProfilePotentialOps<Profiles> {
-    type Label = Vec<TTFPoint>;
-    type Arc = (NodeIdT, Reversed);
-    type LinkResult = Vec<TTFPoint>;
-    type PredecessorLink = (); // no paths are calculated here => not needed
-
-    // label = state at currently processed node
-    // must be linked backward with (static) weight at previous edge
-    fn link(&mut self, _graph: &ReversedGraphWithEdgeIds, label: &Self::Label, (_, prev_edge): &Self::Arc) -> Self::LinkResult {
-        //1. obtain profile from `previous_node`
-        let prev_profile = PeriodicPiecewiseLinearFunction::new(&self.0.as_ref()[prev_edge.0 .0 as usize]);
-        let current_profile = PeriodicPiecewiseLinearFunction::new(label);
-
-        //2. link (`prev_profile` and `label`)
-        let link_result = prev_profile.link(&current_profile);
-
-        PeriodicPiecewiseLinearFunction::new(&link_result).to_vec()
-
-        //3. apply douglas peuker approximation -> accelerates calculation by factor ~10
-        // approximation does currently not work! TODO fix this
-        //PeriodicPiecewiseLinearFunction::new(&link_result).approximate(&mut Vec::new()).to_vec()
-    }
-
-    fn merge(&mut self, label: &mut Self::Label, linked: Self::LinkResult) -> bool {
-        // easy case: label is empty -> simply uses recently linked profile
-        if *label == Self::Label::neutral() {
-            *label = linked;
-            return true;
-        }
-
-        // more complex case requires actual merging
-        let linked_profile = PeriodicPiecewiseLinearFunction::new(&linked);
-        let current_profile = PeriodicPiecewiseLinearFunction::new(label);
-
-        let (result, changes) = current_profile.merge(&linked_profile, &mut Vec::new());
-
-        // merging takes place if there is any point where the linked profile is 'better',
-        // i.e. the current profile does not dominate all the time
-        if changes.iter().any(|&(_, b)| !b) {
-            *label = result.to_vec();
-            true
-        } else {
-            false
-        }
-    }
-
-    fn predecessor_link(&self, _link: &Self::Arc) -> Self::PredecessorLink {
-        ()
     }
 }
