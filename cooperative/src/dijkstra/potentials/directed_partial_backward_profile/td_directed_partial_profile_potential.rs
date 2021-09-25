@@ -1,38 +1,41 @@
-use std::borrow::Borrow;
+/*use std::borrow::Borrow;
 use std::cmp::{max, min};
 
-use rust_road_router::algo::dijkstra::{DijkstraData, DijkstraOps, DijkstraRun, Label, Server};
+use rust_road_router::algo::dijkstra::{DijkstraData, DijkstraOps, DijkstraRun, Label, Server, State};
 use rust_road_router::algo::{GenQuery, Query, QueryServer};
 use rust_road_router::datastr::graph::floating_time_dependent::{ATTFContainer, FlWeight, PartialATTF, PartialPiecewiseLinearFunction, TTFPoint, Timestamp};
-use rust_road_router::datastr::graph::{BuildReversed, EdgeId, FirstOutGraph, Graph, NodeId, NodeIdT, Reversed, ReversedGraphWithEdgeIds, Weight};
+use rust_road_router::datastr::graph::{BuildReversed, EdgeId, FirstOutGraph, Graph, NodeId, NodeIdT, OwnedGraph, Reversed, ReversedGraphWithEdgeIds, Weight};
 use rust_road_router::datastr::node_order::NodeOrder;
 
+use crate::dijkstra::potentials::lowerbound_cch::init_cch_potential;
+use crate::dijkstra::potentials::td_partial_backward_profile_potential::TDPartialBackwardProfileQuery;
 use crate::dijkstra::potentials::{convert_timestamp_u32_to_f64, TDPotential};
 use crate::graph::capacity_graph::CapacityGraph;
+use rust_road_router::datastr::index_heap::Indexing;
 
 /// Basic implementation of a potential obtained by a backward profile search
 /// this version is not to be used, but provides a good starting point for further optimizations
-
-pub struct TDPartialBackwardProfilePotential {
-    forward_server: Server<FirstOutGraph<Vec<EdgeId>, Vec<NodeId>, Vec<Weight>>>, // TODO use CCH for further speedup
+pub struct TDDirectedPartialBackwardProfilePotential {
+    forward_server: Server, // TODO accelerate with CCH
     backward_graph: ReversedGraphWithEdgeIds,
     travel_time_profile: Vec<Vec<TTFPoint>>,
     dijkstra: DijkstraData<Vec<TTFPoint>>,
 }
 
-impl TDPartialBackwardProfilePotential {
-    pub fn new(graph: &CapacityGraph) -> Self {
+impl TDDirectedPartialBackwardProfilePotential {
+    pub fn new(graph: &CapacityGraph, order: &NodeOrder) -> Self {
         let num_nodes = graph.num_nodes();
 
-        // init forward graph
+        // init cch forward graph for lowerbound earliest arrival queries
         let first_out = graph.first_out().to_vec();
         let head = graph.head().to_vec();
         let weight = graph.freeflow_time().to_vec();
         let lowerbound_forward_graph = FirstOutGraph::new(first_out, head, weight);
-        let forward_server = Server::new(lowerbound_forward_graph);
+        let cch_pot_data = init_cch_potential(&graph, order.clone());
+        let forward_server = Server::with_potential(lowerbound_forward_graph, cch_pot_data.forward_potential());
 
         // init backward graph
-        let backward_graph = ReversedGraphWithEdgeIds::reversed(graph);
+        let backward_graph = OwnedGraph::reversed(graph);
 
         let departure = graph.departure();
         let travel_time = graph.travel_time();
@@ -67,12 +70,12 @@ impl TDPartialBackwardProfilePotential {
     }
 }
 
-impl TDPotential for TDPartialBackwardProfilePotential {
+impl TDPotential for TDDirectedPartialBackwardProfilePotential {
     fn init(&mut self, source: NodeId, target: NodeId, timestamp: u32) {
         // 1. earliest arrival query on lowerbound graph
         let earliest_arrival_distance = self.forward_server.query(Query::new(source, target, 0)).distance().unwrap();
 
-        // initialize backwards profile dijkstra
+        // 2. initialize backwards profile dijkstra: custom implementation with additional pruning
         // initial time corridor: 2 * lowerbound travel time, but at least 30 minutes
         let query = TDPartialBackwardProfileQuery {
             target,
@@ -80,18 +83,84 @@ impl TDPotential for TDPartialBackwardProfilePotential {
             initial_timeframe: Timestamp(convert_timestamp_u32_to_f64(max(2 * earliest_arrival_distance, 1800))),
         };
 
-        let mut ops = TDPartialBackwardProfilePotentialOps {
+        // 3. init ops with corridor data
+        let mut ops = TDDirectedPartialBackwardProfilePotentialOps {
             query_start: Timestamp(convert_timestamp_u32_to_f64(timestamp)),
             corridor_max: Timestamp(query.earliest_arrival.0 + query.initial_timeframe.0),
             profiles: &self.travel_time_profile,
         };
 
-        dbg!(&ops.query_start, &ops.corridor_max, &query.earliest_arrival, source, target);
+        // 4. init dijkstra run
+        let mut max_tent_dist = FlWeight::INFINITY; //bounds for max tentative distance to source node
+        self.dijkstra.queue.clear();
+        self.dijkstra.distances.reset();
+        self.dijkstra.queue.push(State {
+            key: query.initial_state().key(),
+            node: target,
+        });
+        self.dijkstra.distances[target as usize] = init;
+
+        // 5. init potentials for backward search
+
+
+
+
+        // 6. run query
+        while let Some(State { node, key }) = self.dijkstra.queue.pop() {
+            let current_node_label = &self.dijkstra.distances[node as usize];
+
+            // whenever the source node is extracted (remember: backward search!),
+            // make max distance as tight as possible
+            if node == source {
+                let node_max_dist = current_node_label.iter().map(|&p| p.val).max().unwrap();
+
+                if node_max_dist.fuzzy_lt(max_tent_dist) {
+                    max_tent_dist = node_max_dist;
+                }
+            } else if max_tent_dist.fuzzy_lt(FlWeight::INFINITY) {
+                // pruning: ignore node if the max tentative distance to the source can't be beaten anymore,
+                // i.e. the current min dist already exceeds the source's max
+                let current_node_min_dist = current_node_label.iter().map(|p| p.val).min().unwrap();
+
+                if max_tent_dist.fuzzy_lt(current_node_min_dist) {
+                    dbg!("Pruned node!", current_node_min_dist, &max_tent_dist);
+                    continue;
+                }
+            }
+
+            // relax outgoing edges
+            for link in get_neighbors(&self.graph, node) {
+                let linked = ops.link(&self.backward_graph, &self.dijkstra.distances[node as usize], &link);
+
+                if ops.merge(&mut self.dijkstra.distances[link.head() as usize], linked) {
+                    let next_label = &self.dijkstra.distances[link.head() as usize];
+
+                    if let Some(next_key) = pot.potential(link.head(), key).map(|p| p + next_distance.key()) {
+                        let next = State {
+                            node: link.head(),
+                            key: next_key,
+                        };
+                        if self.dijkstra.queue.contains_index(next.as_index()) {
+                            self.dijkstra.queue.decrease_key(next);
+                        } else {
+                            num_queue_pushs += 1;
+                            self.dijkstra.queue.push(next);
+                        }
+                    }
+                }
+            }
+        }
+
         let mut run = DijkstraRun::query(self.backward_graph.borrow(), &mut self.dijkstra, &mut ops, query);
 
+        // TODO custom dijkstra with additional pruning :(
+
         // run through the whole graph
+
         let mut counter = 0;
-        while let Some(_node) = run.next() {
+        while let Some(_node) = run.next_step_with_potential() {
+            // as soon as the target node is processed, restrict
+
             counter += 1;
             if counter % 10000 == 0 {
                 println!("Finished {} nodes", counter);
@@ -126,50 +195,13 @@ impl TDPotential for TDPartialBackwardProfilePotential {
 
 /* ------------------------------------------------------------------------------------------- */
 
-pub struct TDPartialBackwardProfilePotentialOps<Profiles> {
+pub struct TDDirectedPartialBackwardProfilePotentialOps<Profiles> {
     query_start: Timestamp,
     corridor_max: Timestamp,
     profiles: Profiles,
 }
 
-struct TDPartialBackwardProfileQuery {
-    target: NodeId,
-    earliest_arrival: Timestamp,
-    initial_timeframe: Timestamp,
-}
-
-impl GenQuery<Vec<TTFPoint>> for TDPartialBackwardProfileQuery {
-    fn new(_from: NodeId, _to: NodeId, _initial_state: Vec<TTFPoint>) -> Self {
-        unimplemented!()
-    } // not needed
-
-    fn from(&self) -> NodeId {
-        self.target
-    }
-
-    fn to(&self) -> NodeId {
-        unimplemented!()
-    }
-
-    fn initial_state(&self) -> Vec<TTFPoint> {
-        vec![
-            TTFPoint {
-                at: self.earliest_arrival,
-                val: FlWeight::ZERO,
-            },
-            TTFPoint {
-                at: Timestamp(self.earliest_arrival.0 + self.initial_timeframe.0),
-                val: FlWeight::ZERO,
-            },
-        ]
-    }
-
-    fn permutate(&mut self, _order: &NodeOrder) {
-        unimplemented!()
-    }
-}
-
-impl<Profiles: AsRef<Vec<Vec<TTFPoint>>>> DijkstraOps<ReversedGraphWithEdgeIds> for TDPartialBackwardProfilePotentialOps<Profiles> {
+impl<Profiles: AsRef<Vec<Vec<TTFPoint>>>> DijkstraOps<ReversedGraphWithEdgeIds> for TDDirectedPartialBackwardProfilePotentialOps<Profiles> {
     type Label = Vec<TTFPoint>;
     type Arc = (NodeIdT, Reversed);
     type LinkResult = Vec<TTFPoint>;
@@ -359,3 +391,4 @@ fn adjust_labels_to_merge(label: &mut Vec<TTFPoint>, linked: &mut Vec<TTFPoint>)
 
     (label.first().unwrap().at, label.last().unwrap().at, label_adjusted)
 }
+*/

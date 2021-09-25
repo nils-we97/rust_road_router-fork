@@ -2,7 +2,7 @@ use std::env;
 use std::error::Error;
 
 use cooperative::dijkstra::model::PathResult;
-use cooperative::dijkstra::potentials::cch_potential_init::init_cch_potential;
+use cooperative::dijkstra::potentials::lowerbound_cch::init_cch_potential;
 use cooperative::dijkstra::potentials::TDPotential;
 use cooperative::dijkstra::server::{CapacityServer, CapacityServerOps};
 use cooperative::experiments::queries::{generate_queries, QueryType};

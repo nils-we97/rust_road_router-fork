@@ -1,10 +1,10 @@
 use rust_road_router::algo::a_star::Potential;
 use rust_road_router::datastr::graph::time_dependent::Timestamp;
 use rust_road_router::datastr::graph::{NodeId, Weight};
-
-pub mod cch_potential_init;
-pub mod td_backward_profile_potential;
-pub mod td_partial_backward_profile_potential;
+pub mod backward_profile;
+pub mod directed_partial_backward_profile;
+pub mod lowerbound_cch;
+pub mod partial_backward_profile;
 
 pub trait TDPotential {
     fn init(&mut self, source: NodeId, target: NodeId, timestamp: Timestamp);
@@ -23,8 +23,7 @@ impl<T: Potential> TDPotential for T {
 
 // additional helper functions
 
-// basic conversion stuff: `TDCapacityGraph` uses integer weights, but we rely on floats here
+// basic conversion: `TDCapacityGraph` uses integer weights, but we rely on floats here
 fn convert_timestamp_u32_to_f64(ts_old: u32) -> f64 {
-    let str = format!("{}.{}", ts_old / 1000, ts_old % 1000);
-    str.parse::<f64>().unwrap()
+    (ts_old as f64) / 1000.0
 }
