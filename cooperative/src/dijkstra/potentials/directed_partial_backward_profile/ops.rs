@@ -100,7 +100,7 @@ impl<Profiles: AsRef<Vec<Vec<TTFPoint>>>> DijkstraOps<ReversedGraphWithEdgeIds> 
         // even if the current profile dominates all the time, we might have adjusted the time bounds!
         if label_adjusted || changes.iter().any(|&(_, b)| !b) {
             // extract new minimum value
-            let min_dist = result.iter().map(|p| p.val).min().unwrap();
+            let min_dist = min(label.min_dist, linked.iter().map(|p| p.val).min().unwrap());
             *label = DirectedPartialBackwardProfileLabel {
                 ttf: result.to_vec(),
                 min_dist,

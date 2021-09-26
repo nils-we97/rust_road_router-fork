@@ -1,12 +1,14 @@
 use cooperative::dijkstra::potentials::directed_partial_backward_profile::potential::TDDirectedPartialBackwardProfilePotential;
-use cooperative::dijkstra::potentials::lowerbound_cch::init_cch_potential;
 use cooperative::dijkstra::potentials::TDPotential;
 use cooperative::dijkstra::server::{CapacityServer, CapacityServerOps};
 use cooperative::experiments::queries::{generate_queries, QueryType};
 use cooperative::graph::speed_functions::bpr_speed_function;
+use cooperative::io::io_coordinates::load_coords;
 use cooperative::io::io_graph::{load_used_capacity_graph, store_capacity_buckets};
 use cooperative::io::io_node_order::load_node_order;
 use cooperative::util::cli_args::{parse_arg_optional, parse_arg_required};
+use rust_road_router::algo::ch_potentials::CCHPotData;
+use rust_road_router::algo::customizable_contraction_hierarchy::CCH;
 use rust_road_router::report::measure;
 use std::env;
 use std::error::Error;
@@ -42,9 +44,16 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     // init potential
     let order = load_node_order(graph_directory)?;
-    let cch_pot_data = init_cch_potential(&graph, order);
-    //let potential = cch_pot_data.forward_potential();
-    let potential = TDDirectedPartialBackwardProfilePotential::new(&graph, &cch_pot_data);
+
+    let (cch, time) = measure(|| CCH::fix_order_and_build(&graph, order));
+    println!("CCH created in {} ms", time.to_std().unwrap().as_nanos() as f64 / 1_000_000.0);
+
+    let (cch_pot_data, time) = measure(|| CCHPotData::new(&cch, &graph));
+    println!("CCH customized in {} ms", time.to_std().unwrap().as_nanos() as f64 / 1_000_000.0);
+
+    let (longitude, latitude) = load_coords(graph_directory)?;
+
+    let potential = TDDirectedPartialBackwardProfilePotential::new(&graph, &cch, &cch_pot_data, &longitude, &latitude);
 
     let mut server = CapacityServer::new_with_potential(graph, potential);
 
