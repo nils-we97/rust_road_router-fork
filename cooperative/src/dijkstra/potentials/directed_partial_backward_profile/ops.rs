@@ -6,7 +6,9 @@ use std::cmp::{max, min};
 /// extend label of `Vec<TTFPoint>` by saving the lowerbound distance
 #[derive(Clone, Debug, PartialEq)]
 pub struct DirectedPartialBackwardProfileLabel {
-    pub ttf: Vec<TTFPoint>,
+    pub ttf: Vec<TTFPoint>, // careful: partial ttf includes interval [ttf_start, ttf_end]
+    pub ttf_start: Timestamp,
+    pub ttf_end: Timestamp,
     pub min_dist: FlWeight,
 }
 
@@ -16,6 +18,8 @@ impl Label for DirectedPartialBackwardProfileLabel {
     fn neutral() -> Self {
         Self {
             ttf: Vec::<TTFPoint>::neutral(),
+            ttf_start: Timestamp::neutral(),
+            ttf_end: Timestamp::neutral(),
             min_dist: FlWeight::ZERO,
         }
     }
@@ -29,12 +33,34 @@ pub struct TDDirectedPartialBackwardProfilePotentialOps<Profiles> {
     pub query_start: Timestamp,
     pub corridor_max: Timestamp,
     pub profiles: Profiles,
+    pub approximate_threshold: usize,
+}
+
+impl<Profiles: AsRef<Vec<Vec<TTFPoint>>>> TDDirectedPartialBackwardProfilePotentialOps<Profiles> {
+    pub fn new(query_start: Timestamp, corridor_max: Timestamp, profiles: Profiles, approximate_threshold: usize) -> Self {
+        Self {
+            query_start,
+            corridor_max,
+            profiles,
+            approximate_threshold,
+        }
+    }
+
+    /// approximate a given label if the number of breakpoints exceeds `threshold`
+    pub fn approximate_at_threshold(&self, label: &mut DirectedPartialBackwardProfileLabel) {
+        if label.ttf.len() > self.approximate_threshold {
+            label.ttf = PartialPiecewiseLinearFunction::new(&label.ttf)
+                .lower_bound_ttf(&mut Vec::new(), &mut Vec::new())
+                .to_vec();
+            label.min_dist = label.ttf.iter().map(|p| p.val).min().unwrap();
+        }
+    }
 }
 
 impl<Profiles: AsRef<Vec<Vec<TTFPoint>>>> DijkstraOps<ReversedGraphWithEdgeIds> for TDDirectedPartialBackwardProfilePotentialOps<Profiles> {
     type Label = DirectedPartialBackwardProfileLabel;
     type Arc = (NodeIdT, Reversed);
-    type LinkResult = Vec<TTFPoint>;
+    type LinkResult = DirectedPartialBackwardProfileLabel;
     type PredecessorLink = (); // no paths are calculated here => not needed
 
     // label = state at currently processed node
@@ -47,10 +73,10 @@ impl<Profiles: AsRef<Vec<Vec<TTFPoint>>>> DijkstraOps<ReversedGraphWithEdgeIds> 
 
         // 2. obtain start/end timestamp for linking
         // use earliest-arrival-query information to limit the corridor!
-        let backward_start = backward_link_interval(prev_edge_ipps, label.ttf[0].at);
+        let backward_start = backward_link_interval(prev_edge_ipps, label.ttf_start);
         let ts_start = max(self.query_start, backward_start.unwrap_or(Timestamp::ZERO));
 
-        let backward_end = backward_link_interval(prev_edge_ipps, label.ttf.last().unwrap().at);
+        let backward_end = backward_link_interval(prev_edge_ipps, label.ttf_end);
         let ts_end = min(self.corridor_max, backward_end.unwrap_or(Timestamp::NEVER));
 
         if ts_start.fuzzy_lt(ts_end) && backward_end.is_some() {
@@ -61,7 +87,15 @@ impl<Profiles: AsRef<Vec<Vec<TTFPoint>>>> DijkstraOps<ReversedGraphWithEdgeIds> 
             let link_result = prev_edge_profile.link(&current_node_profile, ts_start, ts_end);
 
             match link_result {
-                ATTFContainer::Exact(inner) => inner,
+                ATTFContainer::Exact(inner) => {
+                    let min_dist = inner.iter().map(|p| p.val).min().unwrap();
+                    Self::LinkResult {
+                        ttf: inner,
+                        ttf_start: ts_start,
+                        ttf_end: ts_end,
+                        min_dist,
+                    }
+                }
                 ATTFContainer::Approx(_, _) => panic!("Result must be exact, this should not happen!"),
             }
         } else {
@@ -69,8 +103,6 @@ impl<Profiles: AsRef<Vec<Vec<TTFPoint>>>> DijkstraOps<ReversedGraphWithEdgeIds> 
             // Even for the latest relevant arrival at this edge, the start takes place before the query's departure
             Self::LinkResult::neutral()
         }
-
-        // 4. TODO consider using some approximation
     }
 
     fn merge(&mut self, label: &mut Self::Label, mut linked: Self::LinkResult) -> bool {
@@ -80,31 +112,31 @@ impl<Profiles: AsRef<Vec<Vec<TTFPoint>>>> DijkstraOps<ReversedGraphWithEdgeIds> 
             return false;
         } else if *label == Self::Label::neutral() {
             // first non-empty adjustment, so we can simply take the new linked PLF
-            let min_dist = linked.iter().map(|p| p.val).min().unwrap();
-            *label = DirectedPartialBackwardProfileLabel { ttf: linked, min_dist };
+            *label = linked;
             return true;
         }
 
+        debug_assert!(self.query_start.fuzzy_leq(linked.ttf_start));
+        debug_assert!(self.query_start.fuzzy_leq(label.ttf_start));
+        debug_assert!(linked.ttf_end.fuzzy_leq(self.corridor_max));
+        debug_assert!(label.ttf_end.fuzzy_leq(self.corridor_max));
+
         // more complex case requires actual merging
         // first of all, adjust labels to span the same range (by adding fifo-conform breakpoints at start/end of shorter profile)
-        let (start_ts, end_ts, label_adjusted) = adjust_labels_to_merge(&mut label.ttf, &mut linked);
+        let label_adjusted = adjust_labels_to_merge(label, &mut linked);
 
         // with the same start & end timestamp, we can just take the merge result
-        let linked_profile = PartialPiecewiseLinearFunction::new(&linked);
+        let linked_profile = PartialPiecewiseLinearFunction::new(&linked.ttf);
         let current_profile = PartialPiecewiseLinearFunction::new(&label.ttf);
 
-        let (result, changes) = current_profile.merge(&linked_profile, start_ts, end_ts, &mut Vec::new());
+        let (result, changes) = current_profile.merge(&linked_profile, label.ttf_start, label.ttf_end, &mut Vec::new());
 
         // merging takes place if there is any point where the linked profile is 'better',
         // i.e. the current profile does not dominate all the time
         // even if the current profile dominates all the time, we might have adjusted the time bounds!
-        if label_adjusted || changes.iter().any(|&(_, b)| !b) {
-            // extract new minimum value
-            let min_dist = min(label.min_dist, linked.iter().map(|p| p.val).min().unwrap());
-            *label = DirectedPartialBackwardProfileLabel {
-                ttf: result.to_vec(),
-                min_dist,
-            };
+        if label_adjusted || significant_changes(&changes, &linked.ttf, &label.ttf) {
+            label.ttf = result.to_vec();
+            label.min_dist = min(label.min_dist, linked.min_dist);
             true
         } else {
             false
@@ -177,53 +209,81 @@ fn extend_edge_profile(profile: &Vec<TTFPoint>, last_required_ts: Timestamp) -> 
     }
 }
 
-/// adjust the labels to span the same interval
-/// additional return values: (common start timestamp, common end time stamp, adjustments to `label`)
-fn adjust_labels_to_merge(label: &mut Vec<TTFPoint>, linked: &mut Vec<TTFPoint>) -> (Timestamp, Timestamp, bool) {
-    // TODO verify whether the following assumption is correct
+/// adjust the labels to span the same interval w.r.t. the valid start/end of the TTFs
+/// returns true if adjustment to the existing label were made
+fn adjust_labels_to_merge(label: &mut DirectedPartialBackwardProfileLabel, linked: &mut DirectedPartialBackwardProfileLabel) -> bool {
     // in order to merge within bounds, we first assure that each PLF spans the same interval
     // as soon as we have to extend `label`, we can assume that changes will be made
     let mut label_adjusted = false;
 
     // extend functions to the same start timestamp
-    if label[0].at.fuzzy_lt(linked[0].at) {
+    if label.ttf_start.fuzzy_lt(linked.ttf[0].at) {
         // add FIFO-conform weight at beginning, equal to "waiting"
-        // time difference is (linked[0].at - label[0].at),
-        // hence linked gets a new starting point at label[0].at with additional waiting time equal to the time difference
-        linked.insert(
+        // time difference is (linked[0].at - label.ttf_start),
+        // hence linked gets a new starting point at label.ttf_start with additional waiting time equal to the time difference
+        linked.ttf.insert(
             0,
             TTFPoint {
-                at: label[0].at,
-                val: linked[0].val + linked[0].at - label[0].at,
+                at: label.ttf_start,
+                val: linked.ttf[0].val + linked.ttf[0].at - label.ttf_start,
             },
         );
-    } else if linked[0].at.fuzzy_lt(label[0].at) {
-        label.insert(
+        linked.ttf_start = label.ttf_start;
+    } else if linked.ttf_start.fuzzy_lt(label.ttf[0].at) {
+        label.ttf.insert(
             0,
             TTFPoint {
-                at: linked[0].at,
-                val: label[0].val + label[0].at - linked[0].at,
+                at: linked.ttf_start,
+                val: label.ttf[0].val + label.ttf[0].at - linked.ttf_start,
             },
         );
+        label.ttf_start = linked.ttf_start;
         label_adjusted = true;
     }
 
-    // TODO is it necessary to extend functions to the same end timestamp?
-    let label_last = label.last().unwrap().clone();
-    let linked_last = linked.last().unwrap().clone();
+    let label_last = label.ttf.last().unwrap().clone();
+    let linked_last = linked.ttf.last().unwrap().clone();
 
-    if label_last.at.fuzzy_lt(linked_last.at) {
-        label.push(TTFPoint {
-            at: linked_last.at,
-            val: label_last.val + linked_last.at - label_last.at,
+    if label_last.at.fuzzy_lt(linked.ttf_end) {
+        label.ttf.push(TTFPoint {
+            at: linked.ttf_end,
+            val: label_last.val + linked.ttf_end - label_last.at,
         });
+        label.ttf_end = linked.ttf_end;
         label_adjusted = true;
-    } else if linked_last.at.fuzzy_lt(label_last.at) {
-        linked.push(TTFPoint {
-            at: label_last.at,
-            val: linked_last.val + label_last.at - linked_last.at,
+    } else if linked_last.at.fuzzy_lt(label.ttf_end) {
+        linked.ttf.push(TTFPoint {
+            at: label.ttf_end,
+            val: linked_last.val + label.ttf_end - linked_last.at,
         });
+        linked.ttf_end = label.ttf_end;
     }
 
-    (label.first().unwrap().at, label.last().unwrap().at, label_adjusted)
+    label_adjusted
+}
+
+/// checks whether the changes occurred during merging are significant
+fn significant_changes(changes: &Vec<(Timestamp, bool)>, linked: &Vec<TTFPoint>, label: &Vec<TTFPoint>) -> bool {
+    // revoke the changes if the effect is negligible
+    // first of all, check where the current label is dominated by the linked profile
+    let improving_changes_ts = changes.iter().filter(|&&(_, b)| !b).map(|&(ts, _)| ts).collect::<Vec<Timestamp>>();
+
+    let linked_profile = PartialPiecewiseLinearFunction::new(linked);
+    let label_profile = PartialPiecewiseLinearFunction::new(label);
+
+    if improving_changes_ts.is_empty() {
+        // old label dominates all the time -> no changes!
+        false
+    } else if improving_changes_ts.len() > 0 && improving_changes_ts.len() < 10 {
+        // few changes, check if they are relevant or not
+        let total_changes: f64 = improving_changes_ts
+            .iter()
+            .map(|&ts| (linked_profile.eval(ts) - label_profile.eval(ts)).abs().0)
+            .sum();
+
+        total_changes < 0.00001
+    } else {
+        // too many changes, for now we assume at least one change is significant
+        true
+    }
 }

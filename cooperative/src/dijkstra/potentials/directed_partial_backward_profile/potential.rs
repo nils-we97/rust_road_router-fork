@@ -102,11 +102,12 @@ impl<'a> TDPotential for TDDirectedPartialBackwardProfilePotential<'a> {
         println!("Query: {} -> {} (ts: {}), corridor: {:?}", source, target, timestamp, query.initial_state());
 
         // 3. init ops with corridor data
-        let mut ops = TDDirectedPartialBackwardProfilePotentialOps {
-            query_start: Timestamp(convert_timestamp_u32_to_f64(timestamp)),
-            corridor_max: Timestamp(query.earliest_arrival.0 + query.initial_timeframe.0),
-            profiles: &self.travel_time_profile,
-        };
+        let mut ops = TDDirectedPartialBackwardProfilePotentialOps::new(
+            Timestamp(convert_timestamp_u32_to_f64(timestamp)),
+            Timestamp(query.earliest_arrival.0 + query.initial_timeframe.0),
+            &self.travel_time_profile,
+            100,
+        );
 
         // 4. init dijkstra run
         self.is_pruned.iter_mut().for_each(|x| *x = false);
@@ -120,6 +121,8 @@ impl<'a> TDPotential for TDDirectedPartialBackwardProfilePotential<'a> {
         });
         self.dijkstra.distances[target as usize] = DirectedPartialBackwardProfileLabel {
             ttf: query.initial_state(),
+            ttf_start: query.earliest_arrival,
+            ttf_end: ops.corridor_max,
             min_dist: FlWeight::ZERO,
         };
 
@@ -132,12 +135,15 @@ impl<'a> TDPotential for TDDirectedPartialBackwardProfilePotential<'a> {
         let mut num_adjusted_labels = 0;
 
         while let Some(State { node, .. }) = self.dijkstra.queue.pop() {
-            let current_node_label = &self.dijkstra.distances[node as usize];
+            let current_node_label = &mut self.dijkstra.distances[node as usize];
             self.is_visited[node as usize] = true;
+
+            // approximate labels before they get too complex
+            ops.approximate_at_threshold(current_node_label);
 
             counter += 1;
             if counter % 10000 == 0 {
-                //println!("Extracted {} nodes - current min dist: {}", counter, current_node_label.min_dist.0);
+                println!("Extracted {} nodes - current min dist: {}", counter, current_node_label.min_dist.0);
             }
 
             // whenever the source node is extracted (remember: backward search!),
@@ -202,7 +208,7 @@ impl<'a> TDPotential for TDDirectedPartialBackwardProfilePotential<'a> {
         );
 
         // visualization
-        let mut rng = thread_rng();
+        /*let mut rng = thread_rng();
         println!("let source = [{}, {}];", self.latitude[source as usize], self.longitude[source as usize]);
         println!("let target = [{}, {}];", self.latitude[target as usize], self.longitude[target as usize]);
         println!("[");
@@ -213,7 +219,7 @@ impl<'a> TDPotential for TDDirectedPartialBackwardProfilePotential<'a> {
             .for_each(|(idx, _)| {
                 println!("[{}, {}],", self.latitude[idx], self.longitude[idx]);
             });
-        println!("]");
+        println!("]");*/
     }
 
     fn potential(&mut self, node: u32, timestamp: u32) -> Option<u32> {
