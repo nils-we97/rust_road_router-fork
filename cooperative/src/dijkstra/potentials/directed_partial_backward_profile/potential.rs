@@ -190,8 +190,6 @@ impl<'a> TDPotential for TDDirectedPartialBackwardProfilePotential<'a> {
                 }
             }
         }
-        //let (_, time) = measure(|| while let Some(_node) = run.next() {});
-        //println!("Potential init took {} ms", time.to_std().unwrap().as_nanos() as f64 / 1_000_000.0);
 
         let num_pruned_nodes = self.is_pruned.iter().filter(|&&x| x).count();
         let num_visited_nodes = self.is_visited.iter().filter(|&&x| x).count();
@@ -211,7 +209,7 @@ impl<'a> TDPotential for TDDirectedPartialBackwardProfilePotential<'a> {
         self.is_visited
             .iter()
             .enumerate()
-            .filter(|&(_, &v)| v && rng.gen_range(0..30) == 0)
+            .filter(|&(_, &v)| v && rng.gen_range(0..100) == 0)
             .for_each(|(idx, _)| {
                 println!("[{}, {}],", self.latitude[idx], self.longitude[idx]);
             });
