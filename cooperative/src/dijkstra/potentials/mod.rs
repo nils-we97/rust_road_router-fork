@@ -24,7 +24,11 @@ impl<T: Potential> TDPotential for T {
 
 // additional helper functions
 
-// basic conversion: `TDCapacityGraph` uses integer weights, but we rely on floats here
+/// basic conversion: `CapacityGraph` uses integer weights, but we rely on floats here
 fn convert_timestamp_u32_to_f64(ts_old: u32) -> f64 {
     (ts_old as f64) / 1000.0
+}
+
+fn convert_timestamp_f64_to_u32(ts_old: f64) -> u32 {
+    (1000.0 * ts_old) as u32
 }

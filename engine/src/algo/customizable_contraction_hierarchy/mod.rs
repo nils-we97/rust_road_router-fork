@@ -29,13 +29,13 @@ pub fn contract<Graph: LinkIterable<NodeIdT> + EdgeIdGraph>(graph: &Graph, node_
 /// This includes on top of the chordal supergraph (the "contracted" graph),
 /// several other structures like the elimination tree, a mapping from cch edge ids to original edge ids and the inverted graph.
 pub struct CCH {
-    first_out: Vec<EdgeId>,
-    head: Vec<NodeId>,
-    tail: Vec<NodeId>,
-    node_order: NodeOrder,
-    cch_edge_to_orig_arc: Vec<(Vec<EdgeIdT>, Vec<EdgeIdT>)>,
-    elimination_tree: Vec<InRangeOption<NodeId>>,
-    inverted: ReversedGraphWithEdgeIds,
+    pub first_out: Vec<EdgeId>,
+    pub head: Vec<NodeId>,
+    pub tail: Vec<NodeId>,
+    pub node_order: NodeOrder,
+    pub cch_edge_to_orig_arc: Vec<(Vec<EdgeIdT>, Vec<EdgeIdT>)>,
+    pub elimination_tree: Vec<InRangeOption<NodeId>>,
+    pub inverted: ReversedGraphWithEdgeIds,
 }
 
 impl Deconstruct for CCH {
@@ -145,17 +145,17 @@ impl CCH {
     }
 
     #[inline]
-    fn neighbor_edge_indices(&self, node: NodeId) -> Range<EdgeId> {
+    pub fn neighbor_edge_indices(&self, node: NodeId) -> Range<EdgeId> {
         (self.first_out[node as usize])..(self.first_out[(node + 1) as usize])
     }
 
     #[inline]
-    fn edge_indices_range(&self, nodes: Range<NodeId>) -> Range<EdgeId> {
+    pub fn edge_indices_range(&self, nodes: Range<NodeId>) -> Range<EdgeId> {
         (self.first_out[nodes.start as usize] as EdgeId)..(self.first_out[nodes.end as usize] as EdgeId)
     }
 
     #[inline]
-    fn neighbor_edge_indices_usize(&self, node: NodeId) -> Range<usize> {
+    pub fn neighbor_edge_indices_usize(&self, node: NodeId) -> Range<usize> {
         let range = self.neighbor_edge_indices(node);
         Range {
             start: range.start as usize,
@@ -164,7 +164,7 @@ impl CCH {
     }
 
     #[inline]
-    fn edge_indices_range_usize(&self, nodes: Range<NodeId>) -> Range<usize> {
+    pub fn edge_indices_range_usize(&self, nodes: Range<NodeId>) -> Range<usize> {
         let range = self.edge_indices_range(nodes);
         Range {
             start: range.start as usize,
@@ -344,7 +344,7 @@ pub struct Customized<CCH, CCHRef> {
 }
 
 impl<C: CCHT, CCHRef: std::borrow::Borrow<C>> Customized<C, CCHRef> {
-    fn new(cch: CCHRef, upward: Vec<Weight>, downward: Vec<Weight>) -> Self {
+    pub fn new(cch: CCHRef, upward: Vec<Weight>, downward: Vec<Weight>) -> Self {
         Customized {
             cch,
             upward,
@@ -380,6 +380,32 @@ pub struct DirectedCCH {
 }
 
 impl DirectedCCH {
+    pub fn new(
+        forward_first_out: Vec<EdgeId>,
+        forward_head: Vec<NodeId>,
+        backward_first_out: Vec<EdgeId>,
+        backward_head: Vec<NodeId>,
+        node_order: NodeOrder,
+        forward_cch_edge_to_orig_arc: Vec<Vec<EdgeIdT>>,
+        backward_cch_edge_to_orig_arc: Vec<Vec<EdgeIdT>>,
+        elimination_tree: Vec<InRangeOption<NodeId>>,
+        forward_inverted: ReversedGraphWithEdgeIds,
+        backward_inverted: ReversedGraphWithEdgeIds,
+    ) -> Self {
+        Self {
+            forward_first_out,
+            forward_head,
+            backward_first_out,
+            backward_head,
+            node_order,
+            forward_cch_edge_to_orig_arc,
+            backward_cch_edge_to_orig_arc,
+            elimination_tree,
+            forward_inverted,
+            backward_inverted,
+        }
+    }
+
     fn num_nodes(&self) -> usize {
         self.forward_first_out.len() - 1
     }

@@ -1,49 +1,49 @@
 use std::cmp::{max, min};
 
+use crate::dijkstra::corridor_elimination_tree::customized::CustomizedUpperLower;
+use crate::dijkstra::corridor_elimination_tree::server::CorridorEliminationTreeServer;
 use crate::dijkstra::potentials::directed_partial_backward_profile::ops::{DirectedPartialBackwardProfileLabel, TDDirectedPartialBackwardProfilePotentialOps};
 use crate::dijkstra::potentials::partial_backward_profile::query::TDPartialBackwardProfileQuery;
-use crate::dijkstra::potentials::{convert_timestamp_u32_to_f64, TDPotential};
+use crate::dijkstra::potentials::{convert_timestamp_f64_to_u32, convert_timestamp_u32_to_f64, TDPotential};
 use crate::graph::capacity_graph::CapacityGraph;
 use rand::{thread_rng, Rng};
 use rust_road_router::algo::ch_potentials::{CCHPotData, CCHPotential};
-use rust_road_router::algo::customizable_contraction_hierarchy::query::Server;
-use rust_road_router::algo::customizable_contraction_hierarchy::{customize, customize_perfect, DirectedCCH, CCH};
+use rust_road_router::algo::customizable_contraction_hierarchy::CCH;
 use rust_road_router::algo::dijkstra::{DijkstraData, DijkstraOps, Label, State};
-use rust_road_router::algo::{GenQuery, Query, QueryServer};
+use rust_road_router::algo::{GenQuery, Query};
 use rust_road_router::datastr::graph::floating_time_dependent::{FlWeight, PartialPiecewiseLinearFunction, TTFPoint, Timestamp};
-use rust_road_router::datastr::graph::{Arc, BuildReversed, EdgeId, FirstOutGraph, Graph, LinkIterable, NodeId, OwnedGraph, ReversedGraphWithEdgeIds, Weight};
+use rust_road_router::datastr::graph::{Arc, BuildReversed, EdgeId, FirstOutGraph, Graph, LinkIterable, NodeId, ReversedGraphWithEdgeIds, Weight};
 use rust_road_router::datastr::index_heap::Indexing;
 use rust_road_router::report::measure;
 
 /// Basic implementation of a potential obtained by a backward profile search
 /// this version is not to be used, but provides a good starting point for further optimizations
 pub struct TDDirectedPartialBackwardProfilePotential<'a> {
-    forward_cch: Server<DirectedCCH, DirectedCCH>,
+    forward_cch: CorridorEliminationTreeServer,
     backward_graph: ReversedGraphWithEdgeIds,
     backward_potential: CCHPotential<'a, FirstOutGraph<&'a [EdgeId], &'a [NodeId], &'a [Weight]>, FirstOutGraph<&'a [EdgeId], &'a [NodeId], &'a [Weight]>>, // for directed backward profile search
     travel_time_profile: Vec<Vec<TTFPoint>>,
     dijkstra: DijkstraData<DirectedPartialBackwardProfileLabel>,
-    is_pruned: Vec<bool>,
+    is_visited: Vec<bool>,
+    /*is_pruned: Vec<bool>,
     is_visited: Vec<bool>,
     longitude: &'a Vec<f32>,
-    latitude: &'a Vec<f32>,
+    latitude: &'a Vec<f32>,*/
 }
 
 impl<'a> TDDirectedPartialBackwardProfilePotential<'a> {
-    pub fn new(graph: &CapacityGraph, cch: &'a CCH, cch_pot_data: &'a CCHPotData, longitude: &'a Vec<f32>, latitude: &'a Vec<f32>) -> Self {
+    pub fn new(graph: &CapacityGraph, cch: &'a CCH, cch_pot_data: &'a CCHPotData) -> Self {
         // copy graph structure for potentials
         let num_nodes = graph.num_nodes();
-        let first_out = graph.first_out().to_vec();
-        let head = graph.head().to_vec();
-        let weight = graph.freeflow_time().to_vec();
 
         // borrow departure and travel time
         let departure = graph.departure();
         let travel_time = graph.travel_time();
 
         // init forward cch
-        let forward_graph = OwnedGraph::new(first_out, head, weight);
-        let forward_cch = Server::new(customize_perfect(customize(cch, &forward_graph)));
+        let forward_cch = CorridorEliminationTreeServer::new(CustomizedUpperLower::new(cch, travel_time));
+
+        //let forward_cch = Server::new(customize_perfect(customize(cch, &forward_graph)));
 
         // init backward graph and potentials
         let backward_graph = ReversedGraphWithEdgeIds::reversed(graph);
@@ -56,10 +56,11 @@ impl<'a> TDDirectedPartialBackwardProfilePotential<'a> {
             backward_potential,
             travel_time_profile: Vec::with_capacity(departure.len()), // customized below
             dijkstra: DijkstraData::new(num_nodes),
-            is_pruned: vec![false; num_nodes],
+            is_visited: vec![false; num_nodes],
+            /*is_pruned: vec![false; num_nodes],
             is_visited: vec![false; num_nodes],
             longitude,
-            latitude,
+            latitude,*/
         };
         ret.update_weights(departure, travel_time);
         ret
@@ -88,7 +89,7 @@ impl<'a> TDDirectedPartialBackwardProfilePotential<'a> {
 impl<'a> TDPotential for TDDirectedPartialBackwardProfilePotential<'a> {
     fn init(&mut self, source: NodeId, target: NodeId, timestamp: u32) {
         // 1. earliest arrival query on lowerbound graph
-        let (earliest_arrival_distance, time) = measure(|| self.forward_cch.query(Query::new(source, target, 0)).distance().unwrap());
+        let (earliest_arrival_distance, time) = measure(|| self.forward_cch.query(source, target).unwrap().0);
         println!("Earliest arrival query took {} ms", time.to_std().unwrap().as_nanos() as f64 / 1_000_000.0);
 
         // 2. initialize backwards profile dijkstra: custom implementation with additional pruning
@@ -106,11 +107,11 @@ impl<'a> TDPotential for TDDirectedPartialBackwardProfilePotential<'a> {
             Timestamp(convert_timestamp_u32_to_f64(timestamp)),
             Timestamp(query.earliest_arrival.0 + query.initial_timeframe.0),
             &self.travel_time_profile,
-            100,
+            500,
         );
 
         // 4. init dijkstra run
-        self.is_pruned.iter_mut().for_each(|x| *x = false);
+        //self.is_pruned.iter_mut().for_each(|x| *x = false);
         self.is_visited.iter_mut().for_each(|x| *x = false);
 
         self.dijkstra.queue.clear();
@@ -163,8 +164,7 @@ impl<'a> TDPotential for TDDirectedPartialBackwardProfilePotential<'a> {
                 if expected_dist.is_some() && max_tent_dist.fuzzy_lt(expected_dist.unwrap()) {
                     // pruning: ignore node if the max tentative distance to the source can't be beaten anymore,
                     // i.e. the current min dist already exceeds the source's max
-                    //let current_node_min_dist = current_node_label.ttf.iter().map(|p| p.val).min().unwrap();
-                    self.is_pruned[node as usize] = true;
+                    //self.is_pruned[node as usize] = true;
                     continue;
                 }
             }
@@ -197,7 +197,7 @@ impl<'a> TDPotential for TDDirectedPartialBackwardProfilePotential<'a> {
             }
         }
 
-        let num_pruned_nodes = self.is_pruned.iter().filter(|&&x| x).count();
+        /*let num_pruned_nodes = self.is_pruned.iter().filter(|&&x| x).count();
         let num_visited_nodes = self.is_visited.iter().filter(|&&x| x).count();
         println!(
             "Visited nodes: {} / {}, pruned nodes: {}, adjusted labels: {}",
@@ -205,7 +205,7 @@ impl<'a> TDPotential for TDDirectedPartialBackwardProfilePotential<'a> {
             self.backward_graph.num_nodes(),
             num_pruned_nodes,
             num_adjusted_labels
-        );
+        );*/
 
         // visualization
         /*let mut rng = thread_rng();
@@ -230,7 +230,7 @@ impl<'a> TDPotential for TDDirectedPartialBackwardProfilePotential<'a> {
         if node_profile.first().unwrap().at.fuzzy_leq(timestamp) && timestamp.fuzzy_leq(node_profile.last().unwrap().at) {
             // interpolate between the respective profile breakpoints
             let pot = PartialPiecewiseLinearFunction::new(node_profile).eval(timestamp);
-            Some((1000.0 * pot.0) as u32)
+            Some(convert_timestamp_f64_to_u32(pot.0))
         } else if !self.is_visited[node as usize] {
             // due to pruning and merging/linking in a tight corridor,
             // some nodes might not be visited at all. For now, it's sufficient to ignore them during the query
@@ -239,12 +239,12 @@ impl<'a> TDPotential for TDDirectedPartialBackwardProfilePotential<'a> {
             // otherwise, there is no potential for this node
             // this could happen if the profile corridors are set too tightly
             panic!(
-                "Failed to find the potential for {} at ts {}: Partial profile spans range [{}, {}] (pruned: {}, visited: {})",
+                "Failed to find the potential for {} at ts {}: Partial profile spans range [{}, {}] (visited: {})",
                 node,
                 timestamp.0,
                 node_profile.first().unwrap().at.0,
                 node_profile.last().unwrap().at.0,
-                self.is_pruned[node as usize],
+                //self.is_pruned[node as usize],
                 self.is_visited[node as usize]
             )
         }

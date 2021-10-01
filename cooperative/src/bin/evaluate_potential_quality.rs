@@ -1,14 +1,15 @@
 use cooperative::dijkstra::potentials::directed_partial_backward_profile::potential::TDDirectedPartialBackwardProfilePotential;
+use cooperative::dijkstra::potentials::partial_backward_profile::potential::TDPartialBackwardProfilePotential;
 use cooperative::dijkstra::potentials::TDPotential;
 use cooperative::dijkstra::server::{CapacityServer, CapacityServerOps};
 use cooperative::experiments::queries::{generate_queries, QueryType};
 use cooperative::graph::speed_functions::bpr_speed_function;
-use cooperative::io::io_coordinates::load_coords;
 use cooperative::io::io_graph::{load_used_capacity_graph, store_capacity_buckets};
 use cooperative::io::io_node_order::load_node_order;
 use cooperative::util::cli_args::{parse_arg_optional, parse_arg_required};
 use rust_road_router::algo::ch_potentials::CCHPotData;
 use rust_road_router::algo::customizable_contraction_hierarchy::CCH;
+use rust_road_router::algo::{GenQuery, TDQuery};
 use rust_road_router::report::measure;
 use std::env;
 use std::error::Error;
@@ -51,9 +52,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     let (cch_pot_data, time) = measure(|| CCHPotData::new(&cch, &graph));
     println!("CCH customized in {} ms", time.to_std().unwrap().as_nanos() as f64 / 1_000_000.0);
 
-    let (longitude, latitude) = load_coords(graph_directory)?;
-
-    let potential = TDDirectedPartialBackwardProfilePotential::new(&graph, &cch, &cch_pot_data, &longitude, &latitude);
+    let potential = TDDirectedPartialBackwardProfilePotential::new(&graph, &cch, &cch_pot_data);
+    let _potential = TDPartialBackwardProfilePotential::new(&graph);
 
     let mut server = CapacityServer::new_with_potential(graph, potential);
 
@@ -90,6 +90,8 @@ fn get_chunked_runtime_in_millis<Pot: TDPotential>(server: &mut CapacityServer<P
     let mut time_queries = time::Duration::zero();
     let mut time_buckets = time::Duration::zero();
     let mut time_ttfs = time::Duration::zero();
+
+    server.query(TDQuery::new(84731, 43806, 34622927), true);
 
     let (_, total_time) = measure(|| {
         queries.iter().for_each(|&query| {

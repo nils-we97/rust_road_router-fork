@@ -6,7 +6,7 @@ use rust_road_router::datastr::graph::{BuildReversed, Graph, NodeId, ReversedGra
 
 use crate::dijkstra::potentials::backward_profile::ops::TDBackwardProfilePotentialOps;
 use crate::dijkstra::potentials::backward_profile::query::TDBackwardProfileQuery;
-use crate::dijkstra::potentials::{convert_timestamp_u32_to_f64, TDPotential};
+use crate::dijkstra::potentials::{convert_timestamp_f64_to_u32, convert_timestamp_u32_to_f64, TDPotential};
 use crate::graph::capacity_graph::CapacityGraph;
 use crate::graph::MAX_BUCKETS;
 use crate::util::profile_search::find_profile_index;
@@ -86,7 +86,7 @@ impl TDPotential for TDBackwardProfilePotential {
 
         // easy case: profile only contains sentinels -> don't do expensive interpolation
         if profile.len() == 2 {
-            Some((1000.0 * profile[0].val.0) as u32)
+            Some(convert_timestamp_f64_to_u32(1000.0 * profile[0].val.0))
         } else {
             // get timestamp
             let ts = Timestamp::new(convert_timestamp_u32_to_f64(timestamp));
@@ -94,7 +94,7 @@ impl TDPotential for TDBackwardProfilePotential {
             // get travel time at `ts`, do something more efficient than PLF evaluation
             let intersect = find_profile_index(profile, ts.0);
             if intersect.is_ok() {
-                Some((1000.0 * profile[intersect.unwrap()].val.0) as u32)
+                Some(convert_timestamp_f64_to_u32(profile[intersect.unwrap()].val.0))
             } else {
                 // interpolate between next two points
                 let intersect = intersect.unwrap_err();

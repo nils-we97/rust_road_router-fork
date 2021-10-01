@@ -250,10 +250,13 @@ name = "cooperative"
 version = "0.1.0"
 dependencies = [
  "conversion",
+ "core_affinity",
  "fux_kdtree",
  "rand 0.8.4",
  "rand_distr 0.4.1",
+ "rayon",
  "rust_road_router",
+ "scoped-tls",
  "time",
 ]
 
