@@ -2,8 +2,7 @@ use crate::dijkstra::corridor_elimination_tree::parallelization::{SeparatorBased
 use rayon::prelude::*;
 use rust_road_router::algo::customizable_contraction_hierarchy::{DirectedCCH, CCH, CCHT};
 use rust_road_router::datastr::graph::{
-    BuildReversed, EdgeId, EdgeIdT, FirstOutGraph, Graph, Link, LinkIterable, NodeId, NodeIdT, Reversed, ReversedGraphWithEdgeIds, UnweightedFirstOutGraph,
-    Weight, INFINITY,
+    BuildReversed, EdgeId, EdgeIdT, Graph, LinkIterable, NodeId, NodeIdT, Reversed, ReversedGraphWithEdgeIds, UnweightedFirstOutGraph, Weight, INFINITY,
 };
 use rust_road_router::report::{report_time, report_time_with_key};
 use rust_road_router::util::in_range_option::InRangeOption;
@@ -28,10 +27,12 @@ impl CustomizedUpperLower {
     pub fn new(cch: &CCH, travel_times: &Vec<Vec<Weight>>) -> Self {
         let m = cch.num_arcs();
 
-        let (lower_bound, upper_bound) = travel_times
+        let (lower_bound, upper_bound): (Vec<Weight>, Vec<Weight>) = travel_times
             .iter()
-            .map(|times| (times.iter().max().unwrap().clone(), times.iter().min().unwrap().clone()))
+            .map(|times| (times.iter().min().unwrap().clone(), times.iter().max().unwrap().clone()))
             .unzip();
+
+        debug_assert!(!lower_bound.iter().zip(upper_bound.iter()).any(|(&lower, &upper)| lower > upper));
 
         // these will contain our customized shortcuts
         let mut upward_weights = vec![(INFINITY, INFINITY); m];
@@ -43,8 +44,16 @@ impl CustomizedUpperLower {
         // run basic customization
         customize_basic(cch, &mut upward_weights, &mut downward_weights);
 
+        println!("Sizes after basic: {} {}", upward_weights.len(), downward_weights.len());
+
         // run perfect customization
         let directed_cch = customize_perfect(cch, &mut upward_weights, &mut downward_weights);
+
+        println!("Sizes after perfect: {} {}", upward_weights.len(), downward_weights.len());
+
+        // assert that the lower <= upper for all bounds
+        debug_assert!(!upward_weights.iter().any(|&(lower, upper)| lower > upper));
+        debug_assert!(!downward_weights.iter().any(|&(lower, upper)| lower > upper));
 
         Self {
             cch: directed_cch,
@@ -154,7 +163,7 @@ fn customize_basic(cch: &CCH, upward_weights: &mut Vec<(Weight, Weight)>, downwa
         });
     };
 
-    // setup customization for parallization
+    // setup customization for parallelization
     let customization = SeparatorBasedParallelCustomization::new(cch, customize, customize);
 
     // execute customization
@@ -239,7 +248,10 @@ fn customize_perfect(cch: &CCH, upward_weights: &mut Vec<(Weight, Weight)>, down
     });
 
     report_time_with_key("Build Perfect Customized Graph", "graph_build", || {
-        let forward = FirstOutGraph::new(
+        let forward = UnweightedFirstOutGraph::new(cch.forward_first_out(), cch.forward_head());
+        let backward = UnweightedFirstOutGraph::new(cch.backward_first_out(), cch.backward_head());
+
+        /*let forward = FirstOutGraph::new(
             cch.forward_first_out(),
             cch.forward_head(),
             upward_weights.iter().map(|&(lower, _)| lower).collect::<Vec<Weight>>(),
@@ -248,7 +260,7 @@ fn customize_perfect(cch: &CCH, upward_weights: &mut Vec<(Weight, Weight)>, down
             cch.backward_first_out(),
             cch.backward_head(),
             downward_weights.iter().map(|&(lower, _)| lower).collect::<Vec<Weight>>(),
-        );
+        );*/
 
         let mut forward_first_out = Vec::with_capacity(cch.first_out.len());
         forward_first_out.push(0);
@@ -268,25 +280,37 @@ fn customize_perfect(cch: &CCH, upward_weights: &mut Vec<(Weight, Weight)>, down
         for node in 0..n as NodeId {
             let edge_ids = cch.neighbor_edge_indices_usize(node);
             let orig_arcs = &cch.cch_edge_to_orig_arc[edge_ids.clone()];
-            for ((link, (forward_orig_arcs, _)), &customized_weight) in LinkIterable::<Link>::link_iter(&forward, node)
-                .zip(orig_arcs.iter())
-                .zip(&upward_orig[edge_ids.clone()])
+
+            for (((NodeIdT(next_node), EdgeIdT(edge_id)), (forward_orig_arcs, _)), &customized_weight) in
+                LinkIterable::<(NodeIdT, EdgeIdT)>::link_iter(&forward, node)
+                    .zip(orig_arcs.iter())
+                    .zip(&upward_orig[edge_ids.clone()])
             {
-                // lowerbound must be smaller than upperbound
-                if link.weight < INFINITY && !(link.weight <= customized_weight.1) {
-                    forward_head.push(link.node);
-                    forward_weight.push(link.weight);
+                let edge_id = edge_id as usize;
+                // pruning: ignore edge if lower bound exceeds customized upper bound
+                if upward_weights[edge_id].0 < INFINITY // do not consider untouched edges
+                    && upward_weights[edge_id].0 <= upward_weights[edge_id].1 // do not consider pruned edges
+                    // && !(link.weight < customized_weight)
+                    && upward_weights[edge_id].0 <= customized_weight.1
+                {
+                    forward_head.push(next_node);
+                    forward_weight.push(upward_weights[edge_id]);
                     forward_cch_edge_to_orig_arc.push(forward_orig_arcs.clone());
                     forward_edge_counter += 1;
                 }
             }
-            for ((link, (_, backward_orig_arcs)), &customized_weight) in LinkIterable::<Link>::link_iter(&backward, node)
-                .zip(orig_arcs.iter())
-                .zip(&downward_orig[edge_ids.clone()])
+            for (((NodeIdT(next_node), EdgeIdT(edge_id)), (_, backward_orig_arcs)), &customized_weight) in
+                LinkIterable::<(NodeIdT, EdgeIdT)>::link_iter(&backward, node)
+                    .zip(orig_arcs.iter())
+                    .zip(&downward_orig[edge_ids.clone()])
             {
-                if link.weight < INFINITY && !(link.weight <= customized_weight.1) {
-                    backward_head.push(link.node);
-                    backward_weight.push(link.weight);
+                let edge_id = edge_id as usize;
+                if downward_weights[edge_id].0 < INFINITY // do not consider untouched edges
+                    && downward_weights[edge_id].0 <= downward_weights[edge_id].1 // do not consider pruned edges
+                    && downward_weights[edge_id].0 <= customized_weight.1
+                {
+                    backward_head.push(next_node);
+                    backward_weight.push(downward_weights[edge_id]);
                     backward_cch_edge_to_orig_arc.push(backward_orig_arcs.clone());
                     backward_edge_counter += 1;
                 }
@@ -299,6 +323,10 @@ fn customize_perfect(cch: &CCH, upward_weights: &mut Vec<(Weight, Weight)>, down
         let backward_inverted = ReversedGraphWithEdgeIds::reversed(&UnweightedFirstOutGraph::new(&backward_first_out[..], &backward_head[..]));
         let node_order = cch.node_order.clone();
         let elimination_tree = cch.elimination_tree.clone();
+
+        // swap weight containers
+        *downward_weights = backward_weight;
+        *upward_weights = forward_weight;
 
         DirectedCCH::new(
             forward_first_out,

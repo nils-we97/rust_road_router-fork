@@ -56,6 +56,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let _potential = TDPartialBackwardProfilePotential::new(&graph);
 
     let mut server = CapacityServer::new_with_potential(graph, potential);
+    //let mut server = CapacityServer::<ZeroPotential>::new(graph);
 
     // initial run that serves as benchmark for future runs
     let (initial_runtime, time_potentials, time_queries, time_buckets, time_ttf) = get_chunked_runtime_in_millis(&mut server, query_type.clone());
@@ -91,7 +92,10 @@ fn get_chunked_runtime_in_millis<Pot: TDPotential>(server: &mut CapacityServer<P
     let mut time_buckets = time::Duration::zero();
     let mut time_ttfs = time::Duration::zero();
 
-    server.query(TDQuery::new(84731, 43806, 34622927), true);
+    /*server.query(TDQuery::new(84731, 43806, 34622927), true);
+    server.query(TDQuery::new(6270, 25669, 207283), true);
+
+    panic!("enough for now");*/
 
     let (_, total_time) = measure(|| {
         queries.iter().for_each(|&query| {

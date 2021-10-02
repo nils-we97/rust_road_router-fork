@@ -2,7 +2,7 @@ use rust_road_router::algo::a_star::ZeroPotential;
 use rust_road_router::algo::dijkstra::{DijkstraData, DijkstraOps, Label, State};
 use rust_road_router::algo::{GenQuery, TDQuery};
 use rust_road_router::datastr::graph::time_dependent::Timestamp;
-use rust_road_router::datastr::graph::{Arc, EdgeIdT, Graph, LinkIterable, NodeId, NodeIdT, Weight};
+use rust_road_router::datastr::graph::{Arc, EdgeIdT, Graph, LinkIterable, NodeId, NodeIdT, Weight, INFINITY};
 use rust_road_router::datastr::index_heap::Indexing;
 use rust_road_router::report;
 use rust_road_router::report::*;
@@ -12,6 +12,7 @@ use crate::dijkstra::model::{CapacityQueryResult, PathResult};
 use crate::dijkstra::potentials::TDPotential;
 use crate::graph::capacity_graph::CapacityGraph;
 use crate::graph::ModifiableWeight;
+use std::cmp::min;
 use std::ops::Add;
 
 pub struct CapacityServer<Pot = ZeroPotential> {
@@ -125,7 +126,7 @@ impl<Pot: TDPotential> CapacityServerOps for CapacityServer<Pot> {
         let init = query.initial_state();
         let to = query.to();
 
-        let mut result = None;
+        let mut tentative_arrival = INFINITY;
         let mut num_queue_pops = 0;
         let mut num_queue_pushs = 0;
         let mut num_relaxed_arcs = 0;
@@ -150,16 +151,28 @@ impl<Pot: TDPotential> CapacityServerOps for CapacityServer<Pot> {
         self.dijkstra.predecessors[from as usize].0 = from;
 
         // 3. run query
-        while let Some(State { node, key }) = self.dijkstra.queue.pop() {
+        while let Some(State { node, .. }) = self.dijkstra.queue.pop() {
             num_queue_pops += 1;
 
+            // IMPORTANT: the timestamp cannot be retrieved from the state's key!!! Use the previous labels instead!
+            let current_ts = self.dijkstra.distances[node as usize];
+
             if node == to {
-                // distance labels can be greater than `MAX_BUCKETS`, so simply taking the difference suffices (no modulo operations required!)
-                result = Some(self.dijkstra.distances[to as usize] - self.dijkstra.distances[from as usize]);
-                break;
+                // update the tentative arrival time
+                // aborting here will lead to wrong results!
+                tentative_arrival = min(tentative_arrival, self.dijkstra.distances[to as usize]);
+                println!("Tentative distance adjusted: {}", tentative_arrival - self.dijkstra.distances[from as usize]);
+            } else {
+                // pruning: don't consider a node if its expected arrival time is after the already observed tentative arrival time
+                let current_distance = self.dijkstra.distances[node as usize];
+                let current_pot = pot.potential(node, current_ts);
+
+                if current_pot.is_none() || (current_pot.unwrap() + current_distance) > tentative_arrival {
+                    continue;
+                }
             }
 
-            for link in get_neighbors(&self.graph, node) {
+            for link in LinkIterable::<(NodeIdT, EdgeIdT)>::link_iter(&self.graph, node) {
                 num_relaxed_arcs += 1;
                 let linked = ops.link(&self.graph, &self.dijkstra.distances[node as usize], &link);
 
@@ -167,7 +180,7 @@ impl<Pot: TDPotential> CapacityServerOps for CapacityServer<Pot> {
                     self.dijkstra.predecessors[link.head() as usize] = (node, ops.predecessor_link(&link));
                     let next_distance = &self.dijkstra.distances[link.head() as usize];
 
-                    if let Some(next_key) = pot.potential(link.head(), key).map(|p| p + next_distance.key()) {
+                    if let Some(next_key) = pot.potential(link.head(), current_ts).map(|p| p + next_distance.key()) {
                         let next = State {
                             node: link.head(),
                             key: next_key,
@@ -182,6 +195,11 @@ impl<Pot: TDPotential> CapacityServerOps for CapacityServer<Pot> {
                 }
             }
         }
+
+        let result = match tentative_arrival {
+            INFINITY => None,
+            arrival => Some(arrival - self.dijkstra.distances[from as usize]),
+        };
 
         let time_dijkstra = time::now() - start;
         println!("Query results: {}, potential: {}", result.unwrap(), pot.potential(from, init).unwrap());
@@ -238,9 +256,4 @@ impl<Pot: TDPotential> CapacityServerOps for CapacityServer<Pot> {
             .map(|(idx, &edge_id)| self.graph.travel_time_function(edge_id).eval(path.departure[idx]))
             .sum()
     }
-}
-
-// convert graph to LinkIterable in order to avoid compiler errors
-fn get_neighbors<G: LinkIterable<(NodeIdT, EdgeIdT)>>(graph: &G, node: NodeId) -> G::Iter<'_> {
-    graph.link_iter(node)
 }

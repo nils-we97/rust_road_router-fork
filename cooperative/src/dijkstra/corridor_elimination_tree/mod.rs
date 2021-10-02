@@ -33,7 +33,7 @@ impl<'a> CorridorEliminationTreeWalk<'a> {
             weights,
             distances,
             elimination_tree,
-            next: None,
+            next: Some(from),
         }
     }
 

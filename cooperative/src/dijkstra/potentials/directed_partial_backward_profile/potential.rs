@@ -3,15 +3,15 @@ use std::cmp::{max, min};
 use crate::dijkstra::corridor_elimination_tree::customized::CustomizedUpperLower;
 use crate::dijkstra::corridor_elimination_tree::server::CorridorEliminationTreeServer;
 use crate::dijkstra::potentials::directed_partial_backward_profile::ops::{DirectedPartialBackwardProfileLabel, TDDirectedPartialBackwardProfilePotentialOps};
-use crate::dijkstra::potentials::partial_backward_profile::query::TDPartialBackwardProfileQuery;
+use crate::dijkstra::potentials::directed_partial_backward_profile::query::TDDirectedPartialBackwardProfileQuery;
 use crate::dijkstra::potentials::{convert_timestamp_f64_to_u32, convert_timestamp_u32_to_f64, TDPotential};
 use crate::graph::capacity_graph::CapacityGraph;
 use rand::{thread_rng, Rng};
 use rust_road_router::algo::ch_potentials::{CCHPotData, CCHPotential};
 use rust_road_router::algo::customizable_contraction_hierarchy::CCH;
 use rust_road_router::algo::dijkstra::{DijkstraData, DijkstraOps, Label, State};
-use rust_road_router::algo::{GenQuery, Query};
-use rust_road_router::datastr::graph::floating_time_dependent::{FlWeight, PartialPiecewiseLinearFunction, TTFPoint, Timestamp};
+use rust_road_router::algo::GenQuery;
+use rust_road_router::datastr::graph::floating_time_dependent::{period, FlWeight, PartialPiecewiseLinearFunction, TTFPoint, Timestamp};
 use rust_road_router::datastr::graph::{Arc, BuildReversed, EdgeId, FirstOutGraph, Graph, LinkIterable, NodeId, ReversedGraphWithEdgeIds, Weight};
 use rust_road_router::datastr::index_heap::Indexing;
 use rust_road_router::report::measure;
@@ -25,10 +25,11 @@ pub struct TDDirectedPartialBackwardProfilePotential<'a> {
     travel_time_profile: Vec<Vec<TTFPoint>>,
     dijkstra: DijkstraData<DirectedPartialBackwardProfileLabel>,
     is_visited: Vec<bool>,
-    /*is_pruned: Vec<bool>,
-    is_visited: Vec<bool>,
-    longitude: &'a Vec<f32>,
-    latitude: &'a Vec<f32>,*/
+    valid_corridor: (Timestamp, Timestamp), // spans query start and upper-bound arrival at target
+                                            /*is_pruned: Vec<bool>,
+                                            is_visited: Vec<bool>,
+                                            longitude: &'a Vec<f32>,
+                                            latitude: &'a Vec<f32>,*/
 }
 
 impl<'a> TDDirectedPartialBackwardProfilePotential<'a> {
@@ -43,8 +44,6 @@ impl<'a> TDDirectedPartialBackwardProfilePotential<'a> {
         // init forward cch
         let forward_cch = CorridorEliminationTreeServer::new(CustomizedUpperLower::new(cch, travel_time));
 
-        //let forward_cch = Server::new(customize_perfect(customize(cch, &forward_graph)));
-
         // init backward graph and potentials
         let backward_graph = ReversedGraphWithEdgeIds::reversed(graph);
         let backward_potential = cch_pot_data.backward_potential();
@@ -57,6 +56,7 @@ impl<'a> TDDirectedPartialBackwardProfilePotential<'a> {
             travel_time_profile: Vec::with_capacity(departure.len()), // customized below
             dijkstra: DijkstraData::new(num_nodes),
             is_visited: vec![false; num_nodes],
+            valid_corridor: (Timestamp::ZERO, period()),
             /*is_pruned: vec![false; num_nodes],
             is_visited: vec![false; num_nodes],
             longitude,
@@ -88,16 +88,21 @@ impl<'a> TDDirectedPartialBackwardProfilePotential<'a> {
 
 impl<'a> TDPotential for TDDirectedPartialBackwardProfilePotential<'a> {
     fn init(&mut self, source: NodeId, target: NodeId, timestamp: u32) {
-        // 1. earliest arrival query on lowerbound graph
-        let (earliest_arrival_distance, time) = measure(|| self.forward_cch.query(source, target).unwrap().0);
+        // 1. retrieve lower/upper bound of earliest-arrival query
+        let ((ea_dist_lower, ea_dist_upper), time) = measure(|| self.forward_cch.query(source, target).unwrap());
         println!("Earliest arrival query took {} ms", time.to_std().unwrap().as_nanos() as f64 / 1_000_000.0);
+        println!("Distance Bounds: ({}, {})", ea_dist_lower, ea_dist_upper);
+
+        // if the upper bound is set too tight, we might miss important nodes
+        // therefore, the corridor should span at least 30 minutes
+        // let ea_dist_upper = max(ea_dist_upper, ea_dist_lower + 1_800_000);
 
         // 2. initialize backwards profile dijkstra: custom implementation with additional pruning
-        // initial time corridor: 2 * lowerbound travel time, but at least 30 minutes
-        let query = TDPartialBackwardProfileQuery {
+        // corridor is given by earliest arrival query
+        let query = TDDirectedPartialBackwardProfileQuery {
             target,
-            earliest_arrival: Timestamp(convert_timestamp_u32_to_f64(timestamp + earliest_arrival_distance)),
-            initial_timeframe: Timestamp(convert_timestamp_u32_to_f64(max(2 * earliest_arrival_distance, 1800))),
+            earliest_arrival_lower_bound: Timestamp(convert_timestamp_u32_to_f64(timestamp + ea_dist_lower)),
+            earliest_arrival_upper_bound: Timestamp(convert_timestamp_u32_to_f64(timestamp + ea_dist_upper)),
         };
 
         println!("Query: {} -> {} (ts: {}), corridor: {:?}", source, target, timestamp, query.initial_state());
@@ -105,13 +110,14 @@ impl<'a> TDPotential for TDDirectedPartialBackwardProfilePotential<'a> {
         // 3. init ops with corridor data
         let mut ops = TDDirectedPartialBackwardProfilePotentialOps::new(
             Timestamp(convert_timestamp_u32_to_f64(timestamp)),
-            Timestamp(query.earliest_arrival.0 + query.initial_timeframe.0),
+            query.earliest_arrival_upper_bound,
             &self.travel_time_profile,
             500,
         );
 
         // 4. init dijkstra run
         //self.is_pruned.iter_mut().for_each(|x| *x = false);
+        self.valid_corridor = (ops.query_start, ops.corridor_max);
         self.is_visited.iter_mut().for_each(|x| *x = false);
 
         self.dijkstra.queue.clear();
@@ -122,8 +128,8 @@ impl<'a> TDPotential for TDDirectedPartialBackwardProfilePotential<'a> {
         });
         self.dijkstra.distances[target as usize] = DirectedPartialBackwardProfileLabel {
             ttf: query.initial_state(),
-            ttf_start: query.earliest_arrival,
-            ttf_end: ops.corridor_max,
+            ttf_start: query.earliest_arrival_lower_bound,
+            ttf_end: query.earliest_arrival_upper_bound,
             min_dist: FlWeight::ZERO,
         };
 
@@ -140,7 +146,7 @@ impl<'a> TDPotential for TDDirectedPartialBackwardProfilePotential<'a> {
             self.is_visited[node as usize] = true;
 
             // approximate labels before they get too complex
-            ops.approximate_at_threshold(current_node_label);
+            //ops.approximate_at_threshold(current_node_label);
 
             counter += 1;
             if counter % 10000 == 0 {
@@ -223,29 +229,31 @@ impl<'a> TDPotential for TDDirectedPartialBackwardProfilePotential<'a> {
     }
 
     fn potential(&mut self, node: u32, timestamp: u32) -> Option<u32> {
-        let node_profile = &self.dijkstra.distances[node as usize].ttf;
+        let node_label = &self.dijkstra.distances[node as usize];
         let timestamp = Timestamp(convert_timestamp_u32_to_f64(timestamp));
 
         // check if timestamp is inside the profile's boundaries
-        if node_profile.first().unwrap().at.fuzzy_leq(timestamp) && timestamp.fuzzy_leq(node_profile.last().unwrap().at) {
+        if node_label.ttf.first().unwrap().at.fuzzy_leq(timestamp) && timestamp.fuzzy_leq(node_label.ttf.last().unwrap().at) {
             // interpolate between the respective profile breakpoints
-            let pot = PartialPiecewiseLinearFunction::new(node_profile).eval(timestamp);
+            let pot = PartialPiecewiseLinearFunction::new(&node_label.ttf).eval(timestamp);
             Some(convert_timestamp_f64_to_u32(pot.0))
-        } else if !self.is_visited[node as usize] {
-            // due to pruning and merging/linking in a tight corridor,
-            // some nodes might not be visited at all. For now, it's sufficient to ignore them during the query
+        } else if !self.is_visited[node as usize] || self.valid_corridor.1.fuzzy_leq(timestamp + node_label.min_dist) {
+            // so far, there are two valid cases in which the potential doesn't match with the given timestamp
+            // 1) node hasn't been visited at all due to pruning
+            // 2) earliest possible arrival time at target node is outside of the query's corridor
             None
         } else {
             // otherwise, there is no potential for this node
             // this could happen if the profile corridors are set too tightly
             panic!(
-                "Failed to find the potential for {} at ts {}: Partial profile spans range [{}, {}] (visited: {})",
+                "Failed to find the potential for {} at ts {}: Partial profile spans range [{}, {}] (lower: {}, upper: {}, visited: {})",
                 node,
                 timestamp.0,
-                node_profile.first().unwrap().at.0,
-                node_profile.last().unwrap().at.0,
-                //self.is_pruned[node as usize],
-                self.is_visited[node as usize]
+                node_label.ttf.first().unwrap().at.0,
+                node_label.ttf.last().unwrap().at.0,
+                self.dijkstra.distances[node as usize].ttf_start.0,
+                self.dijkstra.distances[node as usize].ttf_end.0,
+                self.is_visited[node as usize],
             )
         }
     }
