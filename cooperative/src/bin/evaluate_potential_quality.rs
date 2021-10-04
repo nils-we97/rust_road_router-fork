@@ -7,6 +7,7 @@ use cooperative::graph::speed_functions::bpr_speed_function;
 use cooperative::io::io_graph::{load_used_capacity_graph, store_capacity_buckets};
 use cooperative::io::io_node_order::load_node_order;
 use cooperative::util::cli_args::{parse_arg_optional, parse_arg_required};
+use rust_road_router::algo::a_star::ZeroPotential;
 use rust_road_router::algo::ch_potentials::CCHPotData;
 use rust_road_router::algo::customizable_contraction_hierarchy::CCH;
 use rust_road_router::algo::{GenQuery, TDQuery};
@@ -92,10 +93,9 @@ fn get_chunked_runtime_in_millis<Pot: TDPotential>(server: &mut CapacityServer<P
     let mut time_buckets = time::Duration::zero();
     let mut time_ttfs = time::Duration::zero();
 
-    /*server.query(TDQuery::new(84731, 43806, 34622927), true);
-    server.query(TDQuery::new(6270, 25669, 207283), true);
-
-    panic!("enough for now");*/
+    server.query(TDQuery::new(82534, 52219, 1578963), true);
+    //server.query(TDQuery::new(103051, 5024, 309517), true);
+    //panic!("enough for now");
 
     let (_, total_time) = measure(|| {
         queries.iter().for_each(|&query| {

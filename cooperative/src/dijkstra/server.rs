@@ -163,6 +163,7 @@ impl<Pot: TDPotential> CapacityServerOps for CapacityServer<Pot> {
                 tentative_arrival = min(tentative_arrival, self.dijkstra.distances[to as usize]);
                 println!("Tentative distance adjusted: {}", tentative_arrival - self.dijkstra.distances[from as usize]);
             } else {
+                // TODO if potentials are set correctly (i.e. lowerbound at all time, we can stop above!!!
                 // pruning: don't consider a node if its expected arrival time is after the already observed tentative arrival time
                 let current_distance = self.dijkstra.distances[node as usize];
                 let current_pot = pot.potential(node, current_ts);
@@ -180,7 +181,7 @@ impl<Pot: TDPotential> CapacityServerOps for CapacityServer<Pot> {
                     self.dijkstra.predecessors[link.head() as usize] = (node, ops.predecessor_link(&link));
                     let next_distance = &self.dijkstra.distances[link.head() as usize];
 
-                    if let Some(next_key) = pot.potential(link.head(), current_ts).map(|p| p + next_distance.key()) {
+                    if let Some(next_key) = pot.potential(link.head(), next_distance.clone()).map(|p| p + next_distance.key()) {
                         let next = State {
                             node: link.head(),
                             key: next_key,

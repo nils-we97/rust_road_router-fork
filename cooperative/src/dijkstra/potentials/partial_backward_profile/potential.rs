@@ -87,7 +87,6 @@ impl TDPotential for TDPartialBackwardProfilePotential {
             profiles: &self.travel_time_profile,
         };
 
-        dbg!(&ops.query_start, &ops.corridor_max, &query.earliest_arrival, source, target);
         let mut run = DijkstraRun::query(self.backward_graph.borrow(), &mut self.dijkstra, &mut ops, query);
 
         // run through the whole graph
@@ -95,7 +94,7 @@ impl TDPotential for TDPartialBackwardProfilePotential {
         while let Some(_node) = run.next() {
             counter += 1;
             if counter % 10000 == 0 {
-                println!("Finished {} nodes", counter);
+                //println!("Finished {} nodes", counter);
             }
         }
         //let (_, time) = measure(|| while let Some(_node) = run.next() {});

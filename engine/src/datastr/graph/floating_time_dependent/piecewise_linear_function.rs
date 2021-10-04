@@ -26,7 +26,7 @@ pub trait PLF {
 
 // append point to a PLF making sure, that its not too close to the previous point
 fn append_point(points: &mut Vec<TTFPoint>, point: TTFPoint) {
-    debug_assert!(point.val >= FlWeight::new(0.0), "{:?}", point);
+    debug_assert!(FlWeight::ZERO.fuzzy_leq(point.val), "{:?}", point);
     if let Some(p) = points.last() {
         if p.at.fuzzy_eq(point.at) {
             if !p.val.fuzzy_eq(point.val) {
@@ -949,7 +949,7 @@ impl<'a> PartialPiecewiseLinearFunction<'a> {
                         counter_clockwise(&g.prev(), &f.cur(), &g.cur()),
                         "{:?} {:?}",
                         debug_merge(&self.ipps, f.cur(), &other.ipps, g.cur(), &result, &better),
-                        dbg_each!(start, end, intersection)
+                        dbg_each!(start, end, intersection, &self, other)
                     );
                     better.push((intersection.at, counter_clockwise(&g.prev(), &f.cur(), &g.cur())));
                     append_point(result, intersection);

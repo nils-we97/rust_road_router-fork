@@ -232,12 +232,17 @@ impl<'a> TDPotential for TDDirectedPartialBackwardProfilePotential<'a> {
         let node_label = &self.dijkstra.distances[node as usize];
         let timestamp = Timestamp(convert_timestamp_u32_to_f64(timestamp));
 
+        let first_label_entry = node_label.ttf.first().unwrap();
+        let last_label_entry = node_label.ttf.last().unwrap();
+
         // check if timestamp is inside the profile's boundaries
-        if node_label.ttf.first().unwrap().at.fuzzy_leq(timestamp) && timestamp.fuzzy_leq(node_label.ttf.last().unwrap().at) {
+        if first_label_entry.at.fuzzy_leq(timestamp) && timestamp.fuzzy_leq(last_label_entry.at) {
             // interpolate between the respective profile breakpoints
             let pot = PartialPiecewiseLinearFunction::new(&node_label.ttf).eval(timestamp);
             Some(convert_timestamp_f64_to_u32(pot.0))
-        } else if !self.is_visited[node as usize] || self.valid_corridor.1.fuzzy_leq(timestamp + node_label.min_dist) {
+        } else if !self.is_visited[node as usize]
+            || (last_label_entry.at.fuzzy_lt(timestamp) && self.valid_corridor.1.fuzzy_eq(last_label_entry.at + last_label_entry.val))
+        {
             // so far, there are two valid cases in which the potential doesn't match with the given timestamp
             // 1) node hasn't been visited at all due to pruning
             // 2) earliest possible arrival time at target node is outside of the query's corridor
@@ -245,6 +250,14 @@ impl<'a> TDPotential for TDDirectedPartialBackwardProfilePotential<'a> {
         } else {
             // otherwise, there is no potential for this node
             // this could happen if the profile corridors are set too tightly
+            dbg!(
+                &self.valid_corridor,
+                &timestamp,
+                &node_label.ttf.last(),
+                &node_label.min_dist,
+                &self.backward_potential.potential(node, 0)
+            );
+
             panic!(
                 "Failed to find the potential for {} at ts {}: Partial profile spans range [{}, {}] (lower: {}, upper: {}, visited: {})",
                 node,
