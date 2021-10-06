@@ -73,10 +73,13 @@ impl<Profiles: AsRef<Vec<Vec<TTFPoint>>>> DijkstraOps<ReversedGraphWithEdgeIds> 
 
         // 2. obtain start/end timestamp for linking
         // use earliest-arrival-query information to limit the corridor!
-        let backward_start = backward_link_interval(prev_edge_ipps, label.ttf_start);
+
+        // DIFF 1: consider using label.ttf[0].at instead of ttf_start (same with ttf_end)
+
+        let backward_start = backward_link_interval(prev_edge_ipps, label.ttf[0].at);
         let ts_start = max(self.query_start, backward_start.unwrap_or(Timestamp::ZERO));
 
-        let backward_end = backward_link_interval(prev_edge_ipps, label.ttf_end);
+        let backward_end = backward_link_interval(prev_edge_ipps, label.ttf.last().unwrap().at);
         let ts_end = min(self.corridor_max, backward_end.unwrap_or(Timestamp::NEVER));
 
         if ts_start.fuzzy_lt(ts_end) && backward_end.is_some() {
@@ -89,10 +92,13 @@ impl<Profiles: AsRef<Vec<Vec<TTFPoint>>>> DijkstraOps<ReversedGraphWithEdgeIds> 
             match link_result {
                 ATTFContainer::Exact(inner) => {
                     let min_dist = inner.iter().map(|p| p.val).min().unwrap();
+                    let ttf_start = inner.first().unwrap().at;
+                    let ttf_end = inner.last().unwrap().at;
+
                     Self::LinkResult {
                         ttf: inner,
-                        ttf_start: ts_start,
-                        ttf_end: ts_end,
+                        ttf_start,
+                        ttf_end,
                         min_dist,
                     }
                 }
@@ -116,10 +122,10 @@ impl<Profiles: AsRef<Vec<Vec<TTFPoint>>>> DijkstraOps<ReversedGraphWithEdgeIds> 
             return true;
         }
 
-        debug_assert!(self.query_start.fuzzy_leq(linked.ttf_start));
+        /*debug_assert!(self.query_start.fuzzy_leq(linked.ttf_start));
         debug_assert!(self.query_start.fuzzy_leq(label.ttf_start));
         debug_assert!(linked.ttf_end.fuzzy_leq(self.corridor_max));
-        debug_assert!(label.ttf_end.fuzzy_leq(self.corridor_max));
+        debug_assert!(label.ttf_end.fuzzy_leq(self.corridor_max));*/
 
         // more complex case requires actual merging
         // first of all, adjust labels to span the same range (by adding fifo-conform breakpoints at start/end of shorter profile)
@@ -134,7 +140,7 @@ impl<Profiles: AsRef<Vec<Vec<TTFPoint>>>> DijkstraOps<ReversedGraphWithEdgeIds> 
         // merging takes place if there is any point where the linked profile is 'better',
         // i.e. the current profile does not dominate all the time
         // even if the current profile dominates all the time, we might have adjusted the time bounds!
-        if label_adjusted || significant_changes(&changes, &linked.ttf, &label.ttf) {
+        if label_adjusted || (false && significant_changes(&changes, &linked.ttf, &label.ttf)) {
             label.ttf = result.to_vec();
             label.min_dist = min(label.min_dist, linked.min_dist);
             true

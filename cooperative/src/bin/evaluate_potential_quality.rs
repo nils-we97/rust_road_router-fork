@@ -93,8 +93,9 @@ fn get_chunked_runtime_in_millis<Pot: TDPotential>(server: &mut CapacityServer<P
     let mut time_buckets = time::Duration::zero();
     let mut time_ttfs = time::Duration::zero();
 
-    server.query(TDQuery::new(82534, 52219, 1578963), true);
-    //server.query(TDQuery::new(103051, 5024, 309517), true);
+    //server.query(TDQuery::new(101666, 37232, 1362281), true);
+    //server.query(TDQuery::new(66509, 15003, 1890795), true);
+    server.query(TDQuery::new(66191, 114446, 23933856), true);
     //panic!("enough for now");
 
     let (_, total_time) = measure(|| {

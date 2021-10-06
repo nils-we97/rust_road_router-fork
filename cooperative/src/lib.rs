@@ -1,5 +1,5 @@
 #![feature(generic_associated_types)]
-#![feature(min_type_alias_impl_trait)]
+#![feature(type_alias_impl_trait)]
 
 pub mod dijkstra;
 pub mod experiments;

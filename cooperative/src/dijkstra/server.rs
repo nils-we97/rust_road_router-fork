@@ -126,7 +126,7 @@ impl<Pot: TDPotential> CapacityServerOps for CapacityServer<Pot> {
         let init = query.initial_state();
         let to = query.to();
 
-        let mut tentative_arrival = INFINITY;
+        let mut result = None;
         let mut num_queue_pops = 0;
         let mut num_queue_pushs = 0;
         let mut num_relaxed_arcs = 0;
@@ -154,23 +154,9 @@ impl<Pot: TDPotential> CapacityServerOps for CapacityServer<Pot> {
         while let Some(State { node, .. }) = self.dijkstra.queue.pop() {
             num_queue_pops += 1;
 
-            // IMPORTANT: the timestamp cannot be retrieved from the state's key!!! Use the previous labels instead!
-            let current_ts = self.dijkstra.distances[node as usize];
-
             if node == to {
-                // update the tentative arrival time
-                // aborting here will lead to wrong results!
-                tentative_arrival = min(tentative_arrival, self.dijkstra.distances[to as usize]);
-                println!("Tentative distance adjusted: {}", tentative_arrival - self.dijkstra.distances[from as usize]);
-            } else {
-                // TODO if potentials are set correctly (i.e. lowerbound at all time, we can stop above!!!
-                // pruning: don't consider a node if its expected arrival time is after the already observed tentative arrival time
-                let current_distance = self.dijkstra.distances[node as usize];
-                let current_pot = pot.potential(node, current_ts);
-
-                if current_pot.is_none() || (current_pot.unwrap() + current_distance) > tentative_arrival {
-                    continue;
-                }
+                result = Some(self.dijkstra.distances[to as usize] - self.dijkstra.distances[from as usize]);
+                break;
             }
 
             for link in LinkIterable::<(NodeIdT, EdgeIdT)>::link_iter(&self.graph, node) {
@@ -197,13 +183,17 @@ impl<Pot: TDPotential> CapacityServerOps for CapacityServer<Pot> {
             }
         }
 
-        let result = match tentative_arrival {
-            INFINITY => None,
-            arrival => Some(arrival - self.dijkstra.distances[from as usize]),
-        };
-
         let time_dijkstra = time::now() - start;
-        println!("Query results: {}, potential: {}", result.unwrap(), pot.potential(from, init).unwrap());
+
+        debug_assert!(
+            result.unwrap_or(INFINITY) + 1 >= pot.potential(from, init).unwrap_or(INFINITY),
+            "{:#?} {:#?}", &result, &pot.potential(from, init)
+        );
+        println!(
+            "Query results: {}, potential: {}",
+            result.unwrap_or(INFINITY),
+            pot.potential(from, init).unwrap()
+        );
         println!(
             "Query times: Potential: {}, Query: {}",
             time_potential.to_std().unwrap().as_nanos() as f64 / 1_000_000.0,

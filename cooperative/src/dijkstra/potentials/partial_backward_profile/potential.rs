@@ -28,7 +28,7 @@ impl TDPartialBackwardProfilePotential {
         // init forward graph
         let first_out = graph.first_out().to_vec();
         let head = graph.head().to_vec();
-        let weight = graph.freeflow_time().to_vec();
+        let weight = graph.travel_time().iter().map(|w| w.iter().min().unwrap().clone()).collect::<Vec<Weight>>();
         let lowerbound_forward_graph = FirstOutGraph::new(first_out, head, weight);
         let forward_server = Server::new(lowerbound_forward_graph);
 
