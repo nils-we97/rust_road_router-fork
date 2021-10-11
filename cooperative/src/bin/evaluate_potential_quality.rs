@@ -16,6 +16,8 @@ use std::env;
 use std::error::Error;
 use std::ops::Add;
 use std::path::Path;
+use cooperative::dijkstra::corridor_elimination_tree::customized::CustomizedUpperLower;
+use cooperative::dijkstra::potentials::corridor_partial_backward_profile::potential::TDCorridorPartialBackwardProfilePotential;
 
 const NUM_QUERIES_PER_RUN: u32 = 1000;
 
@@ -53,7 +55,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     let (cch_pot_data, time) = measure(|| CCHPotData::new(&cch, &graph));
     println!("CCH customized in {} ms", time.to_std().unwrap().as_nanos() as f64 / 1_000_000.0);
 
-    let potential = TDDirectedPartialBackwardProfilePotential::new(&graph, &cch, &cch_pot_data);
+    let customized = CustomizedUpperLower::new(&cch, graph.travel_time());
+    let potential = TDCorridorPartialBackwardProfilePotential::new(&graph, &customized, &cch_pot_data);
     let _potential = TDPartialBackwardProfilePotential::new(&graph);
 
     let mut server = CapacityServer::new_with_potential(graph, potential);

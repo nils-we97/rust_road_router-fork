@@ -2,7 +2,7 @@ use rust_road_router::algo::a_star::ZeroPotential;
 use rust_road_router::algo::dijkstra::{DijkstraData, DijkstraOps, Label, State};
 use rust_road_router::algo::{GenQuery, TDQuery};
 use rust_road_router::datastr::graph::time_dependent::Timestamp;
-use rust_road_router::datastr::graph::{Arc, EdgeIdT, Graph, LinkIterable, NodeId, NodeIdT, Weight, INFINITY};
+use rust_road_router::datastr::graph::{Arc, EdgeIdT, Graph, LinkIterable, NodeIdT, Weight, INFINITY};
 use rust_road_router::datastr::index_heap::Indexing;
 use rust_road_router::report;
 use rust_road_router::report::*;
@@ -12,7 +12,6 @@ use crate::dijkstra::model::{CapacityQueryResult, PathResult};
 use crate::dijkstra::potentials::TDPotential;
 use crate::graph::capacity_graph::CapacityGraph;
 use crate::graph::ModifiableWeight;
-use std::cmp::min;
 use std::ops::Add;
 
 pub struct CapacityServer<Pot = ZeroPotential> {

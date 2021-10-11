@@ -9,7 +9,7 @@ pub mod server;
 
 #[derive(Debug)]
 pub struct CorridorEliminationTreeWalk<'a> {
-    graph: UnweightedFirstOutGraph<&'a [EdgeId], &'a [NodeId]>,
+    graph: &'a UnweightedFirstOutGraph<&'a [EdgeId], &'a [NodeId]>,
     weights: &'a Vec<(Weight, Weight)>,
     distances: &'a mut TimestampedVector<(Weight, Weight)>,
     elimination_tree: &'a [InRangeOption<NodeId>],
@@ -18,7 +18,7 @@ pub struct CorridorEliminationTreeWalk<'a> {
 
 impl<'a> CorridorEliminationTreeWalk<'a> {
     pub fn init(
-        graph: UnweightedFirstOutGraph<&'a [EdgeId], &'a [NodeId]>,
+        graph: &'a UnweightedFirstOutGraph<&'a [EdgeId], &'a [NodeId]>,
         weights: &'a Vec<(Weight, Weight)>,
         elimination_tree: &'a [InRangeOption<NodeId>],
         distances: &'a mut TimestampedVector<(Weight, Weight)>,
@@ -44,7 +44,7 @@ impl<'a> CorridorEliminationTreeWalk<'a> {
 
             // For each node we can reach, see if we can find a way with
             // a lower distance going through this node
-            for (next_node, edge) in LinkIterable::<(NodeIdT, EdgeIdT)>::link_iter(&self.graph, node) {
+            for (next_node, edge) in LinkIterable::<(NodeIdT, EdgeIdT)>::link_iter(self.graph, node) {
                 let edge = edge.0 as usize;
                 let next_node = next_node.0 as usize;
 

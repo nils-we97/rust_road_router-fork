@@ -24,6 +24,10 @@ impl Sentinel for usize {
     const SENTINEL: usize = usize::MAX;
 }
 
+impl<S: Sentinel> Sentinel for (S, S) {
+    const SENTINEL: (S, S) = (S::SENTINEL, S::SENTINEL);
+}
+
 /// A struct to get `Option`s without space overhead.
 ///
 /// This is conceptually similar to the `NonNull` types rust provides

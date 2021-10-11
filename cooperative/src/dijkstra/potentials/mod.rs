@@ -4,8 +4,9 @@ use rust_road_router::datastr::graph::{NodeId, Weight};
 
 pub mod backward_profile;
 pub mod directed_partial_backward_profile;
-pub mod lowerbound_cch;
+pub mod cch;
 pub mod partial_backward_profile;
+pub mod corridor_partial_backward_profile;
 
 pub trait TDPotential {
     fn init(&mut self, source: NodeId, target: NodeId, timestamp: Timestamp);

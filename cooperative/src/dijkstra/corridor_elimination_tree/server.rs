@@ -6,14 +6,14 @@ use rust_road_router::datastr::timestamped_vector::TimestampedVector;
 use std::borrow::Borrow;
 use std::cmp::min;
 
-pub struct CorridorEliminationTreeServer {
-    customized: CustomizedUpperLower,
+pub struct CorridorEliminationTreeServer<'a> {
+    customized: &'a CustomizedUpperLower,
     fw_distances: TimestampedVector<(Weight, Weight)>,
     bw_distances: TimestampedVector<(Weight, Weight)>,
 }
 
-impl CorridorEliminationTreeServer {
-    pub fn new(customized: CustomizedUpperLower) -> Self {
+impl<'a> CorridorEliminationTreeServer<'a> {
+    pub fn new(customized: &'a CustomizedUpperLower) -> Self {
         let num_nodes = customized.cch.forward_first_out().len() - 1;
         Self {
             customized,
@@ -35,7 +35,7 @@ impl CorridorEliminationTreeServer {
 
         // initialize forward elimination tree walk
         let mut fw_walk = CorridorEliminationTreeWalk::init(
-            fw_graph,
+            &fw_graph,
             fw_weights,
             self.customized.cch.borrow().elimination_tree(),
             &mut self.fw_distances,
@@ -44,7 +44,7 @@ impl CorridorEliminationTreeServer {
 
         // initialize backward elimination tree walk
         let mut bw_walk = CorridorEliminationTreeWalk::init(
-            bw_graph,
+            &bw_graph,
             bw_weights,
             self.customized.cch.borrow().elimination_tree(),
             &mut self.bw_distances,
