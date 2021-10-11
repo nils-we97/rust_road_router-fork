@@ -4,17 +4,17 @@ use rust_road_router::algo::ch_potentials::{CCHPotData, CCHPotential};
 use rust_road_router::algo::customizable_contraction_hierarchy::CCH;
 use rust_road_router::algo::dijkstra::{DijkstraData, DijkstraOps, DijkstraRun, Label, State};
 use rust_road_router::algo::GenQuery;
+use rust_road_router::datastr::graph::floating_time_dependent::{period, FlWeight, PartialPiecewiseLinearFunction, TTFPoint, Timestamp};
 use rust_road_router::datastr::graph::{Arc, BuildReversed, EdgeId, FirstOutGraph, Graph, LinkIterable, NodeId, ReversedGraphWithEdgeIds, Weight};
-use rust_road_router::datastr::graph::floating_time_dependent::{FlWeight, PartialPiecewiseLinearFunction, period, Timestamp, TTFPoint};
 use rust_road_router::datastr::index_heap::Indexing;
 use rust_road_router::report::measure;
 
 use crate::dijkstra::corridor_elimination_tree::customized::CustomizedUpperLower;
 use crate::dijkstra::corridor_elimination_tree::server::CorridorEliminationTreeServer;
-use crate::dijkstra::potentials::{convert_timestamp_f64_to_u32, convert_timestamp_u32_to_f64, TDPotential};
 use crate::dijkstra::potentials::cch::custom_cch_pot::CCHLowerUpperPotential;
 use crate::dijkstra::potentials::corridor_partial_backward_profile::ops::TDCorridorPartialBackwardProfilePotentialOps;
 use crate::dijkstra::potentials::partial_backward_profile::ops::TDPartialBackwardProfilePotentialOps;
+use crate::dijkstra::potentials::{convert_timestamp_f64_to_u32, convert_timestamp_u32_to_f64, TDPotential};
 use crate::graph::capacity_graph::CapacityGraph;
 
 /// Basic implementation of a potential obtained by a backward profile search
@@ -23,7 +23,8 @@ pub struct TDCorridorPartialBackwardProfilePotential<'a> {
     forward_cch: CorridorEliminationTreeServer<'a>,
     forward_potential: CCHLowerUpperPotential<'a>,
     backward_graph: ReversedGraphWithEdgeIds,
-    backward_lower_bound_potential: CCHPotential<'a, FirstOutGraph<&'a [EdgeId], &'a [NodeId], &'a [Weight]>, FirstOutGraph<&'a [EdgeId], &'a [NodeId], &'a [Weight]>>,
+    backward_lower_bound_potential:
+        CCHPotential<'a, FirstOutGraph<&'a [EdgeId], &'a [NodeId], &'a [Weight]>, FirstOutGraph<&'a [EdgeId], &'a [NodeId], &'a [Weight]>>,
     // for directed backward profile search
     travel_time_profile: Vec<Vec<TTFPoint>>,
     dijkstra: DijkstraData<Vec<TTFPoint>>,
@@ -108,19 +109,14 @@ impl<'a> TDPotential for TDCorridorPartialBackwardProfilePotential<'a> {
         self.query_start = Timestamp(convert_timestamp_u32_to_f64(timestamp));
         self.earliest_arrival = (
             Timestamp(convert_timestamp_u32_to_f64(timestamp + ea_dist_lower)),
-            Timestamp(convert_timestamp_u32_to_f64(timestamp + ea_dist_upper))
+            Timestamp(convert_timestamp_u32_to_f64(timestamp + ea_dist_upper)),
         );
 
         // 3. init potentials for backward search
         self.backward_lower_bound_potential.init(target, source, timestamp);
 
         // 4. init ops with corridor data
-        let mut ops = TDCorridorPartialBackwardProfilePotentialOps::new(
-            self.query_start.clone(),
-            self.earliest_arrival.1,
-            &self.travel_time_profile,
-            500,
-        );
+        let mut ops = TDCorridorPartialBackwardProfilePotentialOps::new(self.query_start.clone(), self.earliest_arrival.1, &self.travel_time_profile, 500);
 
         // 5. init dijkstra run
         self.is_visited.iter_mut().for_each(|x| *x = false);
@@ -131,15 +127,23 @@ impl<'a> TDPotential for TDCorridorPartialBackwardProfilePotential<'a> {
             node: target,
         });
         self.dijkstra.distances[target as usize] = vec![
-            TTFPoint { at: self.earliest_arrival.0, val: FlWeight::ZERO },
-            TTFPoint { at: self.earliest_arrival.1, val: FlWeight::ZERO },
+            TTFPoint {
+                at: self.earliest_arrival.0,
+                val: FlWeight::ZERO,
+            },
+            TTFPoint {
+                at: self.earliest_arrival.1,
+                val: FlWeight::ZERO,
+            },
         ];
 
         // 6. run query
         let mut max_tent_dist = FlWeight::INFINITY; //bounds for max tentative distance to source node
         let mut counter = 0;
 
-        while let Some(State { node, .. }) = self.dijkstra.queue.pop() {
+        while let Some(State { node, key }) = self.dijkstra.queue.pop() {
+            println!("Extracted node {} with key {}", node, key.0);
+
             let current_node_label = &mut self.dijkstra.distances[node as usize];
             self.is_visited[node as usize] = true;
 
@@ -165,39 +169,69 @@ impl<'a> TDPotential for TDCorridorPartialBackwardProfilePotential<'a> {
                     .map(|p| p + current_node_label.iter().min_by_key(|x| x.val).map(|x| x.val).unwrap());
 
                 if expected_dist.is_some() && max_tent_dist.fuzzy_lt(expected_dist.unwrap()) {
+                    println!("pruned -- continue");
                     continue;
                 }
             }
 
+            // get corridor of current node
+            let current_corridor = self
+                .forward_potential
+                .potential_bounds(node)
+                .map(|(lower, upper)| {
+                    (
+                        Timestamp(self.earliest_arrival.0 .0 - convert_timestamp_u32_to_f64(upper)),
+                        Timestamp(self.earliest_arrival.1 .0 - convert_timestamp_u32_to_f64(lower)),
+                    )
+                })
+                .unwrap();
+
             // relax outgoing edges
             for link in self.backward_graph.link_iter(node) {
-                let node_corridor = self
-                    .forward_potential
-                    .potential_bounds(link.0.0)
-                    .map(|(lower, upper)| {
-                        // lower and upper are bounds towards the target
-                        // in order to use them for the backward search, we have to subtract them
-                        // from the earliest arrival query
+                println!("Next edge: {} -> {}", link.head(), node);
 
-                        // earliest possible departure: lower bound to target - upper dist
-                        // latest possible departure: upper bound to target - lower dist
-                        (
-                            Timestamp(convert_timestamp_u32_to_f64(ea_dist_lower - upper)),
-                            Timestamp(convert_timestamp_u32_to_f64(ea_dist_upper - lower)),
-                        )
-                    });
+                let node_corridor = self.forward_potential.potential_bounds(link.head()).map(|(lower, upper)| {
+                    // lower and upper are bounds towards the target
+                    // in order to use them for the backward search, we have to subtract them
+                    // from the earliest arrival query
+
+                    // earliest possible departure: lower bound to target - upper dist
+                    // latest possible departure: upper bound to target - lower dist
+                    // important: queue keys are timestamps, not actual distances
+                    (
+                        Timestamp(self.earliest_arrival.0 .0 - convert_timestamp_u32_to_f64(upper)),
+                        Timestamp(self.earliest_arrival.1 .0 - convert_timestamp_u32_to_f64(lower)),
+                    )
+                });
 
                 // only proceed if the vertex has valid upper and lower bounds
                 if let Some((corridor_lower, corridor_upper)) = node_corridor {
+                    // additional pruning: check if the next node is closer to the source than the current node
+                    if current_corridor.0.fuzzy_lt(corridor_lower) {
+                        continue;
+                    }
+
+                    println!("No pruning - start linking..");
+
                     let linked = ops.link_in_bounds(
                         &self.dijkstra.distances[node as usize],
                         link.1,
                         (corridor_lower, corridor_upper),
+                        current_corridor,
                     );
+
+                    println!("Linked along edge {} -> {}", link.head(), node);
 
                     // TODO do some additional pruning
 
                     if ops.merge_in_bounds(&mut self.dijkstra.distances[link.head() as usize], linked, (corridor_lower, corridor_upper)) {
+                        println!(
+                            "Merged current vertex ({} -> {}) in bounds ({}, {})",
+                            link.head(),
+                            node,
+                            corridor_lower.0,
+                            corridor_upper.0
+                        );
                         let next_label = &self.dijkstra.distances[link.head() as usize];
 
                         let potential = self
@@ -212,8 +246,10 @@ impl<'a> TDPotential for TDCorridorPartialBackwardProfilePotential<'a> {
                                 key: next_key,
                             };
                             if self.dijkstra.queue.contains_index(next.as_index()) {
+                                println!("decreased key of {}", next.node);
                                 self.dijkstra.queue.decrease_key(next);
                             } else {
+                                println!("inserted node {} with key {}", next.node, next.key.0);
                                 self.dijkstra.queue.push(next);
                             }
                         }
@@ -221,6 +257,9 @@ impl<'a> TDPotential for TDCorridorPartialBackwardProfilePotential<'a> {
                 }
             }
         }
+
+        println!("Finished potential calculation, potential from start node:");
+        dbg!(&self.potential(source, timestamp));
     }
 
     fn potential(&mut self, node: u32, timestamp: u32) -> Option<u32> {

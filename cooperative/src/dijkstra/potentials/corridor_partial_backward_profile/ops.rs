@@ -1,13 +1,15 @@
-use std::cmp::{max, min};
-use rust_road_router::datastr::graph::floating_time_dependent::{ATTFContainer, PartialATTF, PartialPiecewiseLinearFunction, Timestamp, TTFPoint};
+use rust_road_router::algo::dijkstra::Label;
+use rust_road_router::datastr::graph::floating_time_dependent::{ATTFContainer, PartialATTF, PartialPiecewiseLinearFunction, TTFPoint, Timestamp};
 use rust_road_router::datastr::graph::Reversed;
+use std::cmp::{max, min};
 
 pub struct TDCorridorPartialBackwardProfilePotentialOps<'a> {
     pub query_start: Timestamp,
     pub corridor_max: Timestamp,
     pub profiles: &'a Vec<Vec<TTFPoint>>,
     pub approximate_threshold: usize,
-    pub merge_buffer: Vec<TTFPoint>
+    pub merge_buffer: Vec<TTFPoint>,
+    neutral_label: Vec<TTFPoint>,
 }
 
 impl<'a> TDCorridorPartialBackwardProfilePotentialOps<'a> {
@@ -17,7 +19,8 @@ impl<'a> TDCorridorPartialBackwardProfilePotentialOps<'a> {
             corridor_max,
             profiles,
             approximate_threshold,
-            merge_buffer: Vec::new()
+            merge_buffer: Vec::new(),
+            neutral_label: Vec::<TTFPoint>::neutral(),
         }
     }
 
@@ -30,7 +33,13 @@ impl<'a> TDCorridorPartialBackwardProfilePotentialOps<'a> {
         }
     }
 
-    pub fn link_in_bounds(&mut self, label: &Vec<TTFPoint>, prev_edge_id: Reversed, node_corridor: (Timestamp, Timestamp)) -> Vec<TTFPoint> {
+    pub fn link_in_bounds(
+        &mut self,
+        label: &Vec<TTFPoint>,
+        prev_edge_id: Reversed,
+        node_corridor: (Timestamp, Timestamp),
+        prev_corridor: (Timestamp, Timestamp),
+    ) -> Vec<TTFPoint> {
         // 1. obtain profile for previous edge, expand it if needed
         let prev_edge_ipps = &self.profiles[prev_edge_id.0 .0 as usize];
         let extended_profile = extend_edge_profile(prev_edge_ipps, label.last().unwrap().at);
@@ -45,25 +54,26 @@ impl<'a> TDCorridorPartialBackwardProfilePotentialOps<'a> {
             let prev_edge_profile = PartialATTF::Exact(PartialPiecewiseLinearFunction::new(prev_edge_ipps));
             let current_node_profile = PartialATTF::Exact(PartialPiecewiseLinearFunction::new(label));
 
+            dbg!(&node_corridor, &prev_corridor, &ts_start, &ts_end, &current_node_profile, &prev_edge_profile);
             let link_result = prev_edge_profile.link(&current_node_profile, ts_start, ts_end);
 
             match link_result {
-                ATTFContainer::Exact(inner) => { inner }
+                ATTFContainer::Exact(inner) => inner,
                 ATTFContainer::Approx(_, _) => panic!("Result must be exact, this should not happen!"),
             }
         } else {
             // this edge is not relevant!
             // Even for the latest relevant arrival at this edge, the start takes place before the query's departure
-            Vec::new()
+            self.neutral_label.clone()
         }
     }
 
     pub fn merge_in_bounds(&mut self, label: &mut Vec<TTFPoint>, mut linked: Vec<TTFPoint>, node_corridor: (Timestamp, Timestamp)) -> bool {
         // easy cases: label or linked result is empty
-        if linked.is_empty() {
+        if linked == self.neutral_label {
             // no linking happened, so we can simply take the previous result
             return false;
-        } else if label.is_empty() {
+        } else if *label == self.neutral_label {
             // first non-empty adjustment, so we can simply take the new linked PLF
             *label = linked;
             return true;
