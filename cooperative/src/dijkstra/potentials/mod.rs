@@ -7,6 +7,7 @@ pub mod directed_partial_backward_profile;
 pub mod cch;
 pub mod partial_backward_profile;
 pub mod corridor_partial_backward_profile;
+pub mod corridor_interval_potential;
 
 pub trait TDPotential {
     fn init(&mut self, source: NodeId, target: NodeId, timestamp: Timestamp);
