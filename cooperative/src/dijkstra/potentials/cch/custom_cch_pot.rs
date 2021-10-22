@@ -1,11 +1,11 @@
-use std::cmp::min;
+use crate::dijkstra::corridor_elimination_tree::customized::CustomizedUpperLower;
+use crate::dijkstra::corridor_elimination_tree::CorridorEliminationTreeWalk;
 use rust_road_router::algo::a_star::Potential;
-use rust_road_router::algo::customizable_contraction_hierarchy::{CCHT};
-use rust_road_router::datastr::graph::{EdgeId, EdgeIdT, Graph, INFINITY, LinkIterable, NodeId, NodeIdT, UnweightedFirstOutGraph, Weight};
+use rust_road_router::algo::customizable_contraction_hierarchy::CCHT;
+use rust_road_router::datastr::graph::{EdgeId, EdgeIdT, Graph, LinkIterable, NodeId, NodeIdT, UnweightedFirstOutGraph, Weight, INFINITY};
 use rust_road_router::datastr::timestamped_vector::TimestampedVector;
 use rust_road_router::util::in_range_option::InRangeOption;
-use crate::dijkstra::corridor_elimination_tree::CorridorEliminationTreeWalk;
-use crate::dijkstra::corridor_elimination_tree::customized::CustomizedUpperLower;
+use std::cmp::min;
 
 pub struct CCHLowerUpperPotential<'a> {
     customized: &'a CustomizedUpperLower,
@@ -14,14 +14,12 @@ pub struct CCHLowerUpperPotential<'a> {
     forward_cch_graph: UnweightedFirstOutGraph<&'a [EdgeId], &'a [NodeId]>,
     forward_cch_weights: &'a Vec<(Weight, Weight)>,
     backward_distances: TimestampedVector<(Weight, Weight)>,
-    backward_parents: Vec<NodeId>,
     backward_cch_graph: UnweightedFirstOutGraph<&'a [EdgeId], &'a [NodeId]>,
     backward_cch_weights: &'a Vec<(Weight, Weight)>,
     num_pot_computations: usize,
 }
 
 impl<'a> CCHLowerUpperPotential<'a> {
-
     pub fn new_forward(customized: &'a CustomizedUpperLower) -> Self {
         let (forward_cch_graph, forward_cch_weights) = customized.forward_graph();
         let (backward_cch_graph, backward_cch_weights) = customized.backward_graph();
@@ -34,7 +32,6 @@ impl<'a> CCHLowerUpperPotential<'a> {
             forward_cch_graph,
             forward_cch_weights,
             backward_distances: TimestampedVector::new(n, (INFINITY, INFINITY)),
-            backward_parents: vec![n as NodeId; n],
             backward_cch_graph,
             backward_cch_weights,
             num_pot_computations: 0,

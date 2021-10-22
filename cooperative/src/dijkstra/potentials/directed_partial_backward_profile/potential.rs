@@ -1,28 +1,25 @@
-use std::borrow::Borrow;
-use std::cmp::{max, min};
+use std::cmp::min;
 
 use crate::dijkstra::corridor_elimination_tree::customized::CustomizedUpperLower;
 use crate::dijkstra::corridor_elimination_tree::server::CorridorEliminationTreeServer;
-use crate::dijkstra::potentials::directed_partial_backward_profile::ops::{DirectedPartialBackwardProfileLabel, TDDirectedPartialBackwardProfilePotentialOps};
 use crate::dijkstra::potentials::directed_partial_backward_profile::query::TDDirectedPartialBackwardProfileQuery;
+use crate::dijkstra::potentials::partial_backward_profile::ops::TDPartialBackwardProfilePotentialOps;
 use crate::dijkstra::potentials::{convert_timestamp_f64_to_u32, convert_timestamp_u32_to_f64, TDPotential};
 use crate::graph::capacity_graph::CapacityGraph;
-use rand::{thread_rng, Rng};
 use rust_road_router::algo::ch_potentials::{CCHPotData, CCHPotential};
-use rust_road_router::algo::customizable_contraction_hierarchy::CCH;
-use rust_road_router::algo::dijkstra::{DijkstraData, DijkstraOps, DijkstraRun, Label, State};
+use rust_road_router::algo::dijkstra::{DijkstraData, DijkstraOps, State};
 use rust_road_router::algo::GenQuery;
-use rust_road_router::datastr::graph::floating_time_dependent::{period, FlWeight, PartialPiecewiseLinearFunction, TTFPoint, Timestamp};
+use rust_road_router::datastr::graph::floating_time_dependent::{FlWeight, PartialPiecewiseLinearFunction, TTFPoint, Timestamp};
 use rust_road_router::datastr::graph::{Arc, BuildReversed, EdgeId, FirstOutGraph, Graph, LinkIterable, NodeId, ReversedGraphWithEdgeIds, Weight};
 use rust_road_router::datastr::index_heap::Indexing;
 use rust_road_router::report::measure;
-use crate::dijkstra::potentials::partial_backward_profile::ops::TDPartialBackwardProfilePotentialOps;
 
 /// Basic implementation of a potential obtained by a backward profile search
 /// this version is not to be used, but provides a good starting point for further optimizations
 pub struct TDDirectedPartialBackwardProfilePotential<'a> {
     forward_cch: CorridorEliminationTreeServer<'a>,
-    forward_lower_bound_potential: CCHPotential<'a, FirstOutGraph<&'a [EdgeId], &'a [NodeId], &'a [Weight]>, FirstOutGraph<&'a [EdgeId], &'a [NodeId], &'a [Weight]>>, // for directed backward profile search
+    forward_lower_bound_potential:
+        CCHPotential<'a, FirstOutGraph<&'a [EdgeId], &'a [NodeId], &'a [Weight]>, FirstOutGraph<&'a [EdgeId], &'a [NodeId], &'a [Weight]>>, // for directed backward profile search
     backward_graph: ReversedGraphWithEdgeIds,
     backward_potential: CCHPotential<'a, FirstOutGraph<&'a [EdgeId], &'a [NodeId], &'a [Weight]>, FirstOutGraph<&'a [EdgeId], &'a [NodeId], &'a [Weight]>>, // for directed backward profile search
     travel_time_profile: Vec<Vec<TTFPoint>>,
@@ -127,7 +124,7 @@ impl<'a> TDPotential for TDDirectedPartialBackwardProfilePotential<'a> {
         let mut ops = TDPartialBackwardProfilePotentialOps {
             query_start: self.query_start.clone(),
             corridor_max: query.earliest_arrival_upper_bound,
-            profiles: &self.travel_time_profile
+            profiles: &self.travel_time_profile,
         };
 
         /*let mut ops = TDDirectedPartialBackwardProfilePotentialOps::new(
@@ -228,8 +225,8 @@ impl<'a> TDPotential for TDDirectedPartialBackwardProfilePotential<'a> {
         let node_label = &self.dijkstra.distances[node as usize];
         let timestamp = Timestamp(convert_timestamp_u32_to_f64(timestamp));
 
-        let first_label_entry = node_label.first().unwrap();
-        let last_label_entry = node_label.last().unwrap();
+        //let first_label_entry = node_label.first().unwrap();
+        //let last_label_entry = node_label.last().unwrap();
 
         // check if timestamp is inside the profile's boundaries
         if node_label.first().unwrap().at.fuzzy_leq(timestamp) && timestamp.fuzzy_leq(node_label.last().unwrap().at) {

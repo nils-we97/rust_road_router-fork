@@ -1,5 +1,4 @@
 use crate::dijkstra::corridor_elimination_tree::customized::CustomizedUpperLower;
-use crate::dijkstra::corridor_elimination_tree::server::CorridorEliminationTreeServer;
 use crate::dijkstra::potentials::cch::custom_cch_pot::CCHLowerUpperPotential;
 use crate::dijkstra::potentials::corridor_interval_potential::ops::{ApproximatedIntervalLabel, IntervalLabelEntry, TDCorridorIntervalPotentialOps};
 use crate::dijkstra::potentials::TDPotential;
@@ -9,7 +8,6 @@ use rust_road_router::algo::dijkstra::{DijkstraData, Label, State};
 use rust_road_router::datastr::graph::{Arc, BuildReversed, EdgeId, FirstOutGraph, Graph, LinkIterable, NodeId, ReversedGraphWithEdgeIds, Weight, INFINITY};
 use rust_road_router::datastr::index_heap::Indexing;
 use rust_road_router::datastr::timestamped_vector::TimestampedVector;
-use rust_road_router::report::measure;
 use std::cmp::min;
 
 /// Approximated Interval Potentials, limited by a corridor for each node
@@ -72,7 +70,7 @@ impl<'a> TDPotential for TDCorridorIntervalPotential<'a> {
         let target_begin_interval = self.ops.interval_length * ((timestamp + ea_dist_lower) / self.ops.interval_length);
         let target_end_interval = self.ops.interval_length * ((timestamp + ea_dist_upper) / self.ops.interval_length);
 
-        if false && target_begin_interval == target_end_interval {
+        if target_begin_interval == target_end_interval {
             self.use_td_mode = false;
             return;
         }
