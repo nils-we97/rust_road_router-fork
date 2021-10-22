@@ -1,21 +1,21 @@
 use crate::graph::MAX_BUCKETS;
+use rust_road_router::algo::dijkstra::Label;
 use rust_road_router::datastr::graph::time_dependent::{PiecewiseLinearFunction, Timestamp};
 use rust_road_router::datastr::graph::{Reversed, Weight, INFINITY};
 use std::cmp::{max, min};
 
 #[derive(Clone, Debug)]
 pub struct TDCorridorIntervalPotentialOps {
-    pub query_start: Timestamp,
-    pub corridor_max: Timestamp,
     pub num_intervals: u32,
     pub interval_length: Timestamp,
     pub edge_intervals: Vec<Vec<Weight>>, // first version: take complete profile -> consider using dynamic arrays here!
+    reset_threshold: Timestamp,
 }
 
 #[derive(Clone, Debug)]
 pub struct ApproximatedIntervalLabel {
-    first_interval_ts: Option<Timestamp>,
-    interval_minima: Vec<IntervalLabelEntry>,
+    pub first_interval_ts: Option<Timestamp>,
+    pub interval_minima: Vec<IntervalLabelEntry>,
 }
 
 impl ApproximatedIntervalLabel {
@@ -32,13 +32,38 @@ impl ApproximatedIntervalLabel {
             interval_minima: Vec::new(),
         }
     }
+
+    pub fn max_dist(&self) -> Weight {
+        // exploit the circumstance that the overflow min value is always smaller than the no-overflows!
+        self.interval_minima
+            .iter()
+            .max_by_key(|entry| entry.no_overflow_min)
+            .map(|entry| entry.no_overflow_min)
+            .unwrap_or(INFINITY)
+    }
+}
+
+impl Label for ApproximatedIntervalLabel {
+    type Key = Weight;
+
+    fn neutral() -> Self {
+        ApproximatedIntervalLabel::empty()
+    }
+
+    fn key(&self) -> Self::Key {
+        self.interval_minima
+            .iter()
+            .map(|entry| entry.overflow_min.map(|(val, _)| val).unwrap_or(entry.no_overflow_min))
+            .min()
+            .unwrap_or(INFINITY)
+    }
 }
 
 #[derive(Clone, Debug)]
 pub struct IntervalLabelEntry {
-    no_overflow_min: Weight,
+    pub no_overflow_min: Weight,
     // minimum value extracted without skipping interval bounds
-    overflow_min: Option<(Weight, Weight)>, // minimum value extracted with skipping bounds, additional "cooldown"
+    pub overflow_min: Option<(Weight, Weight)>, // minimum value extracted with skipping bounds, additional "cooldown"
 }
 
 impl IntervalLabelEntry {
@@ -57,7 +82,7 @@ enum IntervalLinkResult {
 }
 
 impl TDCorridorIntervalPotentialOps {
-    pub fn new(query_start: Timestamp, corridor_max: Timestamp, num_intervals: u32, departures: &Vec<Vec<Timestamp>>, travel_times: &Vec<Vec<Weight>>) -> Self {
+    pub fn new(num_intervals: u32, departures: &Vec<Vec<Timestamp>>, travel_times: &Vec<Vec<Weight>>) -> Self {
         let interval_length = MAX_BUCKETS / num_intervals;
         let interval_boundaries = (0..num_intervals + 1).into_iter().map(|i| i * interval_length).collect::<Vec<Timestamp>>();
 
@@ -77,11 +102,10 @@ impl TDCorridorIntervalPotentialOps {
             .collect::<Vec<Vec<Weight>>>();
 
         Self {
-            query_start,
-            corridor_max,
             num_intervals,
             interval_length: MAX_BUCKETS / num_intervals,
             edge_intervals,
+            reset_threshold: MAX_BUCKETS / num_intervals,
         }
     }
 
@@ -165,14 +189,6 @@ impl TDCorridorIntervalPotentialOps {
 
         // 3. run subroutine to determine which value (and overflow) to use for linking
         let min_link_val = get_minimum_link_value(entry_at_begin, entry_at_end);
-        /*dbg!(
-            &timestamp,
-            &min_link_val,
-            &label_index_at_begin,
-            &label_index_at_end,
-            &entry_at_begin,
-            &entry_at_end
-        );*/
 
         // get the minimum value without any overflows, perform additional corridor checks
         let no_overflow_min = match (entry_at_begin, entry_at_end) {
@@ -187,33 +203,55 @@ impl TDCorridorIntervalPotentialOps {
         };
 
         // 4. perform linking based on the minimum link value
-        match min_link_val {
+        let result = match min_link_val {
             IntervalLinkResult::Empty => None,
             IntervalLinkResult::BeginningWithoutOverflow(val) => Some(IntervalLabelEntry::new(edge_tt + val, None)),
             IntervalLinkResult::BeginningWithOverflow(val, reset_counter) => {
                 // modify reset counter, reset to 0 if it exceeds the interval length (TODO verify)
-                let updated_reset_counter = if reset_counter + edge_tt >= self.interval_length {
+                let updated_reset_counter = if reset_counter + edge_tt >= self.reset_threshold {
                     0
                 } else {
                     reset_counter + edge_tt
                 };
 
                 // also store the overflow-free value (necessary for later linking operations with overflows)
-                Some(IntervalLabelEntry::new(no_overflow_min, Some((edge_tt + val, updated_reset_counter))))
+                Some(IntervalLabelEntry::new(
+                    no_overflow_min,
+                    if edge_tt + val < no_overflow_min {
+                        Some((edge_tt + val, updated_reset_counter))
+                    } else {
+                        None
+                    },
+                ))
             }
             IntervalLinkResult::EndWithoutOverflow(val) => {
                 // take the new `val` as reset counter as overflows haven't been applied to it yet
-                let reset_counter = if val >= self.interval_length { 0 } else { val };
-                Some(IntervalLabelEntry::new(no_overflow_min, Some((edge_tt + val, reset_counter))))
+                let reset_counter = if val >= self.reset_threshold { 0 } else { val };
+                Some(IntervalLabelEntry::new(
+                    no_overflow_min,
+                    if edge_tt + val < no_overflow_min {
+                        Some((edge_tt + val, reset_counter))
+                    } else {
+                        None
+                    },
+                ))
             }
             IntervalLinkResult::EndWithOverflow(val) => {
                 // increase the reset counter by edge traversal time
                 // if we take the whole distance here, we propagate the lowerbound distances too fast
-                let reset_counter = if edge_tt >= self.interval_length { 0 } else { edge_tt };
+                let reset_counter = if edge_tt >= self.reset_threshold { 0 } else { edge_tt };
 
-                Some(IntervalLabelEntry::new(no_overflow_min, Some((edge_tt + val, reset_counter))))
+                Some(IntervalLabelEntry::new(
+                    no_overflow_min,
+                    if edge_tt + val < no_overflow_min {
+                        Some((edge_tt + val, reset_counter))
+                    } else {
+                        None
+                    },
+                ))
             }
-        }
+        };
+        result
     }
 
     pub fn merge(&self, label: &mut ApproximatedIntervalLabel, linked: ApproximatedIntervalLabel) -> bool {
@@ -253,14 +291,19 @@ impl TDCorridorIntervalPotentialOps {
                 (label.interval_minima.iter(), linked.interval_minima[idx..].iter())
             };
 
-            dbg!(&ret);
             // now, label and linked iterators point towards the same timestamp
             // continue to take the next elements until both iterators are exhausted
             loop {
                 match (label_iter.next(), linked_iter.next()) {
                     (Some(next_label), Some(next_linked)) => {
                         // push the minimum value of both entries
-                        let no_overflow_min = min(next_label.no_overflow_min, next_linked.no_overflow_min);
+                        let no_overflow_min = if next_linked.no_overflow_min < next_label.no_overflow_min {
+                            changes = true;
+                            next_linked.no_overflow_min
+                        } else {
+                            next_label.no_overflow_min
+                        };
+
                         let overflow_min = match (next_label.overflow_min, next_linked.overflow_min) {
                             (Some((label_val, label_counter)), Some((linked_val, linked_counter))) => {
                                 // TODO: is this correct?
@@ -269,9 +312,13 @@ impl TDCorridorIntervalPotentialOps {
                                 if label_val < linked_val {
                                     Some((label_val, label_counter))
                                 } else if linked_val < label_val {
+                                    changes = true;
                                     Some((linked_val, linked_counter))
+                                } else if label_counter < linked_counter {
+                                    changes = true;
+                                    Some((label_val, linked_counter))
                                 } else {
-                                    Some((label_val, max(label_counter, linked_counter)))
+                                    Some((label_val, label_counter))
                                 }
                             }
                             (Some((label_val, label_counter)), None) => {
@@ -283,6 +330,7 @@ impl TDCorridorIntervalPotentialOps {
                             }
                             (None, Some((linked_val, linked_counter))) => {
                                 if linked_val < no_overflow_min {
+                                    changes = true;
                                     Some((linked_val, linked_counter))
                                 } else {
                                     None
@@ -333,7 +381,6 @@ fn extract_interval_minima(departure: &Vec<Timestamp>, travel_time: &Vec<Timesta
     (0..interval_buckets.len()).into_iter().for_each(|idx| {
         let bucket_start = ttf.eval(interval_boundaries[idx]);
         let bucket_end = ttf.eval(interval_boundaries[idx + 1]);
-        println!("start: {}, end: {}", bucket_start, bucket_end);
         interval_buckets[idx] = min(interval_buckets[idx], min(bucket_start, bucket_end));
     });
 
@@ -354,7 +401,6 @@ fn get_minimum_link_value(entry_at_begin: Option<&IntervalLabelEntry>, entry_at_
                     // overflow values are the best in both intervals
                     // also check whether the second value may be used, i.e. the reset-counter is 0!
                     // tie-breaking: use the overflow value at the begin (TODO verify)
-
                     if end_overflow_reset == 0 && end_overflow_val < begin_overflow_val {
                         IntervalLinkResult::EndWithOverflow(end_overflow_val)
                     } else {

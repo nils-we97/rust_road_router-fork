@@ -186,9 +186,11 @@ impl<Pot: TDPotential> CapacityServerOps for CapacityServer<Pot> {
 
         debug_assert!(
             result.unwrap_or(INFINITY) + 1 >= pot.potential(from, init).unwrap_or(INFINITY),
-            "{:#?} {:#?}", &result, &pot.potential(from, init)
+            "{:#?} {:#?}",
+            &result,
+            &pot.potential(from, init)
         );
-        println!(
+        /*println!(
             "Query results: {}, potential: {}",
             result.unwrap_or(INFINITY),
             pot.potential(from, init).unwrap()
@@ -197,7 +199,7 @@ impl<Pot: TDPotential> CapacityServerOps for CapacityServer<Pot> {
             "Query times: Potential: {}, Query: {}",
             time_potential.to_std().unwrap().as_nanos() as f64 / 1_000_000.0,
             time_dijkstra.to_std().unwrap().as_nanos() as f64 / 1_000_000.0
-        );
+        );*/
 
         report!("num_queue_pops", num_queue_pops);
         report!("num_queue_pushs", num_queue_pushs);

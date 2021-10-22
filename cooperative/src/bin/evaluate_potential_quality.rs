@@ -1,5 +1,5 @@
-use cooperative::dijkstra::potentials::directed_partial_backward_profile::potential::TDDirectedPartialBackwardProfilePotential;
-use cooperative::dijkstra::potentials::partial_backward_profile::potential::TDPartialBackwardProfilePotential;
+use cooperative::dijkstra::corridor_elimination_tree::customized::CustomizedUpperLower;
+use cooperative::dijkstra::potentials::corridor_interval_potential::potential::TDCorridorIntervalPotential;
 use cooperative::dijkstra::potentials::TDPotential;
 use cooperative::dijkstra::server::{CapacityServer, CapacityServerOps};
 use cooperative::experiments::queries::{generate_queries, QueryType};
@@ -16,8 +16,6 @@ use std::env;
 use std::error::Error;
 use std::ops::Add;
 use std::path::Path;
-use cooperative::dijkstra::corridor_elimination_tree::customized::CustomizedUpperLower;
-use cooperative::dijkstra::potentials::corridor_partial_backward_profile::potential::TDCorridorPartialBackwardProfilePotential;
 
 const NUM_QUERIES_PER_RUN: u32 = 1000;
 
@@ -56,8 +54,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     println!("CCH customized in {} ms", time.to_std().unwrap().as_nanos() as f64 / 1_000_000.0);
 
     let customized = CustomizedUpperLower::new(&cch, graph.travel_time());
-    let potential = TDCorridorPartialBackwardProfilePotential::new(&graph, &customized, &cch_pot_data);
-    let _potential = TDPartialBackwardProfilePotential::new(&graph);
+    let potential = TDCorridorIntervalPotential::new(&graph, &customized, &cch_pot_data, 24 * 4);
 
     let mut server = CapacityServer::new_with_potential(graph, potential);
     //let mut server = CapacityServer::<ZeroPotential>::new(graph);
@@ -95,11 +92,6 @@ fn get_chunked_runtime_in_millis<Pot: TDPotential>(server: &mut CapacityServer<P
     let mut time_queries = time::Duration::zero();
     let mut time_buckets = time::Duration::zero();
     let mut time_ttfs = time::Duration::zero();
-
-    //server.query(TDQuery::new(101666, 37232, 1362281), true);
-    //server.query(TDQuery::new(66509, 15003, 1890795), true);
-    server.query(TDQuery::new(66191, 114446, 23933856), true);
-    //panic!("enough for now");
 
     let (_, total_time) = measure(|| {
         queries.iter().for_each(|&query| {

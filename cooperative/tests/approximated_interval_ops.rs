@@ -23,7 +23,7 @@ fn approximated_interval_link() {
         .map(|val| val.iter().map(|&(_, b)| b).collect::<Vec<u32>>())
         .collect::<Vec<Vec<u32>>>();
 
-    let ops = TDCorridorIntervalPotentialOps::new(0, 1000, 6, &departures, &travel_times);
+    let ops = TDCorridorIntervalPotentialOps::new(6, &departures, &travel_times);
     dbg!(&ops);
 
     let label = ApproximatedIntervalLabel::new(
@@ -55,14 +55,14 @@ fn approximated_interval_merge() {
         .map(|val| val.iter().map(|&(_, b)| b).collect::<Vec<u32>>())
         .collect::<Vec<Vec<u32>>>();
 
-    let ops = TDCorridorIntervalPotentialOps::new(0, 1000, 6, &departures, &travel_times);
+    let ops = TDCorridorIntervalPotentialOps::new(6, &departures, &travel_times);
 
     let mut label1 = ApproximatedIntervalLabel::new(
-        Some(43200000),
+        Some(0),
         vec![IntervalLabelEntry::new(105000, Some((80000, 5000))), IntervalLabelEntry::new(100000, None)],
     );
 
-    let label2 = ApproximatedIntervalLabel::new(Some(28800000), vec![IntervalLabelEntry::new(55000, None), IntervalLabelEntry::new(85000, None)]);
+    let label2 = ApproximatedIntervalLabel::new(Some(0), vec![IntervalLabelEntry::new(55000, None), IntervalLabelEntry::new(85000, None)]);
 
     let result = ops.merge(&mut label1, label2);
     dbg!(&label1, &result);
