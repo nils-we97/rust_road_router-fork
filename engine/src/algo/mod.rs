@@ -12,8 +12,10 @@ pub mod contraction_hierarchy;
 pub mod customizable_contraction_hierarchy;
 pub mod dijkstra;
 pub mod hl;
+pub mod minimal_nonshortest_subpaths;
 pub mod time_dependent_sampling;
 pub mod topocore;
+pub mod traffic_aware;
 
 pub trait GenQuery<Label> {
     fn new(from: NodeId, to: NodeId, initial_state: Label) -> Self;

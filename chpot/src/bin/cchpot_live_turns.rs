@@ -1,11 +1,9 @@
 use rust_road_router::{
     algo::{
-        ch_potentials::{query::Server as TopoServer, *},
+        a_star::*,
+        ch_potentials::{query::BiDirServer as BiDirTopo, *},
         customizable_contraction_hierarchy::*,
-        dijkstra::{
-            query::{dijkstra::Server as DijkServer, disconnected_targets::*},
-            DefaultOps,
-        },
+        dijkstra::{query::bidirectional_dijkstra::Server as DijkServer, *},
     },
     cli::CliErr,
     datastr::graph::*,
@@ -18,14 +16,20 @@ use rust_road_router::{
 use std::{env, error::Error, path::Path};
 
 fn main() -> Result<(), Box<dyn Error>> {
-    let _reporter = enable_reporting("chpot_turns");
+    let _reporter = enable_reporting("bidir_cchpot_turns");
 
     let mut rng = experiments::rng(Default::default());
 
     let arg = &env::args().skip(1).next().ok_or(CliErr("No graph directory arg given"))?;
     let path = Path::new(arg);
 
-    let graph = WeightedGraphReconstructor("live_travel_time").reconstruct_from(&path)?;
+    let mut graph = WeightedGraphReconstructor("travel_time").reconstruct_from(&path)?;
+    let live_travel_time = Vec::<Weight>::load_from(path.join("live_travel_time"))?;
+    for (query, input) in graph.weights_mut().iter_mut().zip(live_travel_time.iter()) {
+        if input > query {
+            *query = *input;
+        }
+    }
 
     let forbidden_turn_from_arc = Vec::<EdgeId>::load_from(path.join("forbidden_turn_from_arc"))?;
     let forbidden_turn_to_arc = Vec::<EdgeId>::load_from(path.join("forbidden_turn_to_arc"))?;
@@ -72,11 +76,14 @@ fn main() -> Result<(), Box<dyn Error>> {
     let core_ids = core_affinity::get_core_ids().unwrap();
     core_affinity::set_for_current(core_ids[0]);
 
-    let potential = cch_pot_data.forward_potential();
+    let pots = (
+        TurnExpandedPotential::new(&graph, cch_pot_data.forward_potential()),
+        // since this is the reverse pot, head is the tail array of the reversed turn expanded graph
+        TurnExpandedPotential::new_with_tail(graph.head().to_vec(), cch_pot_data.backward_potential()),
+    );
 
     let virtual_topocore_ctxt = algo_runs_ctxt.push_collection_item();
-    let topocore: TopoServer<OwnedGraph, _, _, true, true, true> = TopoServer::new(&exp_graph, potential, DefaultOps::default());
-    let mut topocore = CatchDisconnectedTarget::new(topocore, &graph);
+    let mut topocore = BiDirTopo::<_, AlternatingDirs>::new(&exp_graph, SymmetricBiDirPotential::<_, _>::new(pots.0, pots.1));
     drop(virtual_topocore_ctxt);
 
     let n = exp_graph.num_nodes();
@@ -105,7 +112,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         |_, _| None,
     );
 
-    let mut server = DijkServer::<_, DefaultOps>::new(exp_graph);
+    let mut server = DijkServer::<_, _, _, AlternatingDirs>::new(exp_graph);
 
     experiments::run_random_queries(
         n,

@@ -19,7 +19,7 @@ const TUNNEL_BIT: u8 = 1;
 const FREEWAY_BIT: u8 = 2;
 
 fn main() -> Result<(), Box<dyn Error>> {
-    let _reporter = enable_reporting("chpot_blocked");
+    let _reporter = enable_reporting("bidir_chpot_blocked");
     let arg = &env::args().skip(1).next().ok_or(CliErr("No graph directory arg given"))?;
     let path = Path::new(arg);
 
@@ -29,7 +29,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     {
         let _exp_ctx = exps_ctxt.push_collection_item();
-        report!("experiment", "no_tunnels");
+        report!("experiment", "bidir_no_tunnels");
 
         run(path, |_graph, _rng, travel_time| {
             for (weight, &category) in travel_time.iter_mut().zip(arc_category.iter()) {
@@ -44,7 +44,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     {
         let _exp_ctx = exps_ctxt.push_collection_item();
-        report!("experiment", "no_highways");
+        report!("experiment", "bidir_no_highways");
 
         run(path, |_graph, _rng, travel_time| {
             for (weight, &category) in travel_time.iter_mut().zip(arc_category.iter()) {
@@ -111,7 +111,7 @@ pub fn run(
         |_, _| None,
     );
 
-    let mut server = DijkServer::<_, _>::new(modified_graph);
+    let mut server = DijkServer::<_, _, _, AlternatingDirs>::new(modified_graph);
     experiments::run_random_queries(
         graph.num_nodes(),
         &mut server,

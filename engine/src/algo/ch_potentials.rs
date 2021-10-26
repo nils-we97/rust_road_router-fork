@@ -5,7 +5,7 @@ use crate::{
         customizable_contraction_hierarchy::{query::stepped_elimination_tree::EliminationTreeWalk, *},
         dijkstra::*,
     },
-    datastr::{node_order::*, rank_select_map::FastClearBitVec, timestamped_vector::TimestampedVector},
+    datastr::{graph::first_out_graph::BorrowedGraph, node_order::*, rank_select_map::FastClearBitVec, timestamped_vector::TimestampedVector},
     io::*,
     report::*,
     util::in_range_option::InRangeOption,
@@ -18,7 +18,7 @@ pub struct CCHPotData {
     customized: Customized<DirectedCCH, DirectedCCH>,
 }
 
-impl<'a> CCHPotData {
+impl CCHPotData {
     pub fn new<Graph>(cch: &CCH, lower_bound: &Graph) -> Self
     where
         Graph: LinkIterGraph + EdgeRandomAccessGraph<Link> + Sync,
@@ -27,7 +27,11 @@ impl<'a> CCHPotData {
         Self { customized }
     }
 
-    pub fn forward_potential(&self) -> CCHPotential<FirstOutGraph<&[EdgeId], &[NodeId], &[Weight]>, FirstOutGraph<&[EdgeId], &[NodeId], &[Weight]>> {
+    pub fn num_nodes(&self) -> usize {
+        self.customized.forward_graph().num_nodes()
+    }
+
+    pub fn forward_potential(&self) -> BorrowedCCHPot {
         let n = self.customized.forward_graph().num_nodes();
 
         CCHPotential {
@@ -42,7 +46,7 @@ impl<'a> CCHPotData {
         }
     }
 
-    pub fn backward_potential(&self) -> CCHPotential<FirstOutGraph<&[EdgeId], &[NodeId], &[Weight]>, FirstOutGraph<&[EdgeId], &[NodeId], &[Weight]>> {
+    pub fn backward_potential(&self) -> BorrowedCCHPot {
         let n = self.customized.forward_graph().num_nodes();
 
         CCHPotential {
@@ -56,8 +60,45 @@ impl<'a> CCHPotData {
             num_pot_computations: 0,
         }
     }
+
+    pub fn forward_path_potential(&self) -> CCHPotentialWithPathUnpacking {
+        let n = self.customized.forward_graph().num_nodes();
+
+        CCHPotentialWithPathUnpacking {
+            cch: self.customized.cch(),
+            stack: Vec::new(),
+            forward_cch_graph: self.customized.forward_graph(),
+            backward_distances: TimestampedVector::new(n, INFINITY),
+            backward_parents: vec![n as NodeId; n],
+            backward_cch_graph: self.customized.backward_graph(),
+            potentials: TimestampedVector::new(n, InRangeOption::new(None)),
+            num_pot_computations: 0,
+            path_unpacked: FastClearBitVec::new(n),
+            forward_inverted: self.customized.cch().forward_inverted(),
+            backward_inverted: self.customized.cch().backward_inverted(),
+        }
+    }
+
+    pub fn backward_path_potential(&self) -> CCHPotentialWithPathUnpacking {
+        let n = self.customized.forward_graph().num_nodes();
+
+        CCHPotentialWithPathUnpacking {
+            cch: self.customized.cch(),
+            stack: Vec::new(),
+            forward_cch_graph: self.customized.backward_graph(),
+            backward_distances: TimestampedVector::new(n, INFINITY),
+            backward_parents: vec![n as NodeId; n],
+            backward_cch_graph: self.customized.forward_graph(),
+            potentials: TimestampedVector::new(n, InRangeOption::new(None)),
+            num_pot_computations: 0,
+            path_unpacked: FastClearBitVec::new(n),
+            forward_inverted: self.customized.cch().backward_inverted(),
+            backward_inverted: self.customized.cch().forward_inverted(),
+        }
+    }
 }
 
+#[derive(Clone)]
 pub struct CCHPotential<'a, GF, GB> {
     cch: &'a DirectedCCH,
     stack: Vec<NodeId>,
@@ -68,6 +109,8 @@ pub struct CCHPotential<'a, GF, GB> {
     backward_cch_graph: GB,
     num_pot_computations: usize,
 }
+
+pub type BorrowedCCHPot<'a> = CCHPotential<'a, BorrowedGraph<'a>, BorrowedGraph<'a>>;
 
 impl<'a, GF, GB> CCHPotential<'a, GF, GB> {
     pub fn num_pot_computations(&self) -> usize {
@@ -83,14 +126,13 @@ where
     fn init(&mut self, target: NodeId) {
         let target = self.cch.node_order().rank(target);
         self.potentials.reset();
-        let mut bw_walk = EliminationTreeWalk::query(
+        for _ in EliminationTreeWalk::query(
             &self.backward_cch_graph,
             self.cch.elimination_tree(),
             &mut self.backward_distances,
             &mut self.backward_parents,
             target,
-        );
-        while let Some(_) = bw_walk.next() {}
+        ) {}
         self.num_pot_computations = 0;
     }
 
@@ -124,6 +166,136 @@ where
         } else {
             None
         }
+    }
+}
+
+pub struct CCHPotentialWithPathUnpacking<'a> {
+    cch: &'a DirectedCCH,
+    stack: Vec<NodeId>,
+    potentials: TimestampedVector<InRangeOption<Weight>>,
+    forward_cch_graph: FirstOutGraph<&'a [EdgeId], &'a [NodeId], &'a [Weight]>,
+    backward_distances: TimestampedVector<Weight>,
+    backward_parents: Vec<NodeId>,
+    backward_cch_graph: FirstOutGraph<&'a [EdgeId], &'a [NodeId], &'a [Weight]>,
+    num_pot_computations: usize,
+    path_unpacked: FastClearBitVec,
+    forward_inverted: &'a ReversedGraphWithEdgeIds,
+    backward_inverted: &'a ReversedGraphWithEdgeIds,
+}
+
+impl<'a> CCHPotentialWithPathUnpacking<'a> {
+    pub fn num_pot_computations(&self) -> usize {
+        self.num_pot_computations
+    }
+}
+
+impl<'a> Potential for CCHPotentialWithPathUnpacking<'a> {
+    fn init(&mut self, target: NodeId) {
+        let target = self.cch.node_order().rank(target);
+        self.path_unpacked.clear();
+        self.potentials.reset();
+        for _ in EliminationTreeWalk::query(
+            &self.backward_cch_graph,
+            self.cch.elimination_tree(),
+            &mut self.backward_distances,
+            &mut self.backward_parents,
+            target,
+        ) {}
+        self.num_pot_computations = 0;
+    }
+
+    fn potential(&mut self, node: NodeId) -> Option<u32> {
+        self.potential_int(self.cch.node_order().rank(node))
+    }
+}
+
+impl<'a> CCHPotentialWithPathUnpacking<'a> {
+    fn potential_int(&mut self, node: NodeId) -> Option<u32> {
+        let mut cur_node = node;
+        while self.potentials[cur_node as usize].value().is_none() {
+            self.num_pot_computations += 1;
+            self.stack.push(cur_node);
+            if let Some(parent) = self.cch.elimination_tree()[cur_node as usize].value() {
+                cur_node = parent;
+            } else {
+                break;
+            }
+        }
+
+        while let Some(node) = self.stack.pop() {
+            let mut dist = self.backward_distances[node as usize];
+
+            for edge in LinkIterable::<Link>::link_iter(&self.forward_cch_graph, node) {
+                let relaxed = edge.weight + self.potentials[edge.node as usize].value().unwrap();
+                if relaxed < dist {
+                    self.backward_parents[node as usize] = edge.node;
+                    dist = relaxed;
+                }
+            }
+
+            self.potentials[node as usize] = InRangeOption::new(Some(dist));
+        }
+
+        let dist = self.potentials[node as usize].value().unwrap();
+        if dist < INFINITY {
+            Some(dist)
+        } else {
+            None
+        }
+    }
+
+    pub fn unpack_path(&mut self, NodeIdT(node): NodeIdT) {
+        self.unpack_path_int(NodeIdT(self.cch.node_order().rank(node)))
+    }
+
+    fn unpack_path_int(&mut self, NodeIdT(node): NodeIdT) {
+        if self.path_unpacked.get(node as usize) {
+            return;
+        }
+        let self_dist = self.potential_int(node).unwrap();
+        let parent = self.backward_parents[node as usize];
+        if parent == node {
+            self.path_unpacked.set(node as usize);
+            return;
+        }
+        let parent_dist = self.potential_int(parent).unwrap();
+        self.unpack_path_int(NodeIdT(parent));
+
+        debug_assert!(self_dist >= parent_dist, "{:#?}", (node, parent, self_dist, parent_dist));
+        if let Some((middle, _down, _up)) = unpack_arc(
+            node,
+            parent,
+            self_dist - parent_dist,
+            self.forward_cch_graph.weight(),
+            self.backward_cch_graph.weight(),
+            self.forward_inverted,
+            self.backward_inverted,
+        ) {
+            self.backward_parents[node as usize] = middle;
+
+            if !self.path_unpacked.get(middle as usize) {
+                // will be called in the unpack_path_int call
+                // but we need to make sure that the parent of middle is parent
+                // so we call potential_int first, then set the parent
+                // and then the call in unpack_path won't override it again.
+                // This is only a problem with zero arcs and the induced non-unique shortest paths
+                self.potential_int(middle);
+                self.backward_parents[middle as usize] = parent;
+                self.unpack_path_int(NodeIdT(middle));
+            }
+
+            debug_assert_eq!(self.potential_int(middle).unwrap(), parent_dist + _up,);
+            self.unpack_path_int(NodeIdT(node));
+        }
+        self.path_unpacked.set(node as usize);
+    }
+
+    pub fn target_shortest_path_tree(&self) -> &[NodeId] {
+        &self.backward_parents
+    }
+
+    pub fn cch(&self) -> &DirectedCCH {
+        self.cch
     }
 }
 
@@ -163,7 +335,7 @@ impl<GF: LinkIterGraph, GB: LinkIterGraph> Potential for CHPotential<GF, GB> {
         self.potentials.reset();
 
         let mut ops = DefaultOps();
-        let mut backward_dijkstra_run = DijkstraRun::query(
+        for _ in DijkstraRun::query(
             &self.backward,
             &mut self.dijkstra_data,
             &mut ops,
@@ -171,8 +343,7 @@ impl<GF: LinkIterGraph, GB: LinkIterGraph> Potential for CHPotential<GF, GB> {
                 from: self.order.rank(target),
                 to: std::u32::MAX,
             },
-        );
-        while let Some(_) = backward_dijkstra_run.next() {}
+        ) {}
     }
 
     fn potential(&mut self, node: NodeId) -> Option<Weight> {
@@ -391,7 +562,7 @@ impl<GF: LinkIterGraph, GB: LinkIterGraph> BucketCHPotential<GF, GB> {
                 index: i as u32,
             });
         }
-        while let Some(_) = backward_dijkstra_run.next() {}
+        for _ in backward_dijkstra_run {}
     }
 
     pub fn potential(&mut self, node: NodeId) -> &[Weight] {
@@ -498,9 +669,7 @@ impl<G: LinkIterGraph> DijkstraOps<G> for SimulBucketCHOps {
     }
 
     #[inline(always)]
-    fn predecessor_link(&self, _link: &Self::Arc) -> Self::PredecessorLink {
-        ()
-    }
+    fn predecessor_link(&self, _link: &Self::Arc) -> Self::PredecessorLink {}
 }
 
 impl Label for Vec<(NodeId, Weight)> {
@@ -508,7 +677,5 @@ impl Label for Vec<(NodeId, Weight)> {
     fn neutral() -> Self {
         Vec::new()
     }
-    fn key(&self) -> Self::Key {
-        ()
-    }
+    fn key(&self) -> Self::Key {}
 }

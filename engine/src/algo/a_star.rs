@@ -53,7 +53,7 @@ impl BaselinePotential {
         OwnedGraph: BuildReversed<G>,
     {
         Self {
-            graph: OwnedGraph::reversed(&graph),
+            graph: OwnedGraph::reversed(graph),
             data: DijkstraData::new(graph.num_nodes()),
         }
     }
@@ -63,7 +63,7 @@ impl Potential for BaselinePotential {
     fn init(&mut self, target: NodeId) {
         report_time_with_key("BaselinePotential init", "baseline_pot_init", || {
             let mut ops = DefaultOps();
-            let mut dijkstra = DijkstraRun::query(
+            let dijkstra = DijkstraRun::query(
                 &self.graph,
                 &mut self.data,
                 &mut ops,
@@ -72,7 +72,7 @@ impl Potential for BaselinePotential {
                     to: self.graph.num_nodes() as NodeId,
                 },
             );
-            while let Some(_) = dijkstra.next() {}
+            for _ in dijkstra {}
         })
     }
 
@@ -215,7 +215,7 @@ pub trait BiDirPotential {
                 }
             }
         }
-        return false;
+        false
     }
     fn prune_backward(&mut self, NodeIdT(head): NodeIdT, bw_dist_head: Weight, reverse_min_queue: Weight, max_dist: Weight) -> bool {
         self.prune_backward_internal::<true>(NodeIdT(head), bw_dist_head, reverse_min_queue, max_dist)
@@ -233,7 +233,7 @@ pub trait BiDirPotential {
                 }
             }
         }
-        return false;
+        false
     }
 
     fn bidir_pot_key() -> &'static str;
@@ -374,7 +374,8 @@ impl<PF: Potential, PB: Potential, const IP: bool> BiDirPotential for SymmetricB
         self.backward_potential.init(source);
     }
     fn stop(&mut self, fw_min_queue: Option<Weight>, bw_min_queue: Option<Weight>, stop_dist: Weight) -> bool {
-        self.stop_forward(fw_min_queue, bw_min_queue, stop_dist) && self.stop_backward(fw_min_queue, bw_min_queue, stop_dist)
+        (self.stop_forward(fw_min_queue, bw_min_queue, stop_dist) && self.stop_backward(fw_min_queue, bw_min_queue, stop_dist))
+            || (stop_dist == INFINITY && (fw_min_queue.is_none() || bw_min_queue.is_none()))
     }
     fn stop_forward(&mut self, fw_min_queue: Option<Weight>, _bw_min_queue: Option<Weight>, stop_dist: Weight) -> bool {
         fw_min_queue.map(|key| key >= stop_dist).unwrap_or(true)

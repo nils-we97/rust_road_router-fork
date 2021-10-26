@@ -2,7 +2,7 @@ use rust_road_router::{
     algo::{
         a_star::*,
         ch_potentials::{query::BiDirServer as BiDirTopo, *},
-        dijkstra::{query::bidirectional_dijkstra::Server as DijkServer, *},
+        dijkstra::{query::bidirectional_dijkstra::Server as DijkServer, AlternatingDirs},
     },
     cli::CliErr,
     datastr::graph::*,
@@ -14,7 +14,7 @@ use rust_road_router::{
 use std::{env, error::Error, path::Path};
 
 fn main() -> Result<(), Box<dyn Error>> {
-    let _reporter = enable_reporting("chpot_turns");
+    let _reporter = enable_reporting("bidir_chpot_turns");
 
     let mut rng = experiments::rng(Default::default());
 
@@ -67,13 +67,12 @@ fn main() -> Result<(), Box<dyn Error>> {
     );
 
     let virtual_topocore_ctxt = algo_runs_ctxt.push_collection_item();
-    let infinity_filtered = InfinityFilteringGraph(exp_graph);
-    let mut server = BiDirTopo::<_, AlternatingDirs>::new(&infinity_filtered, SymmetricBiDirPotential::<_, _>::new(pots.0, pots.1));
-    let InfinityFilteringGraph(exp_graph) = infinity_filtered;
+    let mut server = BiDirTopo::<_, AlternatingDirs>::new(&exp_graph, SymmetricBiDirPotential::<_, _>::new(pots.0, pots.1));
     drop(virtual_topocore_ctxt);
 
+    let n = exp_graph.num_nodes();
     experiments::run_random_queries_with_callbacks(
-        graph.num_nodes(),
+        n,
         &mut server,
         &mut rng,
         &mut algo_runs_ctxt,
@@ -97,10 +96,10 @@ fn main() -> Result<(), Box<dyn Error>> {
         |_, _| None,
     );
 
-    let mut server = DijkServer::<_, _>::new(exp_graph);
+    let mut server = DijkServer::<_, _, _, AlternatingDirs>::new(exp_graph);
 
     experiments::run_random_queries(
-        graph.num_nodes(),
+        n,
         &mut server,
         &mut rng,
         &mut algo_runs_ctxt,

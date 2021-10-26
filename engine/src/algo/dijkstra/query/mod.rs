@@ -26,7 +26,7 @@ pub mod disconnected_targets {
         {
             Self {
                 server,
-                reversed: UnweightedOwnedGraph::reversed(&graph),
+                reversed: UnweightedOwnedGraph::reversed(graph),
                 visited: FastClearBitVec::new(graph.num_nodes()),
             }
         }
@@ -51,9 +51,9 @@ pub mod disconnected_targets {
             Self::dfs(&self.reversed, target, &mut self.visited, &mut |node| {
                 if node == source {
                     reachable = true;
-                    return false;
+                    return true;
                 }
-                if counter < 100 {
+                if counter < 200 {
                     counter += 1;
                     false
                 } else {
@@ -61,7 +61,7 @@ pub mod disconnected_targets {
                     true
                 }
             });
-            return reachable;
+            reachable
         }
     }
 

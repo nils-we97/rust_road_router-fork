@@ -98,20 +98,17 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut algo_runs_ctxt = push_collection_context("algo_runs".to_string());
 
     #[cfg(not(feature = "chpot-no-reorder"))]
-    let mut server: TopoServer<
-        OwnedGraph,
-        _,
-        _,
-        { !cfg!(feature = "chpot-no-bcc") },
-        { !cfg!(feature = "chpot-no-deg2") },
-        { !cfg!(feature = "chpot-no-deg3") },
-    > = {
-        let _ = algo_runs_ctxt.push_collection_item();
-        TopoServer::new(&modified_graph, potential, DefaultOps::default())
+    let mut server = {
+        let _prepro = algo_runs_ctxt.push_collection_item();
+        TopoServer::<OwnedGraph, _, _, { !cfg!(feature = "chpot-no-bcc") }, { !cfg!(feature = "chpot-no-deg2") }, { !cfg!(feature = "chpot-no-deg3") }>::new_custom(
+            &modified_graph,
+            potential,
+            DefaultOps::default(),
+        )
     };
     #[cfg(feature = "chpot-no-reorder")]
     let mut server: DijkServer<_, DefaultOps, _> = {
-        let _ = algo_runs_ctxt.push_collection_item();
+        let _prepro = algo_runs_ctxt.push_collection_item();
         DijkServer::with_potential(modified_graph, potential)
     };
 

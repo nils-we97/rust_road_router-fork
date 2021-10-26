@@ -90,8 +90,7 @@ impl<L: Label, PredLink: Copy> DijkstraData<L, PredLink> {
     }
 
     pub fn node_path(&self, from: NodeId, to: NodeId) -> Vec<NodeId> {
-        let mut path = Vec::new();
-        path.push(to);
+        let mut path = vec![to];
 
         while *path.last().unwrap() != from {
             let next = self.predecessors[*path.last().unwrap() as usize].0;
@@ -129,7 +128,27 @@ pub trait DijkstraOps<Graph> {
     fn predecessor_link(&self, _link: &Self::Arc) -> Self::PredecessorLink;
 }
 
-#[derive(Debug, Clone, Copy)]
+pub trait ComplexDijkstraOps<Graph> {
+    type Label: Label;
+    type Arc: Arc;
+    type LinkResult;
+    type PredecessorLink: Default + Copy;
+
+    fn link(
+        &mut self,
+        graph: &Graph,
+        labels: &TimestampedVector<Self::Label>,
+        parents: &[(NodeId, Self::PredecessorLink)],
+        tail: NodeIdT,
+        key: <Self::Label as Label>::Key,
+        label: &Self::Label,
+        link: &Self::Arc,
+    ) -> Self::LinkResult;
+    fn merge(&mut self, label: &mut Self::Label, linked: Self::LinkResult) -> Option<<Self::Label as Label>::Key>;
+    fn predecessor_link(&self, _link: &Self::Arc) -> Self::PredecessorLink;
+}
+
+#[derive(Debug, Clone, Copy, Default)]
 pub struct DefaultOps();
 
 impl<G> DijkstraOps<G> for DefaultOps {
@@ -153,18 +172,10 @@ impl<G> DijkstraOps<G> for DefaultOps {
     }
 
     #[inline(always)]
-    fn predecessor_link(&self, _link: &Self::Arc) -> Self::PredecessorLink {
-        ()
-    }
+    fn predecessor_link(&self, _link: &Self::Arc) -> Self::PredecessorLink {}
 }
 
-impl Default for DefaultOps {
-    fn default() -> Self {
-        Self()
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct DefaultOpsWithLinkPath();
 
 impl<G: EdgeIdGraph> DijkstraOps<G> for DefaultOpsWithLinkPath {
@@ -193,12 +204,6 @@ impl<G: EdgeIdGraph> DijkstraOps<G> for DefaultOpsWithLinkPath {
     }
 }
 
-impl Default for DefaultOpsWithLinkPath {
-    fn default() -> Self {
-        Self()
-    }
-}
-
 pub trait BidirChooseDir: Default {
     fn choose(&mut self, fw_min_key: Option<Weight>, bw_min_key: Option<Weight>) -> bool;
     fn may_stop(&self) -> bool {
@@ -210,13 +215,8 @@ pub trait BidirChooseDir: Default {
     }
 }
 
+#[derive(Default)]
 pub struct ChooseMinKeyDir();
-
-impl Default for ChooseMinKeyDir {
-    fn default() -> Self {
-        Self()
-    }
-}
 
 impl BidirChooseDir for ChooseMinKeyDir {
     fn choose(&mut self, fw_min_key: Option<Weight>, bw_min_key: Option<Weight>) -> bool {
@@ -231,14 +231,9 @@ impl BidirChooseDir for ChooseMinKeyDir {
     }
 }
 
+#[derive(Default)]
 pub struct AlternatingDirs {
     prev: bool,
-}
-
-impl Default for AlternatingDirs {
-    fn default() -> Self {
-        Self { prev: false }
-    }
 }
 
 impl BidirChooseDir for AlternatingDirs {
