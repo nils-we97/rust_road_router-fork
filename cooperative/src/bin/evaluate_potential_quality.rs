@@ -1,4 +1,4 @@
-use cooperative::dijkstra::corridor_elimination_tree::customized::CustomizedUpperLower;
+use cooperative::dijkstra::elimination_tree::corridor_intervals::customized::CustomizedUpperLower;
 use cooperative::dijkstra::potentials::corridor_interval_potential::potential::TDCorridorIntervalPotential;
 use cooperative::dijkstra::potentials::TDPotential;
 use cooperative::dijkstra::server::{CapacityServer, CapacityServerOps};

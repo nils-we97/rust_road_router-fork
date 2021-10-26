@@ -1,5 +1,5 @@
-use crate::dijkstra::corridor_elimination_tree::customized::CustomizedUpperLower;
-use crate::dijkstra::corridor_elimination_tree::CorridorEliminationTreeWalk;
+use crate::dijkstra::elimination_tree::corridor_intervals::customized::CustomizedUpperLower;
+use crate::dijkstra::elimination_tree::corridor_intervals::CorridorEliminationTreeWalk;
 use rust_road_router::algo::a_star::Potential;
 use rust_road_router::algo::customizable_contraction_hierarchy::CCHT;
 use rust_road_router::datastr::graph::{EdgeId, EdgeIdT, Graph, LinkIterable, NodeId, NodeIdT, UnweightedFirstOutGraph, Weight, INFINITY};

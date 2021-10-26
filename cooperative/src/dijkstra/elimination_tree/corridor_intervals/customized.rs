@@ -1,4 +1,4 @@
-use crate::dijkstra::corridor_elimination_tree::parallelization::{SeparatorBasedParallelCustomization, SeparatorBasedPerfectParallelCustomization};
+use crate::dijkstra::elimination_tree::parallelization::{SeparatorBasedParallelCustomization, SeparatorBasedPerfectParallelCustomization};
 use rayon::prelude::*;
 use rust_road_router::algo::customizable_contraction_hierarchy::{DirectedCCH, CCH, CCHT};
 use rust_road_router::datastr::graph::{

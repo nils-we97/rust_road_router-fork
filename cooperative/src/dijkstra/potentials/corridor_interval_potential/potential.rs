@@ -1,4 +1,4 @@
-use crate::dijkstra::corridor_elimination_tree::customized::CustomizedUpperLower;
+use crate::dijkstra::elimination_tree::corridor_intervals::customized::CustomizedUpperLower;
 use crate::dijkstra::potentials::cch::custom_cch_pot::CCHLowerUpperPotential;
 use crate::dijkstra::potentials::corridor_interval_potential::ops::{ApproximatedIntervalLabel, IntervalLabelEntry, TDCorridorIntervalPotentialOps};
 use crate::dijkstra::potentials::TDPotential;

@@ -1,12 +1,13 @@
 use std::cmp::min;
 
-use crate::dijkstra::corridor_elimination_tree::customized::CustomizedUpperLower;
-use crate::dijkstra::corridor_elimination_tree::server::CorridorEliminationTreeServer;
+use crate::dijkstra::elimination_tree::corridor_intervals::customized::CustomizedUpperLower;
+use crate::dijkstra::elimination_tree::corridor_intervals::server::CorridorEliminationTreeServer;
 use crate::dijkstra::potentials::directed_partial_backward_profile::query::TDDirectedPartialBackwardProfileQuery;
 use crate::dijkstra::potentials::partial_backward_profile::ops::TDPartialBackwardProfilePotentialOps;
 use crate::dijkstra::potentials::{convert_timestamp_f64_to_u32, convert_timestamp_u32_to_f64, TDPotential};
 use crate::graph::capacity_graph::CapacityGraph;
 use rust_road_router::algo::ch_potentials::{CCHPotData, CCHPotential};
+use rust_road_router::algo::customizable_contraction_hierarchy::DirectedCCH;
 use rust_road_router::algo::dijkstra::{DijkstraData, DijkstraOps, State};
 use rust_road_router::algo::GenQuery;
 use rust_road_router::datastr::graph::floating_time_dependent::{FlWeight, PartialPiecewiseLinearFunction, TTFPoint, Timestamp};
@@ -17,7 +18,7 @@ use rust_road_router::report::measure;
 /// Basic implementation of a potential obtained by a backward profile search
 /// this version is not to be used, but provides a good starting point for further optimizations
 pub struct TDDirectedPartialBackwardProfilePotential<'a> {
-    forward_cch: CorridorEliminationTreeServer<'a>,
+    forward_cch: CorridorEliminationTreeServer<'a, DirectedCCH>,
     forward_lower_bound_potential:
         CCHPotential<'a, FirstOutGraph<&'a [EdgeId], &'a [NodeId], &'a [Weight]>, FirstOutGraph<&'a [EdgeId], &'a [NodeId], &'a [Weight]>>, // for directed backward profile search
     backward_graph: ReversedGraphWithEdgeIds,
@@ -43,7 +44,16 @@ impl<'a> TDDirectedPartialBackwardProfilePotential<'a> {
         let travel_time = graph.travel_time();
 
         // init forward cch
-        let forward_cch = CorridorEliminationTreeServer::new(&customized_upper_lower);
+        let (forward_graph, forward_weights) = customized_upper_lower.forward_graph();
+        let (backward_graph, backward_weights) = customized_upper_lower.backward_graph();
+
+        let forward_cch = CorridorEliminationTreeServer::new(
+            &customized_upper_lower.cch,
+            forward_graph.clone(),
+            forward_weights.clone(),
+            backward_graph.clone(),
+            backward_weights.clone(),
+        );
         let forward_lower_bound_potential = cch_pot_data.forward_potential();
 
         // init backward graph and potentials

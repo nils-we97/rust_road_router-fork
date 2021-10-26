@@ -1,22 +1,35 @@
-use crate::dijkstra::corridor_elimination_tree::customized::CustomizedUpperLower;
-use crate::dijkstra::corridor_elimination_tree::CorridorEliminationTreeWalk;
+use crate::dijkstra::elimination_tree::corridor_intervals::CorridorEliminationTreeWalk;
 use rust_road_router::algo::customizable_contraction_hierarchy::CCHT;
-use rust_road_router::datastr::graph::{NodeId, Weight, INFINITY};
+use rust_road_router::datastr::graph::{EdgeId, NodeId, UnweightedFirstOutGraph, Weight, INFINITY};
 use rust_road_router::datastr::timestamped_vector::TimestampedVector;
 use std::borrow::Borrow;
 use std::cmp::min;
 
-pub struct CorridorEliminationTreeServer<'a> {
-    customized: &'a CustomizedUpperLower,
+pub struct CorridorEliminationTreeServer<'a, CCH> {
+    cch: &'a CCH,
+    forward_graph: UnweightedFirstOutGraph<&'a [EdgeId], &'a [NodeId]>,
+    forward_weights: Vec<(Weight, Weight)>,
+    backward_graph: UnweightedFirstOutGraph<&'a [EdgeId], &'a [NodeId]>,
+    backward_weights: Vec<(Weight, Weight)>,
     fw_distances: TimestampedVector<(Weight, Weight)>,
     bw_distances: TimestampedVector<(Weight, Weight)>,
 }
 
-impl<'a> CorridorEliminationTreeServer<'a> {
-    pub fn new(customized: &'a CustomizedUpperLower) -> Self {
-        let num_nodes = customized.cch.forward_first_out().len() - 1;
+impl<'a, CCH: CCHT> CorridorEliminationTreeServer<'a, CCH> {
+    pub fn new(
+        cch: &'a CCH,
+        forward_graph: UnweightedFirstOutGraph<&'a [EdgeId], &'a [NodeId]>,
+        forward_weights: Vec<(Weight, Weight)>,
+        backward_graph: UnweightedFirstOutGraph<&'a [EdgeId], &'a [NodeId]>,
+        backward_weights: Vec<(Weight, Weight)>,
+    ) -> Self {
+        let num_nodes = cch.forward_first_out().len() - 1;
         Self {
-            customized,
+            cch,
+            forward_graph,
+            forward_weights,
+            backward_graph,
+            backward_weights,
             fw_distances: TimestampedVector::new(num_nodes, (INFINITY, INFINITY)),
             bw_distances: TimestampedVector::new(num_nodes, (INFINITY, INFINITY)),
         }
@@ -24,29 +37,26 @@ impl<'a> CorridorEliminationTreeServer<'a> {
 
     pub fn query(&mut self, from: NodeId, to: NodeId) -> Option<(Weight, Weight)> {
         // get ranks
-        let from = self.customized.cch.node_order().rank(from);
-        let to = self.customized.cch.node_order().rank(to);
-
-        let (fw_graph, fw_weights) = self.customized.forward_graph();
-        let (bw_graph, bw_weights) = self.customized.backward_graph();
+        let from = self.cch.node_order().rank(from);
+        let to = self.cch.node_order().rank(to);
 
         // initialize query datastructures
         let mut tentative_distance = (INFINITY, INFINITY);
 
         // initialize forward elimination tree walk
         let mut fw_walk = CorridorEliminationTreeWalk::init(
-            &fw_graph,
-            fw_weights,
-            self.customized.cch.borrow().elimination_tree(),
+            &self.forward_graph,
+            &self.forward_weights,
+            self.cch.borrow().elimination_tree(),
             &mut self.fw_distances,
             from,
         );
 
         // initialize backward elimination tree walk
         let mut bw_walk = CorridorEliminationTreeWalk::init(
-            &bw_graph,
-            bw_weights,
-            self.customized.cch.borrow().elimination_tree(),
+            &self.backward_graph,
+            &self.backward_weights,
+            self.cch.borrow().elimination_tree(),
             &mut self.bw_distances,
             to,
         );

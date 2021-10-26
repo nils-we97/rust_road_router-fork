@@ -6,6 +6,7 @@ pub mod backward_profile;
 pub mod cch;
 pub mod corridor_interval_potential;
 pub mod directed_partial_backward_profile;
+pub mod multi_level_interval_potential;
 pub mod partial_backward_profile;
 
 pub trait TDPotential {

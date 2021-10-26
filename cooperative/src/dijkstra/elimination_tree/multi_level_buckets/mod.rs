@@ -3,34 +3,36 @@ use rust_road_router::datastr::timestamped_vector::TimestampedVector;
 use rust_road_router::util::in_range_option::InRangeOption;
 use std::cmp::min;
 
+pub mod bucket_tree;
 pub mod customized;
-mod parallelization;
-pub mod server;
 
 #[derive(Debug)]
-pub struct CorridorEliminationTreeWalk<'a> {
+pub struct MultiLevelEliminationTreeWalk<'a> {
     graph: &'a UnweightedFirstOutGraph<&'a [EdgeId], &'a [NodeId]>,
-    weights: &'a Vec<(Weight, Weight)>,
-    distances: &'a mut TimestampedVector<(Weight, Weight)>,
+    weights: &'a Vec<Vec<Weight>>,
+    used_metrics: &'a Vec<usize>,
+    distances: &'a mut TimestampedVector<Vec<Weight>>,
     elimination_tree: &'a [InRangeOption<NodeId>],
     next: Option<NodeId>,
 }
 
-impl<'a> CorridorEliminationTreeWalk<'a> {
+impl<'a> MultiLevelEliminationTreeWalk<'a> {
     pub fn init(
         graph: &'a UnweightedFirstOutGraph<&'a [EdgeId], &'a [NodeId]>,
-        weights: &'a Vec<(Weight, Weight)>,
+        weights: &'a Vec<Vec<Weight>>,
+        used_metrics: &'a Vec<usize>,
         elimination_tree: &'a [InRangeOption<NodeId>],
-        distances: &'a mut TimestampedVector<(Weight, Weight)>,
+        distances: &'a mut TimestampedVector<Vec<Weight>>,
         from: NodeId,
     ) -> Self {
         // reset distances
         distances.reset();
-        distances[from as usize] = (0, 0);
+        distances[from as usize] = vec![0; used_metrics.len()];
 
         Self {
             graph,
             weights,
+            used_metrics,
             distances,
             elimination_tree,
             next: Some(from),
@@ -49,10 +51,12 @@ impl<'a> CorridorEliminationTreeWalk<'a> {
                 let next_node = next_node.0 as usize;
 
                 // update tentative distances, for both lower and upper bound
-                self.distances[next_node] = (
-                    min(self.distances[next_node].0, self.distances[node as usize].0 + self.weights[edge].0),
-                    min(self.distances[next_node].1, self.distances[node as usize].1 + self.weights[edge].1),
-                );
+                self.used_metrics.iter().for_each(|&metric_idx| {
+                    self.distances[next_node][metric_idx] = min(
+                        self.distances[next_node][metric_idx],
+                        self.distances[node as usize][metric_idx] + self.weights[edge][metric_idx],
+                    );
+                });
             }
 
             Some(node)
@@ -72,7 +76,7 @@ impl<'a> CorridorEliminationTreeWalk<'a> {
         }
     }
 
-    pub fn tentative_distance(&self, node: NodeId) -> (Weight, Weight) {
-        self.distances[node as usize]
+    pub fn tentative_distance(&self, node: NodeId) -> &Vec<Weight> {
+        &self.distances[node as usize]
     }
 }
