@@ -51,10 +51,11 @@ impl<'a> MultiLevelEliminationTreeWalk<'a> {
                 let next_node = next_node.0 as usize;
 
                 // update tentative distances, for both lower and upper bound
-                self.used_metrics.iter().for_each(|&metric_idx| {
-                    self.distances[next_node][metric_idx] = min(
-                        self.distances[next_node][metric_idx],
-                        self.distances[node as usize][metric_idx] + self.weights[edge][metric_idx],
+                // careful: use correct indices, distance array only contains the relevant metrics!
+                self.used_metrics.iter().enumerate().for_each(|(distance_idx, &metric_idx)| {
+                    self.distances[next_node][distance_idx] = min(
+                        self.distances[next_node][distance_idx],
+                        self.distances[node as usize][distance_idx] + self.weights[edge][metric_idx],
                     );
                 });
             }

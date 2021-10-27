@@ -1,6 +1,7 @@
 use rust_road_router::datastr::graph::time_dependent::Timestamp;
 
 /// internal data structure to store the separate interval buckets
+#[derive(Debug, Clone)]
 pub struct MultiLevelBucketTree {
     pub root: BucketTreeEntry, // root is lowerbound profile that spans the whole day
 }
@@ -32,22 +33,24 @@ impl BucketTreeEntry {
     }
 
     pub fn find_interval(&self, start: Timestamp, end: Timestamp) -> Option<&BucketTreeEntry> {
+        debug_assert!(start <= end, "Edge case 'start > end' is not covered here! start: {}, end: {}", start, end);
+
         if start < self.interval_start || end >= self.interval_end {
             // the current node does not span the whole interval => nothing to return here
             None
         } else {
             // check if it is possible to tighten the interval
             let mut current_entry = Some(self);
+            let mut ret = Some(self);
             while let Some(entry) = current_entry {
+                ret = Some(entry);
                 current_entry = entry
                     .children
                     .iter()
-                    .filter(|entry| entry.interval_start <= start && entry.interval_end < end)
+                    .filter(|entry| entry.interval_start <= start && entry.interval_end > end)
                     .next();
             }
-
-            // fallback to the current entry
-            Some(current_entry.unwrap_or(&self))
+            ret
         }
     }
 }

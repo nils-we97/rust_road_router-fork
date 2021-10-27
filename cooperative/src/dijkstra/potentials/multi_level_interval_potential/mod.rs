@@ -72,26 +72,24 @@ impl<'a> CCHMultiLevelIntervalPotential<'a> {
 
 impl<'a> TDPotential for CCHMultiLevelIntervalPotential<'a> {
     fn init(&mut self, source: u32, target: u32, timestamp: u32) {
-        // 1. use interval query to determine corridor
+        // 1. use interval query to determine corridor (for now, only the latest arrival is relevant)
         let corridor = self
             .interval_query_server
             .query(source, target)
-            .map(|(_, arrival_upper)| (timestamp, arrival_upper));
+            .map(|(_, arrival_upper)| timestamp + arrival_upper);
 
-        if let Some((corridor_lower, corridor_upper)) = corridor {
+        if let Some(corridor_upper) = corridor {
             // bound the upper corridor to the valid time range (lower is ok by query construction!)
             self.current_max_corridor = corridor_upper % MAX_BUCKETS;
 
             // 2. determine relevant metrics
-            // first, find the largest necessary interval to span the whole corridor => the smaller, the better!
-            let root = &self.customized.bucket_tree.root;
-            let mut current_interval = Some(root.find_interval(corridor_lower, self.current_max_corridor).unwrap_or(root));
+            let mut current_interval = Some(&self.customized.bucket_tree.root);
             self.current_metrics.clear();
             self.current_intervals.clear();
 
             while let Some(interval) = current_interval {
                 self.current_metrics.push(interval.metric_index);
-                self.current_intervals.push(interval.interval_end - interval.interval_start);
+                self.current_intervals.push(interval.interval_start);
 
                 // find suitable child that contains the upper corridor
                 current_interval = interval
@@ -123,11 +121,13 @@ impl<'a> TDPotential for CCHMultiLevelIntervalPotential<'a> {
 
     fn potential(&mut self, node: u32, timestamp: u32) -> Option<u32> {
         let node = self.customized.cch.node_order.rank(node);
+        let timestamp = timestamp % MAX_BUCKETS;
         let elimination_tree = self.customized.cch.elimination_tree();
 
         // 1. upward search until a node with existing distance to target is found
+        // it suffices to check for the lowerbound distance which is always found at index 0
         let mut cur_node = node;
-        while self.potentials[cur_node as usize].is_empty() {
+        while self.potentials[cur_node as usize][0] >= INFINITY {
             self.num_pot_computations += 1;
             self.stack.push(cur_node);
             if let Some(parent) = elimination_tree[cur_node as usize].value() {
@@ -141,14 +141,9 @@ impl<'a> TDPotential for CCHMultiLevelIntervalPotential<'a> {
         while let Some(current_node) = self.stack.pop() {
             let distances = &mut self.backward_distances[current_node as usize];
 
-            //let (mut dist_lower, mut dist_upper) = self.backward_distances[current_node as usize];
-
             for (NodeIdT(next_node), EdgeIdT(edge)) in LinkIterable::<(NodeIdT, EdgeIdT)>::link_iter(&self.forward_cch_graph, current_node) {
                 let forward_cch_weights = &self.forward_cch_weights[edge as usize];
                 let next_potential = &self.potentials[next_node as usize];
-
-                //let (edge_weight_lower, edge_weight_upper) = self.forward_cch_weights[edge as usize];
-                //let (next_potential_lower, next_potential_upper) = self.potentials[next_node as usize].value().unwrap();
 
                 self.current_metrics.iter().enumerate().for_each(|(idx, &metric_idx)| {
                     distances[idx] = min(distances[idx], forward_cch_weights[metric_idx] + next_potential[idx]);
@@ -159,35 +154,31 @@ impl<'a> TDPotential for CCHMultiLevelIntervalPotential<'a> {
         }
 
         // 3. retrieve the value within the most-suited interval
-        let metric_idx = self
-            .customized
-            .bucket_tree
-            .root
-            .find_interval(timestamp, self.current_max_corridor)
-            .map(|entry| entry.metric_index)
-            .unwrap_or(0);
-
-        let potential_metric_idx = self
-            .current_metrics
-            .iter()
-            .enumerate()
-            .filter(|&(_, &m_idx)| m_idx == metric_idx)
-            .next()
-            .map(|(val, _)| val);
-
-        debug_assert!(
-            potential_metric_idx.is_some(),
-            "Existing indices: {:?}, expected {}",
-            &self.current_metrics,
-            metric_idx
-        );
-
-        let pot = self.potentials[node as usize][potential_metric_idx.unwrap()];
-        if pot < INFINITY {
-            Some(pot)
+        let pot_metric_idx = if timestamp > self.current_max_corridor {
+            // special-case treatment for changes over midnight, simply use the lowerbound pot here
+            0
         } else {
-            None
-        }
+            // lookup for smallest bucket that contains both `timestamp` and the upper bound arrival
+            let mut val = 0;
+
+            for i in (0..self.current_intervals.len()).rev() {
+                if self.current_intervals[i] <= timestamp {
+                    val = i;
+                    break;
+                }
+            }
+            val
+        };
+
+        /*let potential_metric_idx = self
+        .current_metrics
+        .iter()
+        .enumerate()
+        .filter(|&(_, &m_idx)| m_idx == metric_idx)
+        .next()
+        .map(|(val, _)| val);*/
+
+        Some(self.potentials[node as usize][pot_metric_idx]).filter(|&pot| pot < INFINITY)
     }
 }
 

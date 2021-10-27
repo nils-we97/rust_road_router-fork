@@ -38,28 +38,21 @@ impl<'a> CustomizedMultiLevels<'a> {
             .for_each(|a| debug_assert!(a[0] % a[1] == 0, "Interval lengths must be divisible by each other!"));
 
         // 1. extract the lower bounds for all intervals and store them in a consecutive array
-        // build prefix sum over metric indices; first two entries are reserved for lower/upper bound!
-        let mut level_boundaries = Vec::with_capacity(interval_lengths.len() + 1);
-        level_boundaries.push(2);
-        interval_lengths
-            .iter()
-            .for_each(|&interval_len| level_boundaries.push((MAX_BUCKETS / interval_len) + *level_boundaries.last().unwrap()));
+        let level_boundaries = get_level_boundaries(interval_lengths);
         let metrics = extract_metrics(departures, travel_times, interval_lengths, &level_boundaries);
 
         // 2. create bucket tree structure for fast potential accesses
         let bucket_tree = build_bucket_tree(interval_lengths, &level_boundaries);
 
         // these will contain our customized shortcuts
-        let mut upward_weights = vec![vec![INFINITY; metrics.len()]; m];
-        let mut downward_weights = vec![vec![INFINITY; metrics.len()]; m];
+        let mut upward_weights = vec![vec![INFINITY; metrics[0].len()]; m];
+        let mut downward_weights = vec![vec![INFINITY; metrics[0].len()]; m];
 
-        // 2. initialize upward and downward weights with correct lower/upper bound
+        // 3. initialize upward and downward weights with correct lower/upper bound
         prepare_weights(cch, &mut upward_weights, &mut downward_weights, &metrics);
 
-        // 3. run basic customization
+        // 4. run basic customization
         customize_basic(cch, &mut upward_weights, &mut downward_weights);
-
-        println!("Sizes after basic customization: {} {}", upward_weights.len(), downward_weights.len());
 
         Self {
             cch,
@@ -96,9 +89,9 @@ fn extract_metrics(
 
     // todo remove this block
     let num_entries = interval_lengths.iter().map(|&interval_len| MAX_BUCKETS / interval_len).sum::<u32>() + 2;
-    debug_assert_eq!(num_entries, interval_lengths.last().unwrap().clone());
+    debug_assert_eq!(num_entries, level_boundaries.last().unwrap().clone());
 
-    let mut metrics = vec![vec![INFINITY; *interval_lengths.last().unwrap() as usize]; departures.len()];
+    let mut metrics = vec![vec![INFINITY; *level_boundaries.last().unwrap() as usize]; departures.len()];
 
     // 2. collect the interval minima from all edges
     (0..departures.len()).into_iter().for_each(|edge_id| {
@@ -127,7 +120,7 @@ fn extract_metrics(
         level_boundaries.windows(2).enumerate().for_each(|(level, bounds)| {
             (bounds[0]..bounds[1]).into_iter().for_each(|metric_idx| {
                 let plf_at_begin = plf.eval(interval_lengths[level] * (metric_idx - bounds[0]));
-                let plf_at_end = plf.eval(interval_lengths[level] * (metric_idx + 1 - bounds[1]));
+                let plf_at_end = plf.eval(interval_lengths[level] * (metric_idx + 1 - bounds[0]));
 
                 metrics[edge_id][metric_idx as usize] = min(metrics[edge_id][metric_idx as usize], min(plf_at_begin, plf_at_end));
             });
@@ -135,6 +128,18 @@ fn extract_metrics(
     });
 
     metrics
+}
+
+/// build prefix sum of the metric levels
+fn get_level_boundaries(interval_lengths: &Vec<Timestamp>) -> Vec<u32> {
+    let mut level_boundaries = Vec::with_capacity(interval_lengths.len() + 1);
+    level_boundaries.push(2); // first two entries are reserved for static lower-/upperbound
+
+    interval_lengths
+        .iter()
+        .for_each(|&interval_len| level_boundaries.push((MAX_BUCKETS / interval_len) + *level_boundaries.last().unwrap()));
+
+    level_boundaries
 }
 
 fn build_bucket_tree(interval_lengths: &Vec<Timestamp>, level_boundaries: &Vec<u32>) -> MultiLevelBucketTree {
@@ -171,8 +176,6 @@ fn build_bucket_tree(interval_lengths: &Vec<Timestamp>, level_boundaries: &Vec<u
 
     // create root node, combine all recently added nodes
     let root = BucketTreeEntry::new(0, MAX_BUCKETS, LOWERBOUND_METRIC, current_level_entries);
-
-    dbg!(&root);
     MultiLevelBucketTree::new(root)
 }
 
