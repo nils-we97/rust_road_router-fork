@@ -1,4 +1,3 @@
-use crate::dijkstra::elimination_tree::corridor_intervals::customized::CustomizedUpperLower;
 use crate::dijkstra::elimination_tree::corridor_intervals::CorridorEliminationTreeWalk;
 use rust_road_router::algo::a_star::Potential;
 use rust_road_router::algo::customizable_contraction_hierarchy::CCHT;
@@ -7,26 +6,26 @@ use rust_road_router::datastr::timestamped_vector::TimestampedVector;
 use rust_road_router::util::in_range_option::InRangeOption;
 use std::cmp::min;
 
-pub struct CCHLowerUpperPotential<'a> {
-    customized: &'a CustomizedUpperLower,
+pub struct CCHLowerUpperPotential<'a, CCH> {
+    cch: &'a CCH,
     stack: Vec<NodeId>,
     potentials: TimestampedVector<InRangeOption<(Weight, Weight)>>,
     forward_cch_graph: UnweightedFirstOutGraph<&'a [EdgeId], &'a [NodeId]>,
     forward_cch_weights: &'a Vec<(Weight, Weight)>,
-    backward_distances: TimestampedVector<(Weight, Weight)>,
     backward_cch_graph: UnweightedFirstOutGraph<&'a [EdgeId], &'a [NodeId]>,
     backward_cch_weights: &'a Vec<(Weight, Weight)>,
+    backward_distances: TimestampedVector<(Weight, Weight)>,
     num_pot_computations: usize,
 }
 
-impl<'a> CCHLowerUpperPotential<'a> {
-    pub fn new_forward(customized: &'a CustomizedUpperLower) -> Self {
-        let (forward_cch_graph, forward_cch_weights) = customized.forward_graph();
-        let (backward_cch_graph, backward_cch_weights) = customized.backward_graph();
+impl<'a, CCH: CCHT> CCHLowerUpperPotential<'a, CCH> {
+    pub fn new_forward(cch: &'a CCH, forward_cch_weights: &'a Vec<(Weight, Weight)>, backward_cch_weights: &'a Vec<(Weight, Weight)>) -> Self {
+        let forward_cch_graph = UnweightedFirstOutGraph::new(cch.forward_first_out(), cch.forward_head());
+        let backward_cch_graph = UnweightedFirstOutGraph::new(cch.backward_first_out(), cch.backward_head());
         let n = forward_cch_graph.num_nodes();
 
         Self {
-            customized,
+            cch,
             stack: Vec::new(),
             potentials: TimestampedVector::new(n, InRangeOption::new(None)),
             forward_cch_graph,
@@ -62,14 +61,14 @@ impl<'a> CCHLowerUpperPotential<'a> {
     }
 
     pub fn potential_bounds(&mut self, node: NodeId) -> Option<(Weight, Weight)> {
-        let node = self.customized.cch.node_order().rank(node);
+        let node = self.cch.node_order().rank(node);
 
         // upward search until a node with existing distance to target is found
         let mut cur_node = node;
         while self.potentials[cur_node as usize].value().is_none() {
             self.num_pot_computations += 1;
             self.stack.push(cur_node);
-            if let Some(parent) = self.customized.cch.elimination_tree()[cur_node as usize].value() {
+            if let Some(parent) = self.cch.elimination_tree()[cur_node as usize].value() {
                 cur_node = parent;
             } else {
                 break;
@@ -100,15 +99,15 @@ impl<'a> CCHLowerUpperPotential<'a> {
     }
 }
 
-impl<'a> Potential for CCHLowerUpperPotential<'a> {
+impl<'a, CCH: CCHT> Potential for CCHLowerUpperPotential<'a, CCH> {
     fn init(&mut self, target: NodeId) {
-        let target = self.customized.cch.node_order().rank(target);
+        let target = self.cch.node_order().rank(target);
         self.potentials.reset();
 
         let mut bw_walk = CorridorEliminationTreeWalk::init(
             &self.backward_cch_graph,
             &self.backward_cch_weights,
-            self.customized.cch.elimination_tree(),
+            self.cch.elimination_tree(),
             &mut self.backward_distances,
             target,
         );

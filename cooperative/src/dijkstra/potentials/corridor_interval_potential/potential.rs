@@ -4,6 +4,7 @@ use crate::dijkstra::potentials::corridor_interval_potential::ops::{Approximated
 use crate::dijkstra::potentials::TDPotential;
 use crate::graph::capacity_graph::CapacityGraph;
 use rust_road_router::algo::ch_potentials::{CCHPotData, CCHPotential};
+use rust_road_router::algo::customizable_contraction_hierarchy::DirectedCCH;
 use rust_road_router::algo::dijkstra::{DijkstraData, Label, State};
 use rust_road_router::datastr::graph::{Arc, BuildReversed, EdgeId, FirstOutGraph, Graph, LinkIterable, NodeId, ReversedGraphWithEdgeIds, Weight, INFINITY};
 use rust_road_router::datastr::index_heap::Indexing;
@@ -14,7 +15,7 @@ use std::cmp::min;
 /// Results might not be as precise as partial profiles, however they can be calculated significantly faster
 /// as link and merge are basically O(1) operations
 pub struct TDCorridorIntervalPotential<'a> {
-    forward_potential: CCHLowerUpperPotential<'a>,
+    forward_potential: CCHLowerUpperPotential<'a, DirectedCCH>,
     backward_graph: ReversedGraphWithEdgeIds,
     backward_lower_bound_potential:
         CCHPotential<'a, FirstOutGraph<&'a [EdgeId], &'a [NodeId], &'a [Weight]>, FirstOutGraph<&'a [EdgeId], &'a [NodeId], &'a [Weight]>>,
@@ -34,7 +35,8 @@ impl<'a> TDCorridorIntervalPotential<'a> {
         let ops = TDCorridorIntervalPotentialOps::new(num_intervals, graph.departure(), graph.travel_time());
 
         // init forward potential for queries with a tight corridor and corridor bounds
-        let forward_potential = CCHLowerUpperPotential::new_forward(customized_upper_lower);
+        let forward_potential =
+            CCHLowerUpperPotential::new_forward(&customized_upper_lower.cch, &customized_upper_lower.upward, &customized_upper_lower.downward);
 
         // init backward graph and potentials
         let backward_graph = ReversedGraphWithEdgeIds::reversed(graph);

@@ -5,6 +5,7 @@ use rust_road_router::datastr::graph::{NodeId, Weight};
 pub mod backward_profile;
 pub mod cch;
 pub mod corridor_interval_potential;
+pub mod corridor_lowerbound_potential;
 pub mod directed_partial_backward_profile;
 pub mod multi_level_interval_potential;
 pub mod partial_backward_profile;
@@ -27,10 +28,10 @@ impl<T: Potential> TDPotential for T {
 // additional helper functions
 
 /// basic conversion: `CapacityGraph` uses integer weights, but we rely on floats here
-fn convert_timestamp_u32_to_f64(ts_old: u32) -> f64 {
+pub fn convert_timestamp_u32_to_f64(ts_old: u32) -> f64 {
     (ts_old as f64) / 1000.0
 }
 
-fn convert_timestamp_f64_to_u32(ts_old: f64) -> u32 {
+pub fn convert_timestamp_f64_to_u32(ts_old: f64) -> u32 {
     (1000.0 * ts_old) as u32
 }
