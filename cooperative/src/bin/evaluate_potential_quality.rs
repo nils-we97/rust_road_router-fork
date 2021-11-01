@@ -47,7 +47,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let (cch, time) = measure(|| CCH::fix_order_and_build(&graph, order));
     println!("CCH created in {} ms", time.to_std().unwrap().as_nanos() as f64 / 1_000_000.0);
 
-    let (customized, time) = measure(|| CustomizedApproximatedPeriodicTTF::new(&cch, graph.departure(), graph.travel_time(), 200, 24 * 4));
+    let (customized, time) = measure(|| CustomizedApproximatedPeriodicTTF::new(&cch, graph.departure(), graph.travel_time(), 200, 18));
     println!(
         "Approximated Shortcut TTFs created in {} ms",
         time.to_std().unwrap().as_nanos() as f64 / 1_000_000.0
@@ -106,16 +106,30 @@ fn get_chunked_runtime_in_millis<Pot: TDPotential>(server: &mut CapacityServer<P
     let mut time_buckets = time::Duration::zero();
     let mut time_ttfs = time::Duration::zero();
 
+    let mut num_relaxed_arcs = 0u32;
+    let mut num_queue_ops = 0u32;
+
     let (_, total_time) = measure(|| {
         queries.iter().for_each(|&query| {
-            let (time_potential, time_query, time_bucket, time_ttf, _) = server.query_measured(query, true);
-            time_potentials = time_potentials.add(time_potential);
-            time_queries = time_queries.add(time_query);
-            time_buckets = time_buckets.add(time_bucket);
-            time_ttfs = time_ttfs.add(time_ttf);
+            let query_result = server.query_measured(query, true);
+
+            time_potentials = time_potentials.add(query_result.distance_result.time_potential);
+            time_queries = time_queries.add(query_result.distance_result.time_query);
+            time_buckets = time_buckets.add(query_result.update_result.time_bucket_updates);
+            time_ttfs = time_ttfs.add(query_result.update_result.time_ttf);
+
+            num_relaxed_arcs += query_result.distance_result.num_relaxed_arcs;
+            num_queue_ops += query_result.distance_result.num_queue_pushs + query_result.distance_result.num_queue_pops;
         })
     });
 
+    println!(
+        "Relaxed arcs: {} (avg: {}), Queue ops: {} (avg: {})",
+        num_relaxed_arcs,
+        num_relaxed_arcs / queries.len() as u32,
+        num_queue_ops,
+        num_queue_ops / queries.len() as u32
+    );
     (
         total_time.to_std().unwrap().as_nanos() as f64 / 1_000_000.0,
         time_potentials.to_std().unwrap().as_nanos() as f64 / 1_000_000.0,

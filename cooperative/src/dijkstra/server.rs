@@ -8,11 +8,10 @@ use rust_road_router::report;
 use rust_road_router::report::*;
 
 use crate::dijkstra::capacity_dijkstra_ops::CapacityDijkstraOps;
-use crate::dijkstra::model::{CapacityQueryResult, PathResult};
+use crate::dijkstra::model::{CapacityQueryResult, DistanceMeasure, MeasuredCapacityQueryResult, PathResult, UpdateMeasure};
 use crate::dijkstra::potentials::TDPotential;
 use crate::graph::capacity_graph::CapacityGraph;
 use crate::graph::ModifiableWeight;
-use std::ops::Add;
 
 pub struct CapacityServer<Pot = ZeroPotential> {
     graph: CapacityGraph,
@@ -52,73 +51,71 @@ impl<Pot: TDPotential> CapacityServer<Pot> {
 
 pub trait CapacityServerOps {
     fn query(&mut self, query: TDQuery<Timestamp>, update: bool) -> Option<CapacityQueryResult>;
-    fn query_measured(
-        &mut self,
-        query: TDQuery<Timestamp>,
-        update: bool,
-    ) -> (time::Duration, time::Duration, time::Duration, time::Duration, Option<CapacityQueryResult>);
-    fn update(&mut self, path: &PathResult) -> (time::Duration, time::Duration);
-    fn distance(&mut self, query: TDQuery<Timestamp>) -> (time::Duration, time::Duration, Option<Weight>);
+    fn query_measured(&mut self, query: TDQuery<Timestamp>, update: bool) -> MeasuredCapacityQueryResult;
+    fn update(&mut self, path: &PathResult) -> UpdateMeasure;
+    fn distance(&mut self, query: TDQuery<Timestamp>) -> DistanceMeasure;
     fn path(&self, query: TDQuery<Timestamp>) -> PathResult;
     fn path_distance(&self, path: &PathResult) -> Weight;
 }
 
 impl<Pot: TDPotential> CapacityServerOps for CapacityServer<Pot> {
     fn query(&mut self, query: TDQuery<Timestamp>, update: bool) -> Option<CapacityQueryResult> {
-        let (_, _, distance) = self.distance(query.clone());
+        let query_result = self.distance(query.clone());
 
-        if distance.is_some() {
+        if let Some(distance) = query_result.distance {
             let path = self.path(query);
-            debug_assert_eq!(*path.departure.last().unwrap() - *path.departure.first().unwrap(), distance.unwrap());
+            debug_assert_eq!(*path.departure.last().unwrap() - *path.departure.first().unwrap(), distance);
             if update {
                 self.update(&path);
             }
-            return Some(CapacityQueryResult::new(distance.unwrap(), path));
+            return Some(CapacityQueryResult::new(distance, path));
         }
 
         return None;
     }
 
-    fn query_measured(
-        &mut self,
-        query: TDQuery<u32>,
-        update: bool,
-    ) -> (time::Duration, time::Duration, time::Duration, time::Duration, Option<CapacityQueryResult>) {
-        let (time_potential, time_query, distance) = self.distance(query.clone());
+    fn query_measured(&mut self, query: TDQuery<u32>, update: bool) -> MeasuredCapacityQueryResult {
+        let dist = self.distance(query.clone());
 
-        if distance.is_some() {
-            let (path, time_path) = measure(|| self.path(query));
+        if let Some(distance) = dist.distance {
+            let path = self.path(query);
 
             if update {
-                let (time_buckets, time_ttf) = self.update(&path);
-                (
-                    time_potential,
-                    time_query.add(time_path),
-                    time_buckets,
-                    time_ttf,
-                    Some(CapacityQueryResult::new(distance.unwrap(), path)),
-                )
+                let update_result = self.update(&path);
+
+                MeasuredCapacityQueryResult {
+                    query_result: Some(CapacityQueryResult::new(distance, path)),
+                    distance_result: dist,
+                    update_result,
+                }
             } else {
-                (
-                    time_potential,
-                    time_query.add(time_path),
-                    time::Duration::zero(),
-                    time::Duration::zero(),
-                    Some(CapacityQueryResult::new(distance.unwrap(), path)),
-                )
+                MeasuredCapacityQueryResult {
+                    query_result: Some(CapacityQueryResult::new(distance, path)),
+                    distance_result: dist,
+                    update_result: UpdateMeasure {
+                        time_bucket_updates: time::Duration::zero(),
+                        time_ttf: time::Duration::zero(),
+                    },
+                }
             }
         } else {
-            (time_potential, time_query, time::Duration::zero(), time::Duration::zero(), None)
+            MeasuredCapacityQueryResult {
+                query_result: None,
+                distance_result: dist,
+                update_result: UpdateMeasure {
+                    time_bucket_updates: time::Duration::zero(),
+                    time_ttf: time::Duration::zero(),
+                },
+            }
         }
     }
 
-    fn update(&mut self, path: &PathResult) -> (time::Duration, time::Duration) {
-        //let (_, t) = measure(|| self.graph.increase_weights(&path.edge_path, &path.departure));
-        //(t, time::Duration::zero())
-        self.graph.increase_weights(&path.edge_path, &path.departure)
+    fn update(&mut self, path: &PathResult) -> UpdateMeasure {
+        let (time_bucket_updates, time_ttf) = self.graph.increase_weights(&path.edge_path, &path.departure);
+        UpdateMeasure { time_bucket_updates, time_ttf }
     }
 
-    fn distance(&mut self, query: TDQuery<Timestamp>) -> (time::Duration, time::Duration, Option<Weight>) {
+    fn distance(&mut self, query: TDQuery<Timestamp>) -> DistanceMeasure {
         report!("algo", "TD Dijkstra with Capacities");
 
         let from = query.from();
@@ -182,7 +179,7 @@ impl<Pot: TDPotential> CapacityServerOps for CapacityServer<Pot> {
             }
         }
 
-        let time_dijkstra = time::now() - start;
+        let time_query = time::now() - start;
 
         /*println!(
             "Query results: {}, potential: {}",
@@ -201,11 +198,14 @@ impl<Pot: TDPotential> CapacityServerOps for CapacityServer<Pot> {
             &pot.potential(from, init)
         );
 
-        report!("num_queue_pops", num_queue_pops);
-        report!("num_queue_pushs", num_queue_pushs);
-        report!("num_relaxed_arcs", num_relaxed_arcs);
-
-        (time_potential, time_dijkstra, result)
+        DistanceMeasure {
+            distance: result,
+            time_potential,
+            time_query,
+            num_queue_pushs,
+            num_queue_pops,
+            num_relaxed_arcs,
+        }
     }
 
     fn path(&self, query: TDQuery<Timestamp>) -> PathResult {
