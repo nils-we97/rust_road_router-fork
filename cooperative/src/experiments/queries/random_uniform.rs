@@ -5,7 +5,7 @@ use rust_road_router::datastr::graph::time_dependent::Timestamp;
 
 use crate::experiments::queries::departure_distributions::DepartureDistribution;
 
-pub fn generate_random_uniform_queries<D: DepartureDistribution>(num_nodes: u32, num_queries: u32, departure_distribution: D) -> Vec<TDQuery<Timestamp>> {
+pub fn generate_random_uniform_queries<D: DepartureDistribution>(num_nodes: u32, num_queries: u32, mut departure_distribution: D) -> Vec<TDQuery<Timestamp>> {
     let mut rng = thread_rng();
 
     let mut queries = (0..num_queries)

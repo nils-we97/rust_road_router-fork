@@ -2,6 +2,7 @@ use rust_road_router::algo::a_star::Potential;
 use rust_road_router::datastr::graph::time_dependent::Timestamp;
 use rust_road_router::datastr::graph::{NodeId, Weight};
 
+pub mod alt;
 pub mod backward_profile;
 pub mod cch;
 pub mod corridor_interval_potential;

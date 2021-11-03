@@ -1,5 +1,7 @@
 use cooperative::dijkstra::elimination_tree::approximated_periodic_ttf::customized::CustomizedApproximatedPeriodicTTF;
+use cooperative::dijkstra::elimination_tree::multi_level_buckets::customized::CustomizedMultiLevels;
 use cooperative::dijkstra::potentials::corridor_lowerbound_potential::CorridorLowerboundPotential;
+use cooperative::dijkstra::potentials::multi_level_interval_potential::CCHMultiLevelIntervalPotential;
 use cooperative::dijkstra::potentials::TDPotential;
 use cooperative::dijkstra::server::{CapacityServer, CapacityServerOps};
 use cooperative::experiments::queries::{generate_queries, QueryType};
@@ -7,6 +9,7 @@ use cooperative::graph::speed_functions::bpr_speed_function;
 use cooperative::io::io_graph::{load_used_capacity_graph, store_capacity_buckets};
 use cooperative::io::io_node_order::load_node_order;
 use cooperative::util::cli_args::{parse_arg_optional, parse_arg_required};
+use rust_road_router::algo::ch_potentials::CCHPotData;
 use rust_road_router::algo::customizable_contraction_hierarchy::CCH;
 use rust_road_router::report::measure;
 use std::env;
@@ -37,7 +40,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     // load graph
     //let (graph, time) = measure(|| load_capacity_graph(graph_directory, num_buckets, bpr_speed_function).unwrap());
-    let (graph, time) = measure(|| load_used_capacity_graph(graph_directory, num_buckets, bpr_speed_function, "100_1631011530").unwrap());
+    let (graph, time) = measure(|| load_used_capacity_graph(graph_directory, num_buckets, bpr_speed_function, "300_1635950540").unwrap());
 
     println!("Graph loaded in {} ms", time.to_std().unwrap().as_nanos() as f64 / 1_000_000.0);
 
@@ -47,27 +50,37 @@ fn main() -> Result<(), Box<dyn Error>> {
     let (cch, time) = measure(|| CCH::fix_order_and_build(&graph, order));
     println!("CCH created in {} ms", time.to_std().unwrap().as_nanos() as f64 / 1_000_000.0);
 
-    let (customized, time) = measure(|| CustomizedApproximatedPeriodicTTF::new(&cch, graph.departure(), graph.travel_time(), 200, 18));
-    println!(
-        "Approximated Shortcut TTFs created in {} ms",
-        time.to_std().unwrap().as_nanos() as f64 / 1_000_000.0
-    );
+    // complete initialization block for static lowerbound pot, uncomment if not needed
+    /*let (cch_pot_data, time) = measure(|| CCHPotData::new(&cch, &graph));
+    println!("CCH customized in {} ms", time.to_std().unwrap().as_nanos() as f64 / 1_000_000.0);
+    let potential = cch_pot_data.forward_potential();*/
 
-    let potential = CorridorLowerboundPotential::new(&customized);
+    // complete initialization block for MultiLevelBucket pot
     /*let (customized, time) = measure(|| {
         CustomizedMultiLevels::new(
             &cch,
             graph.departure(),
             graph.travel_time(),
-            &vec![MAX_BUCKETS / 6, MAX_BUCKETS / 12, MAX_BUCKETS / 24],
+            &vec![86_400_000 / 12, 86_400_000 / 24, 86_400_000 / 48],
         )
     });
-    println!("CCH customized in {} ms", time.to_std().unwrap().as_nanos() as f64 / 1_000_000.0);
+    println!(
+        "Multi-Level-Bucket-CCH customized in {} ms",
+        time.to_std().unwrap().as_nanos() as f64 / 1_000_000.0
+    );
     let potential = CCHMultiLevelIntervalPotential::new_forward(&customized, 3);*/
 
-    /*let (cch_pot_data, time) = measure(|| CCHPotData::new(&cch, &graph));
-    println!("CCH customized in {} ms", time.to_std().unwrap().as_nanos() as f64 / 1_000_000.0);
-    let potential = cch_pot_data.forward_potential();*/
+    // complete initialization block for CorridorLowerbound pot
+    let (customized, time) = measure(|| CustomizedApproximatedPeriodicTTF::new(&cch, graph.departure(), graph.travel_time(), 200, 96));
+    println!(
+        "Approximated Shortcut TTFs created in {} ms",
+        time.to_std().unwrap().as_nanos() as f64 / 1_000_000.0
+    );
+    let potential = CorridorLowerboundPotential::new(&customized);
+
+    // experimental init block for ALT context, currently unused
+    /*let (alt_context, time) = measure(|| HeuristicUpperBoundALTPotentialContext::init(graph.first_out().to_vec(), graph.head().to_vec(), graph.travel_time()));
+    println!("Initializing ALT context took {} ms", time.to_std().unwrap().as_nanos() as f64 / 1_000_000.0);*/
 
     let mut server = CapacityServer::new_with_potential(graph, potential);
     //let mut server = CapacityServer::<ZeroPotential>::new(graph);
@@ -107,7 +120,7 @@ fn get_chunked_runtime_in_millis<Pot: TDPotential>(server: &mut CapacityServer<P
     let mut time_ttfs = time::Duration::zero();
 
     let mut num_relaxed_arcs = 0u32;
-    let mut num_queue_ops = 0u32;
+    let mut num_queue_pops = 0u32;
 
     let (_, total_time) = measure(|| {
         queries.iter().for_each(|&query| {
@@ -119,16 +132,16 @@ fn get_chunked_runtime_in_millis<Pot: TDPotential>(server: &mut CapacityServer<P
             time_ttfs = time_ttfs.add(query_result.update_result.time_ttf);
 
             num_relaxed_arcs += query_result.distance_result.num_relaxed_arcs;
-            num_queue_ops += query_result.distance_result.num_queue_pushs + query_result.distance_result.num_queue_pops;
+            num_queue_pops += query_result.distance_result.num_queue_pops;
         })
     });
 
     println!(
-        "Relaxed arcs: {} (avg: {}), Queue ops: {} (avg: {})",
+        "Relaxed arcs: {} (avg: {}), Queue pops: {} (avg: {})",
         num_relaxed_arcs,
         num_relaxed_arcs / queries.len() as u32,
-        num_queue_ops,
-        num_queue_ops / queries.len() as u32
+        num_queue_pops,
+        num_queue_pops / queries.len() as u32
     );
     (
         total_time.to_std().unwrap().as_nanos() as f64 / 1_000_000.0,

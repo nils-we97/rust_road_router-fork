@@ -83,7 +83,12 @@ impl<'a> TDPotential for CCHMultiLevelIntervalPotential<'a> {
             self.current_max_corridor = corridor_upper % MAX_BUCKETS;
 
             // 2. determine relevant metrics
-            let mut current_interval = Some(&self.customized.bucket_tree.root);
+            let mut current_interval = if timestamp > self.current_max_corridor {
+                Some(&self.customized.bucket_tree.root)
+            } else {
+                self.customized.bucket_tree.root.find_interval(timestamp, self.current_max_corridor)
+            };
+
             self.current_metrics.clear();
             self.current_intervals.clear();
 
@@ -145,9 +150,19 @@ impl<'a> TDPotential for CCHMultiLevelIntervalPotential<'a> {
                 let forward_cch_weights = &self.forward_cch_weights[edge as usize];
                 let next_potential = &self.potentials[next_node as usize];
 
-                self.current_metrics.iter().enumerate().for_each(|(idx, &metric_idx)| {
+                /*distances
+                .iter_mut()
+                .zip(self.current_metrics.iter())
+                .zip(next_potential.iter())
+                .for_each(|((dist, &metric_id), &next_pot)| *dist = min(*dist, forward_cch_weights[metric_id] + next_pot));*/
+
+                for idx in 0..self.current_metrics.len() {
+                    distances[idx] = min(distances[idx], forward_cch_weights[self.current_metrics[idx]] + next_potential[idx]);
+                }
+
+                /*self.current_metrics.iter().enumerate().for_each(|(idx, &metric_idx)| {
                     distances[idx] = min(distances[idx], forward_cch_weights[metric_idx] + next_potential[idx]);
-                });
+                });*/
             }
 
             self.potentials[current_node as usize] = distances.clone();

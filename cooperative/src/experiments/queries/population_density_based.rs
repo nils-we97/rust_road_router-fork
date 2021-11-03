@@ -14,7 +14,7 @@ pub fn generate_uniform_population_density_based_queries<D: DepartureDistributio
     grid_tree: &Kdtree<PopulationGridEntry>,
     grid_population: &Vec<u32>,
     num_queries: u32,
-    departure_distribution: D,
+    mut departure_distribution: D,
 ) -> Vec<TDQuery<Timestamp>> {
     // distribute population into buckets
     let mut vertex_grid = vec![Vec::new(); grid_population.len()];

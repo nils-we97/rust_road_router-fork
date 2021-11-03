@@ -3,10 +3,12 @@ use rand::Rng;
 use rust_road_router::datastr::graph::time_dependent::Timestamp;
 
 use crate::graph::MAX_BUCKETS;
+use rand_distr::Distribution;
+use rand_distr::Normal;
 
 pub trait DepartureDistribution {
     fn new() -> Self;
-    fn rand<R: Rng + ?Sized>(&self, rng: &mut R) -> Timestamp;
+    fn rand<R: Rng + ?Sized>(&mut self, rng: &mut R) -> Timestamp;
 }
 
 /// constant departure distribution: all trips will start at the same time
@@ -17,7 +19,7 @@ impl DepartureDistribution for ConstantDeparture {
         Self {}
     }
 
-    fn rand<R: Rng + ?Sized>(&self, _rng: &mut R) -> Timestamp {
+    fn rand<R: Rng + ?Sized>(&mut self, _rng: &mut R) -> Timestamp {
         0
     }
 }
@@ -30,8 +32,24 @@ impl DepartureDistribution for UniformDeparture {
         Self {}
     }
 
-    fn rand<R: Rng + ?Sized>(&self, rng: &mut R) -> Timestamp {
+    fn rand<R: Rng + ?Sized>(&mut self, rng: &mut R) -> Timestamp {
         rng.gen_range(0..MAX_BUCKETS)
+    }
+}
+
+/// for testing purposes only, uses a simply
+pub struct NormalDeparture {
+    pub distribution: Normal<f64>,
+}
+
+impl DepartureDistribution for NormalDeparture {
+    fn new() -> Self {
+        let distribution = Normal::new(43200.0, 7200.0).unwrap();
+        Self { distribution }
+    }
+
+    fn rand<R: Rng + ?Sized>(&mut self, rng: &mut R) -> u32 {
+        (self.distribution.sample(rng) as u32) * 1000
     }
 }
 

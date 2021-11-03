@@ -13,7 +13,7 @@ const INV_AVERAGE_TRIP_LENGTH: f64 = 0.000025; // 1 / 40000, avg trip length is 
 pub fn generate_random_geometric_queries<G: LinkIterable<Link>, D: DepartureDistribution>(
     graph: &G,
     num_queries: u32,
-    departure_distribution: D,
+    mut departure_distribution: D,
 ) -> Vec<TDQuery<Timestamp>> {
     let mut rng = thread_rng();
     let distribution = Geometric::new(INV_AVERAGE_TRIP_LENGTH).unwrap();
