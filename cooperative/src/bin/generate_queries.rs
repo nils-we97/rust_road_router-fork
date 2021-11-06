@@ -1,10 +1,17 @@
-use cooperative::experiments::queries::{generate_population_queries, generate_queries, QueryType};
+use cooperative::experiments::queries::departure_distributions::{
+    ConstantDeparture, DepartureDistribution, NormalDeparture, RushHourDeparture, UniformDeparture,
+};
+use cooperative::experiments::queries::population_density_based::generate_uniform_population_density_based_queries;
+use cooperative::experiments::queries::random_geometric::generate_random_geometric_queries;
+use cooperative::experiments::queries::random_uniform::generate_random_uniform_queries;
+use cooperative::experiments::queries::QueryType;
 use cooperative::graph::speed_functions::bpr_speed_function;
 use cooperative::io::io_coordinates::load_coords;
 use cooperative::io::io_graph::load_capacity_graph;
 use cooperative::io::io_population_grid::load_population_grid;
 use cooperative::io::io_queries::store_queries;
 use cooperative::util::cli_args::parse_arg_required;
+use rust_road_router::datastr::graph::{FirstOutGraph, Graph};
 use std::env;
 use std::error::Error;
 use std::path::Path;
@@ -20,21 +27,46 @@ use std::path::Path;
 fn main() -> Result<(), Box<dyn Error>> {
     let (path, num_queries, query_type, mut remaining_args) = parse_required_args()?;
     let graph_directory = Path::new(&path);
+    let graph = load_capacity_graph(graph_directory, 1, bpr_speed_function)?;
 
     let queries = match query_type {
-        QueryType::Uniform | QueryType::UniformConstantDep | QueryType::Geometric | QueryType::GeometricConstantDep => {
-            let graph = load_capacity_graph(graph_directory, 1, bpr_speed_function)?;
-            generate_queries(&graph, query_type, num_queries)
+        QueryType::Uniform => generate_random_uniform_queries(graph.num_nodes() as u32, num_queries, UniformDeparture::new()),
+        QueryType::UniformRushHourDep => generate_random_uniform_queries(graph.num_nodes() as u32, num_queries, RushHourDeparture::new()),
+        QueryType::UniformNormalDep => generate_random_uniform_queries(graph.num_nodes() as u32, num_queries, NormalDeparture::new()),
+        QueryType::Geometric | QueryType::GeometricRushHourDep => {
+            let graph_with_distance_metric = FirstOutGraph::new(graph.first_out(), graph.head(), graph.distance());
+
+            match query_type {
+                QueryType::Geometric => generate_random_geometric_queries(&graph_with_distance_metric, num_queries, UniformDeparture::new()),
+                QueryType::GeometricRushHourDep => generate_random_geometric_queries(&graph_with_distance_metric, num_queries, RushHourDeparture::new()),
+                _ => unimplemented!(),
+            }
         }
-        QueryType::PopulationUniform | QueryType::PopulationUniformConstantDep | QueryType::PopulationGeometric | QueryType::PopulationGeometricConstantDep => {
+        _ => {
+            // for population queries, we have to use some additional data
             let population_path: String = parse_arg_required(&mut remaining_args, "population grid directory")?;
             let population_directory = Path::new(&population_path);
 
-            let graph = load_capacity_graph(graph_directory, 1, bpr_speed_function)?;
             let (longitude, latitude) = load_coords(graph_directory)?;
             let (grid_tree, grid_population) = load_population_grid(population_directory)?;
 
-            generate_population_queries(&graph, query_type, num_queries, &grid_tree, &grid_population, &longitude, &latitude)
+            // TODO implementation for geometric queries
+            match query_type {
+                QueryType::PopulationUniform => {
+                    generate_uniform_population_density_based_queries(&longitude, &latitude, &grid_tree, &grid_population, num_queries, UniformDeparture::new())
+                }
+                QueryType::PopulationUniformConstantDep => generate_uniform_population_density_based_queries(
+                    &longitude,
+                    &latitude,
+                    &grid_tree,
+                    &grid_population,
+                    num_queries,
+                    ConstantDeparture::new(),
+                ),
+                /*QueryType::PopulationGeometric => {}
+                QueryType::PopulationGeometricConstantDep => {}*/
+                _ => unimplemented!(),
+            }
         }
     };
 

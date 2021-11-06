@@ -48,7 +48,7 @@ impl DepartureDistribution for NormalDeparture {
         Self { distribution }
     }
 
-    fn rand<R: Rng + ?Sized>(&mut self, rng: &mut R) -> u32 {
+    fn rand<R: Rng + ?Sized>(&mut self, rng: &mut R) -> Timestamp {
         (self.distribution.sample(rng) as u32) * 1000
     }
 }
@@ -62,4 +62,30 @@ pub struct MorningRushHourDeparture();
 pub struct AfternoonRushHourDeparture();
 
 /// trip departures are following a commonly observed rush hour scheme
-pub struct RushHourDeparture();
+pub struct RushHourDeparture {
+    prefix_sums: Vec<u32>,
+}
+
+impl DepartureDistribution for RushHourDeparture {
+    fn new() -> Self {
+        Self {
+            prefix_sums: vec![
+                0, 2, 3, 4, 5, 7, 10, 15, 25, 45, 63, 78, 90, 102, 116, 131, 146, 162, 180, 200, 217, 230, 238, 242, 245,
+            ],
+        }
+    }
+
+    fn rand<R: Rng + ?Sized>(&mut self, rng: &mut R) -> Timestamp {
+        // step 1: pick the hour; by applying the prefix sums, rush hours are more likely to get picked
+        let val = rng.gen_range(0..245u32);
+        let hour = (0..24)
+            .into_iter()
+            .filter(|&hour| self.prefix_sums[hour] <= val && self.prefix_sums[hour + 1] > val)
+            .next()
+            .unwrap() as u32;
+
+        // pick a random value inside that hour
+        let departure_within_hour = rng.gen_range(0..3_600_000);
+        hour * 3_600_000 + departure_within_hour
+    }
+}

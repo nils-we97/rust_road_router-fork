@@ -121,6 +121,11 @@ impl CapacityGraph {
         &self.travel_time
     }
 
+    /// Borrow a slice of `distance`
+    pub fn distance(&self) -> &Vec<Weight> {
+        &self.distance
+    }
+
     /// Borrow a slice of `freeflow_time`: useful as lowerbound time for potentials
     pub fn freeflow_time(&self) -> &Vec<Weight> {
         &self.freeflow_time

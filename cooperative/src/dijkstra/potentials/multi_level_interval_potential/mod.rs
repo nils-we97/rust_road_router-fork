@@ -83,24 +83,22 @@ impl<'a> TDPotential for CCHMultiLevelIntervalPotential<'a> {
             self.current_max_corridor = corridor_upper % MAX_BUCKETS;
 
             // 2. determine relevant metrics
-            let mut current_interval = if timestamp > self.current_max_corridor {
-                Some(&self.customized.bucket_tree.root)
-            } else {
-                self.customized.bucket_tree.root.find_interval(timestamp, self.current_max_corridor)
-            };
-
+            let tree = &self.customized.bucket_tree;
             self.current_metrics.clear();
             self.current_intervals.clear();
 
-            while let Some(interval) = current_interval {
-                self.current_metrics.push(interval.metric_index);
-                self.current_intervals.push(interval.interval_start);
+            // get the relevant start metric -> try to keep the intervals as small as possible -> every additionally required level decreases performance!
+            let mut current_interval = Some(tree.find_interval(timestamp, self.current_max_corridor).0);
 
-                // find suitable child that contains the upper corridor
-                current_interval = interval
-                    .children
-                    .iter()
-                    .filter(|child| child.interval_start <= self.current_max_corridor && child.interval_end > self.current_max_corridor)
+            while let Some(tree_idx) = current_interval {
+                self.current_metrics.push(tree.elements[tree_idx].metric_id);
+                self.current_intervals.push(tree.elements[tree_idx].interval_start);
+
+                current_interval = tree
+                    .children_range(tree_idx)
+                    .filter(|&child| {
+                        tree.elements[child].interval_start <= self.current_max_corridor && tree.elements[child].interval_end > self.current_max_corridor
+                    })
                     .next();
             }
 

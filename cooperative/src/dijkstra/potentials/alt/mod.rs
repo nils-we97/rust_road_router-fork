@@ -1,6 +1,4 @@
-use rand::prelude::StdRng;
-use rust_road_router::algo::alt::{ALTPotData, ALTPotential};
-use rust_road_router::datastr::graph::time_dependent::Timestamp;
+use rust_road_router::algo::alt::ALTPotData;
 use rust_road_router::datastr::graph::{EdgeId, FirstOutGraph, NodeId, Weight};
 use rust_road_router::experiments;
 

@@ -1,4 +1,4 @@
-use crate::dijkstra::elimination_tree::multi_level_buckets::bucket_tree::{BucketTreeEntry, MultiLevelBucketTree};
+use crate::dijkstra::elimination_tree::multi_level_buckets::bucket_tree::MultiLevelBucketTree;
 use crate::dijkstra::elimination_tree::parallelization::SeparatorBasedParallelCustomization;
 use crate::graph::MAX_BUCKETS;
 use rayon::prelude::*;
@@ -15,7 +15,6 @@ use std::ops::Range;
 scoped_thread_local!(static UPWARD_WORKSPACE: RefCell<Vec<Vec<Weight>>>);
 scoped_thread_local!(static DOWNWARD_WORKSPACE: RefCell<Vec<Vec<Weight>>>);
 
-const LOWERBOUND_METRIC: usize = 0;
 const UPPERBOUND_METRIC: usize = 1;
 
 pub struct CustomizedMultiLevels<'a> {
@@ -26,7 +25,13 @@ pub struct CustomizedMultiLevels<'a> {
 }
 
 impl<'a> CustomizedMultiLevels<'a> {
-    pub fn new(cch: &'a CCH, departures: &Vec<Vec<Timestamp>>, travel_times: &Vec<Vec<Weight>>, interval_lengths: &Vec<Timestamp>) -> Self {
+    pub fn new(
+        cch: &'a CCH,
+        departures: &Vec<Vec<Timestamp>>,
+        travel_times: &Vec<Vec<Weight>>,
+        interval_lengths: &Vec<Timestamp>,
+        reduction_threshold: u64,
+    ) -> Self {
         let m = cch.num_arcs();
 
         debug_assert!(!interval_lengths.is_empty(), "Intervals must not be empty!");
@@ -37,21 +42,26 @@ impl<'a> CustomizedMultiLevels<'a> {
             .windows(2)
             .for_each(|a| debug_assert!(a[0] % a[1] == 0, "Interval lengths must be divisible by each other!"));
 
-        // 1. extract the lower bounds for all intervals and store them in a consecutive array
-        let level_boundaries = get_level_boundaries(interval_lengths);
-        let metrics = extract_metrics(departures, travel_times, interval_lengths, &level_boundaries);
+        // 1. build bucket tree structure
+        let mut bucket_tree = MultiLevelBucketTree::new(interval_lengths);
 
-        // 2. create bucket tree structure for fast potential accesses
-        let bucket_tree = build_bucket_tree(interval_lengths, &level_boundaries);
+        // 2. extract the metrics
+        let mut metrics = extract_metrics(departures, travel_times, &bucket_tree);
+
+        // 3. reduce the number of metrics by applying some simple heuristics
+        //let reduce_threshold = departures.len() as u64 * 20000;
+        bucket_tree.reduce(reduction_threshold, &mut metrics);
+        println!("Reduced similar metrics - remaining: {}", metrics[0].len());
+        dbg!(&bucket_tree);
 
         // these will contain our customized shortcuts
         let mut upward_weights = vec![vec![INFINITY; metrics[0].len()]; m];
         let mut downward_weights = vec![vec![INFINITY; metrics[0].len()]; m];
 
-        // 3. initialize upward and downward weights with correct lower/upper bound
+        // 4. initialize upward and downward weights with correct lower/upper bound
         prepare_weights(cch, &mut upward_weights, &mut downward_weights, &metrics);
 
-        // 4. run basic customization
+        // 5. run basic customization
         customize_basic(cch, &mut upward_weights, &mut downward_weights);
 
         Self {
@@ -78,105 +88,51 @@ impl<'a> CustomizedMultiLevels<'a> {
 }
 
 // subroutines
-fn extract_metrics(
-    departures: &Vec<Vec<Timestamp>>,
-    travel_times: &Vec<Vec<Weight>>,
-    interval_lengths: &Vec<Timestamp>,
-    level_boundaries: &Vec<u32>,
-) -> Vec<Vec<Weight>> {
-    // 1. initialize metric array and determine boundaries (prefix sum) for each level
-    // first two entries are reserved for lower and upper bound potentials for the whole day
+fn extract_metrics(departures: &Vec<Vec<Timestamp>>, travel_times: &Vec<Vec<Weight>>, tree: &MultiLevelBucketTree) -> Vec<Vec<Weight>> {
+    let mut metrics = vec![vec![INFINITY; tree.elements.len() + 1]; departures.len()];
 
-    // todo remove this block
-    let num_entries = interval_lengths.iter().map(|&interval_len| MAX_BUCKETS / interval_len).sum::<u32>() + 2;
-    debug_assert_eq!(num_entries, level_boundaries.last().unwrap().clone());
-
-    let mut metrics = vec![vec![INFINITY; *level_boundaries.last().unwrap() as usize]; departures.len()];
-
-    // 2. collect the interval minima from all edges
+    // collect the metrics edge by edge; this layout is also needed by the customization step
     (0..departures.len()).into_iter().for_each(|edge_id| {
-        // 2a. collect upper and lower bound from travel times
-        metrics[edge_id][LOWERBOUND_METRIC] = travel_times[edge_id].iter().min().unwrap().clone();
+        // collect upper bound weights (lower bound will is done below!)
         metrics[edge_id][UPPERBOUND_METRIC] = travel_times[edge_id].iter().max().unwrap().clone();
 
-        // 2b. collecting the other lowerbound weights also requires the departure timestamps
-        debug_assert_eq!(departures[edge_id].len(), travel_times[edge_id].len());
+        // for every other metric, we also need the departure timestamps
         departures[edge_id][..departures[edge_id].len() - 1]
             .iter()
             .zip(travel_times[edge_id][..travel_times[edge_id].len() - 1].iter())
             .for_each(|(&departure, &travel_time)| {
                 // retrieve the respective metric entry on all levels for the current departure,
                 // update minimum value if necessary
-                (0..interval_lengths.len()).into_iter().for_each(|level| {
-                    let metric_idx = level_boundaries[level] + (departure / interval_lengths[level]);
-                    metrics[edge_id][metric_idx as usize] = min(metrics[edge_id][metric_idx as usize], travel_time);
-                });
+
+                // use a more general approach here, even if direct indexing would be possible
+                // start with the root node and continuously descend to the correct children
+                let mut current_node = Some(0);
+
+                while let Some(node) = current_node {
+                    let current_metric_id = tree.elements[node].metric_id;
+                    metrics[edge_id][current_metric_id] = min(metrics[edge_id][current_metric_id], travel_time);
+
+                    current_node = tree
+                        .children_range(node)
+                        .into_iter()
+                        .filter(|&child| tree.elements[child].interval_start <= departure && tree.elements[child].interval_end > departure)
+                        .next();
+                }
             });
 
-        // 2c. miminum values could also be at the start/end of the current interval
+        // miminum values could also be at the start/end of the current interval
         // -> interpolate in order to consider otherwise missing entries!
         let plf = PiecewiseLinearFunction::new(&departures[edge_id], &travel_times[edge_id]);
 
-        level_boundaries.windows(2).enumerate().for_each(|(level, bounds)| {
-            (bounds[0]..bounds[1]).into_iter().for_each(|metric_idx| {
-                let plf_at_begin = plf.eval(interval_lengths[level] * (metric_idx - bounds[0]));
-                let plf_at_end = plf.eval(interval_lengths[level] * (metric_idx + 1 - bounds[0]));
+        tree.elements.iter().for_each(|element| {
+            let plf_at_begin = plf.eval(element.interval_start);
+            let plf_at_end = plf.eval(element.interval_end);
 
-                metrics[edge_id][metric_idx as usize] = min(metrics[edge_id][metric_idx as usize], min(plf_at_begin, plf_at_end));
-            });
+            metrics[edge_id][element.metric_id] = min(metrics[edge_id][element.metric_id], min(plf_at_begin, plf_at_end));
         });
     });
 
     metrics
-}
-
-/// build prefix sum of the metric levels
-fn get_level_boundaries(interval_lengths: &Vec<Timestamp>) -> Vec<u32> {
-    let mut level_boundaries = Vec::with_capacity(interval_lengths.len() + 1);
-    level_boundaries.push(2); // first two entries are reserved for static lower-/upperbound
-
-    interval_lengths
-        .iter()
-        .for_each(|&interval_len| level_boundaries.push((MAX_BUCKETS / interval_len) + *level_boundaries.last().unwrap()));
-
-    level_boundaries
-}
-
-fn build_bucket_tree(interval_lengths: &Vec<Timestamp>, level_boundaries: &Vec<u32>) -> MultiLevelBucketTree {
-    let mut current_level_entries = Vec::new();
-    let mut prev_level_entries = Vec::new();
-
-    // iterate through all levels, start on the lowest
-    level_boundaries.windows(2).enumerate().rev().for_each(|(idx, bounds)| {
-        let num_entries_on_current_level = MAX_BUCKETS / interval_lengths[idx];
-        let num_children = if idx == interval_lengths.len() - 1 {
-            0
-        } else {
-            (interval_lengths[idx] / interval_lengths[idx + 1]) as usize
-        };
-
-        prev_level_entries = current_level_entries.clone();
-        current_level_entries.clear();
-
-        for i in 0..num_entries_on_current_level as usize {
-            let mut children = Vec::new();
-            if num_children > 0 {
-                children.extend_from_slice(&prev_level_entries[(i * num_children)..((i + 1) * num_children)]);
-            }
-            current_level_entries.push(BucketTreeEntry::new(
-                interval_lengths[idx] * (i as u32),
-                interval_lengths[idx] * ((i + 1) as u32),
-                (bounds[0] as usize) + i,
-                children,
-            ));
-        }
-    });
-
-    debug_assert_eq!(current_level_entries.len(), (MAX_BUCKETS / interval_lengths[0]) as usize);
-
-    // create root node, combine all recently added nodes
-    let root = BucketTreeEntry::new(0, MAX_BUCKETS, LOWERBOUND_METRIC, current_level_entries);
-    MultiLevelBucketTree::new(root)
 }
 
 fn prepare_weights(cch: &CCH, upward_weights: &mut Vec<Vec<Weight>>, downward_weights: &mut Vec<Vec<Weight>>, metric: &Vec<Vec<Weight>>) {

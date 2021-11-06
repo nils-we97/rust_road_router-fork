@@ -11,6 +11,7 @@ use cooperative::io::io_node_order::load_node_order;
 use cooperative::util::cli_args::{parse_arg_optional, parse_arg_required};
 use rust_road_router::algo::ch_potentials::CCHPotData;
 use rust_road_router::algo::customizable_contraction_hierarchy::CCH;
+use rust_road_router::datastr::graph::Graph;
 use rust_road_router::report::measure;
 use std::env;
 use std::error::Error;
@@ -51,9 +52,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     println!("CCH created in {} ms", time.to_std().unwrap().as_nanos() as f64 / 1_000_000.0);
 
     // complete initialization block for static lowerbound pot, uncomment if not needed
-    /*let (cch_pot_data, time) = measure(|| CCHPotData::new(&cch, &graph));
+    let (cch_pot_data, time) = measure(|| CCHPotData::new(&cch, &graph));
     println!("CCH customized in {} ms", time.to_std().unwrap().as_nanos() as f64 / 1_000_000.0);
-    let potential = cch_pot_data.forward_potential();*/
+    let potential = cch_pot_data.forward_potential();
 
     // complete initialization block for MultiLevelBucket pot
     /*let (customized, time) = measure(|| {
@@ -61,22 +62,23 @@ fn main() -> Result<(), Box<dyn Error>> {
             &cch,
             graph.departure(),
             graph.travel_time(),
-            &vec![86_400_000 / 12, 86_400_000 / 24, 86_400_000 / 48],
+            &vec![86_400_000 / 12, 86_400_000 / 48],
+            graph.num_arcs() as u64 * 2000,
         )
     });
     println!(
         "Multi-Level-Bucket-CCH customized in {} ms",
         time.to_std().unwrap().as_nanos() as f64 / 1_000_000.0
     );
-    let potential = CCHMultiLevelIntervalPotential::new_forward(&customized, 3);*/
+    let potential = CCHMultiLevelIntervalPotential::new_forward(&customized, 2);*/
 
     // complete initialization block for CorridorLowerbound pot
-    let (customized, time) = measure(|| CustomizedApproximatedPeriodicTTF::new(&cch, graph.departure(), graph.travel_time(), 200, 96));
+    /*let (customized, time) = measure(|| CustomizedApproximatedPeriodicTTF::new(&cch, graph.departure(), graph.travel_time(), 200, 96));
     println!(
         "Approximated Shortcut TTFs created in {} ms",
         time.to_std().unwrap().as_nanos() as f64 / 1_000_000.0
     );
-    let potential = CorridorLowerboundPotential::new(&customized);
+    let potential = CorridorLowerboundPotential::new(&customized);*/
 
     // experimental init block for ALT context, currently unused
     /*let (alt_context, time) = measure(|| HeuristicUpperBoundALTPotentialContext::init(graph.first_out().to_vec(), graph.head().to_vec(), graph.travel_time()));

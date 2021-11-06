@@ -20,10 +20,10 @@ pub mod random_uniform;
 #[derive(Debug, Clone)]
 pub enum QueryType {
     Uniform,
-    UniformConstantDep,
+    UniformRushHourDep,
     UniformNormalDep,
     Geometric,
-    GeometricConstantDep,
+    GeometricRushHourDep,
     PopulationUniform,
     PopulationUniformConstantDep,
     PopulationGeometric,
@@ -36,10 +36,10 @@ impl FromStr for QueryType {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_uppercase().as_str() {
             "UNIFORM" => Ok(QueryType::Uniform),
-            "UNIFORM_CONSTANT_DEPARTURE" => Ok(QueryType::UniformConstantDep),
+            "UNIFORM_RUSH_HOUR" => Ok(QueryType::UniformRushHourDep),
             "UNIFORM_NORMAL_DEPARTURE" => Ok(QueryType::UniformNormalDep),
             "GEOMETRIC" => Ok(QueryType::Geometric),
-            "GEOMETRIC_CONSTANT_DEPARTURE" => Ok(QueryType::GeometricConstantDep),
+            "GEOMETRIC_RUSH_HOUR" => Ok(QueryType::GeometricRushHourDep),
             "POPULATION_UNIFORM" => Ok(QueryType::PopulationUniform),
             "POPULATION_UNIFORM_CONSTANT_DEPARTURE" => Ok(QueryType::PopulationUniformConstantDep),
             "POPULATION_GEOMETRIC" => Ok(QueryType::PopulationGeometric),
@@ -52,10 +52,8 @@ impl FromStr for QueryType {
 pub fn generate_queries<G: LinkIterable<Link>>(graph: &G, query_type: QueryType, num_queries: u32) -> Vec<TDQuery<Timestamp>> {
     match query_type {
         QueryType::Uniform => generate_random_uniform_queries(graph.num_nodes() as u32, num_queries, UniformDeparture::new()),
-        QueryType::UniformConstantDep => generate_random_uniform_queries(graph.num_nodes() as u32, num_queries, ConstantDeparture::new()),
         QueryType::UniformNormalDep => generate_random_uniform_queries(graph.num_nodes() as u32, num_queries, NormalDeparture::new()),
         QueryType::Geometric => generate_random_geometric_queries(graph, num_queries, UniformDeparture::new()),
-        QueryType::GeometricConstantDep => generate_random_geometric_queries(graph, num_queries, ConstantDeparture::new()),
         _ => unimplemented!(),
     }
 }

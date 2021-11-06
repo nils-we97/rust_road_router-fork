@@ -23,7 +23,7 @@ pub fn generate_random_geometric_queries<G: LinkIterable<Link>, D: DepartureDist
 
     let mut queries = (0..num_queries)
         .into_iter()
-        .map(|_| {
+        .map(|idx| {
             let mut result: Option<TDQuery<Timestamp>> = None;
 
             while result.is_none() {
@@ -42,6 +42,10 @@ pub fn generate_random_geometric_queries<G: LinkIterable<Link>, D: DepartureDist
                         break;
                     }
                 }
+            }
+
+            if idx % 100 == 0 {
+                println!("Finished {}/{} queries", idx, num_queries);
             }
 
             result.unwrap()
