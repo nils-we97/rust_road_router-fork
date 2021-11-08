@@ -11,15 +11,15 @@ pub struct CCHLowerUpperPotential<'a, CCH> {
     stack: Vec<NodeId>,
     potentials: TimestampedVector<InRangeOption<(Weight, Weight)>>,
     forward_cch_graph: UnweightedFirstOutGraph<&'a [EdgeId], &'a [NodeId]>,
-    forward_cch_weights: &'a Vec<(Weight, Weight)>,
+    forward_cch_weights: Vec<(Weight, Weight)>,
     backward_cch_graph: UnweightedFirstOutGraph<&'a [EdgeId], &'a [NodeId]>,
-    backward_cch_weights: &'a Vec<(Weight, Weight)>,
+    backward_cch_weights: Vec<(Weight, Weight)>,
     backward_distances: TimestampedVector<(Weight, Weight)>,
     num_pot_computations: usize,
 }
 
 impl<'a, CCH: CCHT> CCHLowerUpperPotential<'a, CCH> {
-    pub fn new_forward(cch: &'a CCH, forward_cch_weights: &'a Vec<(Weight, Weight)>, backward_cch_weights: &'a Vec<(Weight, Weight)>) -> Self {
+    pub fn new_forward(cch: &'a CCH, forward_cch_weights: Vec<(Weight, Weight)>, backward_cch_weights: Vec<(Weight, Weight)>) -> Self {
         let forward_cch_graph = UnweightedFirstOutGraph::new(cch.forward_first_out(), cch.forward_head());
         let backward_cch_graph = UnweightedFirstOutGraph::new(cch.backward_first_out(), cch.backward_head());
         let n = forward_cch_graph.num_nodes();

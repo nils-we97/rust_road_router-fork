@@ -4,24 +4,21 @@ use std::path::Path;
 
 use cooperative::dijkstra::elimination_tree::approximated_periodic_ttf::customized::CustomizedApproximatedPeriodicTTF;
 use cooperative::dijkstra::elimination_tree::multi_level_buckets::customized::CustomizedMultiLevels;
-use cooperative::dijkstra::potentials::cch::init_cch_potential;
 use cooperative::dijkstra::potentials::corridor_lowerbound_potential::CorridorLowerboundPotential;
 use cooperative::dijkstra::potentials::multi_level_interval_potential::CCHMultiLevelIntervalPotential;
 use cooperative::dijkstra::potentials::TDPotential;
 use cooperative::dijkstra::server::{CapacityServer, CapacityServerOps};
-use cooperative::experiments::queries::{generate_queries, QueryType};
 use cooperative::graph::speed_functions::bpr_speed_function;
-use cooperative::io::io_graph::{load_capacity_graph, load_used_capacity_graph};
+use cooperative::io::io_graph::load_used_capacity_graph;
 use cooperative::io::io_node_order::load_node_order;
 use cooperative::io::io_queries::load_queries;
-use cooperative::util::cli_args::{parse_arg_optional, parse_arg_required};
+use cooperative::util::cli_args::parse_arg_required;
 use rust_road_router::algo::ch_potentials::CCHPotData;
 use rust_road_router::algo::customizable_contraction_hierarchy::CCH;
 use rust_road_router::algo::TDQuery;
 use rust_road_router::datastr::graph::Graph;
 use rust_road_router::report::measure;
 use std::ops::Add;
-use time::Duration;
 
 /// Compare runtimes of different potentials on the same graph with the same queries
 /// Initializes a `CapacityGraph` with a given benchmark of capacities,
@@ -60,22 +57,22 @@ fn main() -> Result<(), Box<dyn Error>> {
         graph.departure(),
         graph.travel_time(),
         &vec![86_400_000 / 12, 86_400_000 / 48],
-        graph.num_arcs() as u64 * 2000,
+        graph.num_arcs() as u64 * 50,
     );
     let multi_level_bucket_pot = CCHMultiLevelIntervalPotential::new_forward(&customized_multi_levels, 2);
     let mut server = CapacityServer::new_with_potential(graph, multi_level_bucket_pot);
 
-    execute_queries(&mut server, &queries, "CCH Lowerbound Potential");
+    execute_queries(&mut server, &queries, "Multi-Level-Bucket Potential");
     let (graph, _) = server.decompose();
     drop(customized_multi_levels);
 
     // ----------------------------------------------------------------------------- //
     // 3rd potential: Corridor-Lowerbound Potential
-    let customized_corridor_lowerbound = CustomizedApproximatedPeriodicTTF::new(&cch, graph.departure(), graph.travel_time(), 200, 96);
+    let customized_corridor_lowerbound = CustomizedApproximatedPeriodicTTF::new(&cch, graph.departure(), graph.travel_time(), 200, 48);
     let corridor_lowerbound_pot = CorridorLowerboundPotential::new(&customized_corridor_lowerbound);
     let mut server = CapacityServer::new_with_potential(graph, corridor_lowerbound_pot);
 
-    execute_queries(&mut server, &queries, "CCH Lowerbound Potential");
+    execute_queries(&mut server, &queries, "Corridor Lowerbound Potential");
     Ok(())
 }
 
@@ -100,22 +97,23 @@ fn execute_queries<Pot: TDPotential>(server: &mut CapacityServer<Pot>, queries: 
     let mut num_queue_pops = 0u64;
     let mut num_relaxed_arcs = 0u64;
 
-    queries.iter().enumerate().for_each(|(idx, &query)| {
+    queries[..10000].iter().enumerate().for_each(|(idx, &query)| {
         let result = server.query_measured(query, false);
 
-        time_total += result.distance_result.time_query
-            + result.distance_result.time_potential
-            + result.update_result.time_ttf
-            + result.update_result.time_bucket_updates;
+        time_total = time_total
+            .add(result.distance_result.time_query)
+            .add(result.distance_result.time_potential)
+            .add(result.update_result.time_ttf)
+            .add(result.update_result.time_bucket_updates);
 
-        time_query += result.distance_result.time_query;
-        time_pot_init += result.distance_result.time_potential;
-        time_updates += result.update_result.time_ttf + result.update_result.time_bucket_updates;
+        time_query = time_query.add(result.distance_result.time_query);
+        time_pot_init = time_pot_init.add(result.distance_result.time_potential);
+        time_updates = time_updates.add(result.update_result.time_ttf.add(result.update_result.time_bucket_updates));
 
         num_queue_pops += result.distance_result.num_queue_pops as u64;
         num_relaxed_arcs += result.distance_result.num_relaxed_arcs as u64;
 
-        sum_distances += result.distance_result.distance.unwrap_or(0);
+        sum_distances += result.distance_result.distance.map(|val| val as u64).unwrap_or(0);
 
         if (idx + 1) % 10000 == 0 {
             println!("Finished {}/{} queries", idx + 1, queries.len());
@@ -125,7 +123,7 @@ fn execute_queries<Pot: TDPotential>(server: &mut CapacityServer<Pot>, queries: 
     println!("-----------------------------");
     println!("Result for {}:", pot_name);
     println!(
-        "Total runtime: {} ms (potential init: {} ms, queries: {} ms, update: {} ms",
+        "Total runtime: {} ms (potential init: {} ms, queries: {} ms, update: {} ms)",
         time_total.to_std().unwrap().as_nanos() as f64 / 1_000_000.0,
         time_pot_init.to_std().unwrap().as_nanos() as f64 / 1_000_000.0,
         time_query.to_std().unwrap().as_nanos() as f64 / 1_000_000.0,
@@ -138,4 +136,6 @@ fn execute_queries<Pot: TDPotential>(server: &mut CapacityServer<Pot>, queries: 
         num_queue_pops,
         num_queue_pops / queries.len() as u64
     );
+    println!("Sum of distances: {}", sum_distances);
+    println!("-----------------------------");
 }

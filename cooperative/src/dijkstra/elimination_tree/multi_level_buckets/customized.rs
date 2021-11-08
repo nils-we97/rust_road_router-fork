@@ -52,7 +52,7 @@ impl<'a> CustomizedMultiLevels<'a> {
         //let reduce_threshold = departures.len() as u64 * 20000;
         bucket_tree.reduce(reduction_threshold, &mut metrics);
         println!("Reduced similar metrics - remaining: {}", metrics[0].len());
-        dbg!(&bucket_tree);
+        //dbg!(&bucket_tree);
 
         // these will contain our customized shortcuts
         let mut upward_weights = vec![vec![INFINITY; metrics[0].len()]; m];

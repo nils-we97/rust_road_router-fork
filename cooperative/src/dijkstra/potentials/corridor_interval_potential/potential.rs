@@ -35,8 +35,11 @@ impl<'a> TDCorridorIntervalPotential<'a> {
         let ops = TDCorridorIntervalPotentialOps::new(num_intervals, graph.departure(), graph.travel_time());
 
         // init forward potential for queries with a tight corridor and corridor bounds
-        let forward_potential =
-            CCHLowerUpperPotential::new_forward(&customized_upper_lower.cch, &customized_upper_lower.upward, &customized_upper_lower.downward);
+        let forward_potential = CCHLowerUpperPotential::new_forward(
+            &customized_upper_lower.cch,
+            customized_upper_lower.upward.clone(),
+            customized_upper_lower.downward.clone(),
+        );
 
         // init backward graph and potentials
         let backward_graph = ReversedGraphWithEdgeIds::reversed(graph);
