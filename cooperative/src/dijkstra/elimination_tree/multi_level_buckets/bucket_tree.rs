@@ -63,7 +63,7 @@ impl MultiLevelBucketTree {
             for i in 0..num_entries_per_level[level] {
                 // add the current element
                 // special case treatment for root level because the global upperbounds are at position 1!
-                elements.push(TestMultiLevelBucketTreeEntry::new(
+                elements.push(MultiLevelBucketTreeEntry::new(
                     i as u32 * extended_interval_lengths[level],
                     (i + 1) as u32 * extended_interval_lengths[level],
                     if level == 0 { 0 } else { current_level_start_idx + i + 1 },
@@ -190,7 +190,7 @@ impl MultiLevelBucketTree {
                 clone.metric_id = remaining_metrics_prefix_sum[clone.metric_id];
                 clone
             })
-            .collect::<Vec<TestMultiLevelBucketTreeEntry>>();
+            .collect::<Vec<MultiLevelBucketTreeEntry>>();
 
         // in order to determine the new children array, we can simply iterate over the old elements and collect the number of remaining children
         let mut new_children = vec![1];

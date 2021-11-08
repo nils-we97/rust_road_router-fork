@@ -109,8 +109,8 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     println!("Total #queries until slowdown of {}: {}", slowdown_factor, num_runs * NUM_QUERIES_PER_RUN);
 
-    store_capacity_buckets(server.borrow_graph(), num_buckets, graph_directory)?;
-    Ok(())
+    let out_name = format!("{}_{}", num_buckets, time::get_time().sec);
+    store_capacity_buckets(server.borrow_graph(), graph_directory, out_name)
 }
 
 fn get_chunked_runtime_in_millis<Pot: TDPotential>(server: &mut CapacityServer<Pot>, query_type: QueryType) -> (f64, f64, f64, f64, f64) {
