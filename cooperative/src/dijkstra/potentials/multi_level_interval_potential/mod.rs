@@ -29,7 +29,7 @@ pub struct CCHMultiLevelIntervalPotential<'a> {
 }
 
 impl<'a> CCHMultiLevelIntervalPotential<'a> {
-    pub fn new_forward(customized: &'a CustomizedMultiLevels<'a>, num_levels: usize) -> Self {
+    pub fn new_forward(customized: &'a CustomizedMultiLevels<'a>) -> Self {
         let (forward_cch_graph, forward_cch_weights) = customized.forward_graph();
         let (backward_cch_graph, backward_cch_weights) = customized.backward_graph();
         let n = forward_cch_graph.num_nodes();
@@ -53,8 +53,8 @@ impl<'a> CCHMultiLevelIntervalPotential<'a> {
             backward_cch_weights,
             forward_potential,
             stack: Vec::new(),
-            potentials: TimestampedVector::new(n, vec![INFINITY; num_levels + 1]), // lowerbound + each level
-            backward_distances: TimestampedVector::new(n, vec![INFINITY; num_levels + 1]),
+            potentials: TimestampedVector::new(n),
+            backward_distances: TimestampedVector::new(n),
             num_pot_computations: 0,
             current_metrics: Vec::new(),
             current_intervals: Vec::new(),

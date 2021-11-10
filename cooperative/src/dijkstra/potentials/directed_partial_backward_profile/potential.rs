@@ -11,7 +11,7 @@ use rust_road_router::algo::customizable_contraction_hierarchy::DirectedCCH;
 use rust_road_router::algo::dijkstra::{DijkstraData, DijkstraOps, State};
 use rust_road_router::algo::GenQuery;
 use rust_road_router::datastr::graph::floating_time_dependent::{FlWeight, PartialPiecewiseLinearFunction, TTFPoint, Timestamp};
-use rust_road_router::datastr::graph::{Arc, BuildReversed, EdgeId, FirstOutGraph, Graph, LinkIterable, NodeId, ReversedGraphWithEdgeIds, Weight};
+use rust_road_router::datastr::graph::{Arc, BuildReversed, EdgeId, FirstOutGraph, Graph, LinkIterable, NodeId, NodeIdT, ReversedGraphWithEdgeIds, Weight};
 use rust_road_router::datastr::index_heap::Indexing;
 use rust_road_router::report::measure;
 
@@ -28,10 +28,6 @@ pub struct TDDirectedPartialBackwardProfilePotential<'a> {
     is_visited: Vec<bool>,
     query_start: Timestamp,
     earliest_arrival: (Timestamp, Timestamp),
-    /*is_pruned: Vec<bool>,
-    is_visited: Vec<bool>,
-    longitude: &'a Vec<f32>,
-    latitude: &'a Vec<f32>,*/
 }
 
 impl<'a> TDDirectedPartialBackwardProfilePotential<'a> {
@@ -197,7 +193,13 @@ impl<'a> TDPotential for TDDirectedPartialBackwardProfilePotential<'a> {
 
             // relax outgoing edges
             for link in self.backward_graph.link_iter(node) {
-                let linked = ops.link(&self.backward_graph, &self.dijkstra.distances[node as usize], &link);
+                let linked = ops.link(
+                    &self.backward_graph,
+                    &self.dijkstra.predecessors,
+                    NodeIdT(node),
+                    &self.dijkstra.distances[node as usize],
+                    &link,
+                );
 
                 if ops.merge(&mut self.dijkstra.distances[link.head() as usize], linked) {
                     let next_label = &self.dijkstra.distances[link.head() as usize];

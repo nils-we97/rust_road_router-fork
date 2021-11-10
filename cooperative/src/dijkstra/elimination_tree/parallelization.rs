@@ -193,7 +193,12 @@ where
 
             rayon::scope(|s| {
                 for sub in sep_tree.children.iter().rev() {
-                    s.spawn(move |_| self.customize_tree(sub, end_next, upward.0, downward.0));
+                    s.spawn(move |_| {
+                        // force capturing the wrapper so closure is send/sync
+                        let _ = &upward;
+                        let _ = &downward;
+                        self.customize_tree(sub, end_next, upward.0, downward.0)
+                    });
                     end_next -= sub.num_nodes;
                 }
             });

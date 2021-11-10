@@ -29,6 +29,16 @@ impl<'a> PiecewiseLinearFunction<'a> {
         PiecewiseLinearFunction { departure_time, travel_time }
     }
 
+    /// Borrow a slice of the departures
+    pub fn departure(&self) -> &[Timestamp] {
+        self.departure_time
+    }
+
+    /// Borrow a slice of the travel times
+    pub fn travel_time(&self) -> &[Timestamp] {
+        self.travel_time
+    }
+
     /// Calculate average Weight over a given time range.
     pub fn average(&self, range: WrappingRange) -> Weight {
         let monotone_range = range.monotonize();

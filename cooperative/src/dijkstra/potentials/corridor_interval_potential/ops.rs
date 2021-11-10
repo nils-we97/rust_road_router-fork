@@ -2,6 +2,7 @@ use crate::graph::MAX_BUCKETS;
 use rust_road_router::algo::dijkstra::Label;
 use rust_road_router::datastr::graph::time_dependent::{PiecewiseLinearFunction, Timestamp};
 use rust_road_router::datastr::graph::{Reversed, Weight, INFINITY};
+use rust_road_router::datastr::timestamped_vector::Reset;
 use std::cmp::{max, min};
 
 #[derive(Clone, Debug)]
@@ -57,6 +58,13 @@ impl Label for ApproximatedIntervalLabel {
             .min()
             .unwrap_or(INFINITY)
     }
+}
+
+impl Reset for ApproximatedIntervalLabel {
+    const DEFAULT: Self = Self {
+        first_interval_ts: None,
+        interval_minima: vec![],
+    };
 }
 
 #[derive(Clone, Debug)]

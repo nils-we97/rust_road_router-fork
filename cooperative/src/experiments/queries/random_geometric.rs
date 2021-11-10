@@ -1,7 +1,7 @@
 use rand::{thread_rng, Rng};
 use rand_distr::{Distribution, Geometric};
 
-use rust_road_router::algo::dijkstra::{DefaultOps, DijkstraData, DijkstraRun};
+use rust_road_router::algo::dijkstra::{DefaultOps, DijkstraData, DijkstraInit, DijkstraRun};
 use rust_road_router::algo::{GenQuery, TDQuery};
 use rust_road_router::datastr::graph::time_dependent::Timestamp;
 use rust_road_router::datastr::graph::{Link, LinkIterable, NodeId};
@@ -33,7 +33,7 @@ pub fn generate_random_geometric_queries<G: LinkIterable<Link>, D: DepartureDist
 
                 let query = TDQuery::new(from, 0, 0);
                 let mut ops = DefaultOps::default();
-                let mut dijkstra = DijkstraRun::query(graph, &mut data, &mut ops, query);
+                let mut dijkstra = DijkstraRun::query(graph, &mut data, &mut ops, DijkstraInit::from_query(&query));
 
                 while let Some(node) = dijkstra.next() {
                     // cancel as soon as the tentative distance exceeds the threshold

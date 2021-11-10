@@ -13,7 +13,7 @@ pub trait Reset: Clone {
 impl Reset for Weight {
     const DEFAULT: Self = INFINITY;
 }
-impl Reset for InRangeOption<u32> {
+impl<R: Reset + Sentinel + Debug> Reset for InRangeOption<R> {
     const DEFAULT: Self = InRangeOption::NONE;
 }
 impl Reset for bool {
@@ -24,6 +24,16 @@ impl<T: Clone> Reset for Vec<T> {
     fn reset(&mut self) {
         self.clear()
     }
+}
+impl<R: Reset> Reset for (R, R) {
+    const DEFAULT: Self = (R::DEFAULT, R::DEFAULT);
+    fn reset(&mut self) {
+        self.0.reset();
+        self.1.reset();
+    }
+}
+impl<R: Reset> Reset for Option<R> {
+    const DEFAULT: Self = None;
 }
 
 /// A fast resettable vector based on 32bit timestamps.
@@ -108,6 +118,7 @@ impl<T: Reset> IndexMut<usize> for TimestampedVector<T> {
     }
 }
 
+use std::fmt::Debug;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 #[derive(Debug)]

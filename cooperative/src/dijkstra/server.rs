@@ -15,7 +15,7 @@ use crate::graph::ModifiableWeight;
 
 pub struct CapacityServer<Pot = ZeroPotential> {
     graph: CapacityGraph,
-    dijkstra: DijkstraData<Weight, EdgeIdT>,
+    dijkstra: DijkstraData<Weight, EdgeIdT, Weight>,
     potential: Pot,
 }
 
@@ -157,7 +157,13 @@ impl<Pot: TDPotential> CapacityServerOps for CapacityServer<Pot> {
 
             for link in LinkIterable::<(NodeIdT, EdgeIdT)>::link_iter(&self.graph, node) {
                 num_relaxed_arcs += 1;
-                let linked = ops.link(&self.graph, &self.dijkstra.distances[node as usize], &link);
+                let linked = ops.link(
+                    &self.graph,
+                    &self.dijkstra.predecessors,
+                    NodeIdT(node),
+                    &self.dijkstra.distances[node as usize],
+                    &link,
+                );
 
                 if ops.merge(&mut self.dijkstra.distances[link.head() as usize], linked) {
                     self.dijkstra.predecessors[link.head() as usize] = (node, ops.predecessor_link(&link));

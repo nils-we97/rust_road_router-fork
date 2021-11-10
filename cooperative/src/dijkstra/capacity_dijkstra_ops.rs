@@ -1,5 +1,5 @@
 use rust_road_router::algo::dijkstra::DijkstraOps;
-use rust_road_router::datastr::graph::{EdgeIdT, NodeIdT, Weight};
+use rust_road_router::datastr::graph::{EdgeIdT, NodeId, NodeIdT, Weight};
 
 use crate::graph::capacity_graph::CapacityGraph;
 
@@ -12,7 +12,7 @@ impl DijkstraOps<CapacityGraph> for CapacityDijkstraOps {
     type PredecessorLink = EdgeIdT;
 
     #[inline(always)]
-    fn link(&mut self, graph: &CapacityGraph, label: &Weight, link: &Self::Arc) -> Self::LinkResult {
+    fn link(&mut self, graph: &CapacityGraph, _parents: &[(NodeId, EdgeIdT)], _tail: NodeIdT, label: &Weight, link: &Self::Arc) -> Self::LinkResult {
         label + graph.travel_time_function(link.1 .0).eval(*label)
     }
 

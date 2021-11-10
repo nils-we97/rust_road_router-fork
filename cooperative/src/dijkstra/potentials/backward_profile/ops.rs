@@ -1,6 +1,6 @@
 use rust_road_router::algo::dijkstra::{DijkstraOps, Label};
 use rust_road_router::datastr::graph::floating_time_dependent::{PeriodicPiecewiseLinearFunction, TTFPoint};
-use rust_road_router::datastr::graph::{NodeIdT, Reversed, ReversedGraphWithEdgeIds};
+use rust_road_router::datastr::graph::{NodeId, NodeIdT, Reversed, ReversedGraphWithEdgeIds};
 
 pub struct TDBackwardProfilePotentialOps<Profiles>(pub Profiles);
 
@@ -12,7 +12,14 @@ impl<Profiles: AsRef<Vec<Vec<TTFPoint>>>> DijkstraOps<ReversedGraphWithEdgeIds> 
 
     // label = state at currently processed node
     // must be linked backward with (static) weight at previous edge
-    fn link(&mut self, _graph: &ReversedGraphWithEdgeIds, label: &Self::Label, (_, prev_edge): &Self::Arc) -> Self::LinkResult {
+    fn link(
+        &mut self,
+        _graph: &ReversedGraphWithEdgeIds,
+        _parents: &[(NodeId, ())],
+        _tail: NodeIdT,
+        label: &Self::Label,
+        (_, prev_edge): &Self::Arc,
+    ) -> Self::LinkResult {
         //1. obtain profile from `previous_node`
         let prev_profile = PeriodicPiecewiseLinearFunction::new(&self.0.as_ref()[prev_edge.0 .0 as usize]);
         let current_profile = PeriodicPiecewiseLinearFunction::new(label);

@@ -9,7 +9,7 @@ use rust_road_router::report::measure;
 
 pub struct PTVQueryServer<Pot> {
     graph: TDGraph,
-    dijkstra: DijkstraData<Weight, EdgeIdT>,
+    dijkstra: DijkstraData<Weight, (), Weight>,
     potential: Pot,
 }
 
@@ -82,7 +82,13 @@ impl<Pot: TDPotential> PTVQueryServer<Pot> {
 
             for link in LinkIterable::<(NodeIdT, EdgeIdT)>::link_iter(&self.graph, node) {
                 num_relaxed_arcs += 1;
-                let linked = ops.link(&self.graph, &self.dijkstra.distances[node as usize], &link);
+                let linked = ops.link(
+                    &self.graph,
+                    &self.dijkstra.predecessors,
+                    NodeIdT(node),
+                    &self.dijkstra.distances[node as usize],
+                    &link,
+                );
 
                 if ops.merge(&mut self.dijkstra.distances[link.head() as usize], linked) {
                     let next_distance = &self.dijkstra.distances[link.head() as usize];

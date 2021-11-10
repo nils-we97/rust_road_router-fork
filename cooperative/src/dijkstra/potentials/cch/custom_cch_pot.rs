@@ -27,10 +27,10 @@ impl<'a, CCH: CCHT> CCHLowerUpperPotential<'a, CCH> {
         Self {
             cch,
             stack: Vec::new(),
-            potentials: TimestampedVector::new(n, InRangeOption::new(None)),
+            potentials: TimestampedVector::new(n),
             forward_cch_graph,
             forward_cch_weights,
-            backward_distances: TimestampedVector::new(n, (INFINITY, INFINITY)),
+            backward_distances: TimestampedVector::new(n),
             backward_cch_graph,
             backward_cch_weights,
             num_pot_computations: 0,

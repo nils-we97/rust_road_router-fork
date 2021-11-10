@@ -52,7 +52,7 @@ impl<'a> TDCorridorIntervalPotential<'a> {
             dijkstra: DijkstraData::new(num_nodes),
             ops,
             use_td_mode: true,
-            lazy_corridors: TimestampedVector::new(num_nodes, None),
+            lazy_corridors: TimestampedVector::new(num_nodes),
         }
     }
 

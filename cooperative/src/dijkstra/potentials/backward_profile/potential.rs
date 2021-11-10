@@ -1,6 +1,6 @@
 use std::borrow::Borrow;
 
-use rust_road_router::algo::dijkstra::{DijkstraData, DijkstraRun};
+use rust_road_router::algo::dijkstra::{DijkstraData, DijkstraInit, DijkstraRun};
 use rust_road_router::datastr::graph::floating_time_dependent::{FlWeight, TTFPoint, Timestamp};
 use rust_road_router::datastr::graph::{BuildReversed, Graph, NodeId, ReversedGraphWithEdgeIds, Weight};
 
@@ -63,7 +63,7 @@ impl TDPotential for TDBackwardProfilePotential {
         //initialize backwards profile dijkstra
         let query = TDBackwardProfileQuery(target);
         let mut ops = TDBackwardProfilePotentialOps(&self.travel_time_profile);
-        let mut run = DijkstraRun::query(self.backward_graph.borrow(), &mut self.dijkstra, &mut ops, query);
+        let mut run = DijkstraRun::query(self.backward_graph.borrow(), &mut self.dijkstra, &mut ops, DijkstraInit::from_query(&query));
 
         // run through the whole graph
         let mut counter = 0;

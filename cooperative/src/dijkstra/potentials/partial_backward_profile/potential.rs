@@ -1,7 +1,7 @@
 use std::borrow::Borrow;
 use std::cmp::max;
 
-use rust_road_router::algo::dijkstra::{DijkstraData, DijkstraRun, Server};
+use rust_road_router::algo::dijkstra::{DijkstraData, DijkstraInit, DijkstraRun, Server};
 use rust_road_router::algo::{GenQuery, Query, QueryServer};
 use rust_road_router::datastr::graph::floating_time_dependent::{FlWeight, PartialPiecewiseLinearFunction, TTFPoint, Timestamp};
 use rust_road_router::datastr::graph::{BuildReversed, EdgeId, FirstOutGraph, Graph, NodeId, ReversedGraphWithEdgeIds, Weight};
@@ -87,7 +87,7 @@ impl TDPotential for TDPartialBackwardProfilePotential {
             profiles: &self.travel_time_profile,
         };
 
-        let mut run = DijkstraRun::query(self.backward_graph.borrow(), &mut self.dijkstra, &mut ops, query);
+        let mut run = DijkstraRun::query(self.backward_graph.borrow(), &mut self.dijkstra, &mut ops, DijkstraInit::from_query(&query));
 
         // run through the whole graph
         let mut counter = 0;

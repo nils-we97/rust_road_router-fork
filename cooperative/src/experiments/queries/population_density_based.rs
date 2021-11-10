@@ -8,7 +8,7 @@ use crate::experiments::queries::departure_distributions::DepartureDistribution;
 use crate::io::io_population_grid::PopulationGridEntry;
 use rand_distr::Distribution;
 use rand_distr::Geometric;
-use rust_road_router::algo::dijkstra::{DefaultOps, DijkstraData, DijkstraRun};
+use rust_road_router::algo::dijkstra::{DefaultOps, DijkstraData, DijkstraInit, DijkstraRun};
 use rust_road_router::datastr::graph::time_dependent::Timestamp;
 use std::collections::HashSet;
 
@@ -120,7 +120,7 @@ pub fn generate_geometric_population_density_based_queries<D: DepartureDistribut
 
                 let query = TDQuery::new(from, 0, 0);
                 let mut ops = DefaultOps::default();
-                let mut dijkstra = DijkstraRun::query(graph, &mut data, &mut ops, query);
+                let mut dijkstra = DijkstraRun::query(graph, &mut data, &mut ops, DijkstraInit::from_query(&query));
 
                 while let Some(node) = dijkstra.next() {
                     // cancel as soon as the tentative distance exceeds the threshold

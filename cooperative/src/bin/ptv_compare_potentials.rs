@@ -11,8 +11,8 @@ use cooperative::util::cli_args::parse_arg_required;
 use rust_road_router::algo::ch_potentials::CCHPotData;
 use rust_road_router::algo::customizable_contraction_hierarchy::CCH;
 use rust_road_router::algo::TDQuery;
-use rust_road_router::datastr::graph::time_dependent::{TDGraph, Timestamp};
-use rust_road_router::datastr::graph::{FirstOutGraph, Graph, Weight};
+use rust_road_router::datastr::graph::time_dependent::{PiecewiseLinearFunction, TDGraph, Timestamp};
+use rust_road_router::datastr::graph::{EdgeId, FirstOutGraph, Graph, Weight};
 use rust_road_router::datastr::node_order::NodeOrder;
 use rust_road_router::io::{Load, Reconstruct};
 use rust_road_router::report::measure;
@@ -68,7 +68,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     execute_queries(&mut server, &queries, "Corridor Lowerbound Potential");*/
 
     let customized_multi_levels = CustomizedMultiLevels::new(&cch, &departure, &travel_time, &vec![86_400_000 / 24], graph.num_arcs() as u64 * 120000);
-    let multi_level_bucket_pot = CCHMultiLevelIntervalPotential::new_forward(&customized_multi_levels, 1);
+    let multi_level_bucket_pot = CCHMultiLevelIntervalPotential::new_forward(&customized_multi_levels);
     let mut server = PTVQueryServer::new_with_potential(graph, multi_level_bucket_pot);
     execute_queries(&mut server, &queries, "Multi Level Bucket Pot");
 
@@ -130,8 +130,10 @@ fn retrieve_departure_and_travel_time(graph: &TDGraph) -> (Vec<Vec<Timestamp>>, 
     (0..graph.head().len())
         .into_iter()
         .map(|edge_id| {
-            let mut departures = graph.ipp_departure()[graph.first_ipp_of_arc()[edge_id] as usize..graph.first_ipp_of_arc()[edge_id + 1] as usize].to_vec();
-            let mut travel_times = graph.ipp_travel_time()[graph.first_ipp_of_arc()[edge_id] as usize..graph.first_ipp_of_arc()[edge_id + 1] as usize].to_vec();
+            let plf = graph.travel_time_function(edge_id as EdgeId);
+
+            let mut departures = plf.departure().to_vec();
+            let mut travel_times = plf.travel_time().to_vec();
 
             if departures.is_empty() {
                 departures = vec![0, MAX_BUCKETS];

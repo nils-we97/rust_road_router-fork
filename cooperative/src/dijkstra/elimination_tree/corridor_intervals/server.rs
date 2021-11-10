@@ -30,8 +30,8 @@ impl<'a, CCH: CCHT> CorridorEliminationTreeServer<'a, CCH> {
             forward_weights,
             backward_graph,
             backward_weights,
-            fw_distances: TimestampedVector::new(num_nodes, (INFINITY, INFINITY)),
-            bw_distances: TimestampedVector::new(num_nodes, (INFINITY, INFINITY)),
+            fw_distances: TimestampedVector::new(num_nodes),
+            bw_distances: TimestampedVector::new(num_nodes),
         }
     }
 
