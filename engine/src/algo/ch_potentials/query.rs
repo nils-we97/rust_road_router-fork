@@ -92,7 +92,12 @@ where
         let out_of_core = virtual_topocore.bridge_node(query.to()).unwrap_or(query.to());
         let into_core_pot = potential.potential(into_core)?;
 
-        let mut comp_search = TopoDijkstraRun::query(&self.comp_graph, &mut self.core_search.dijkstra_data, &mut self.core_search.ops, query);
+        let mut comp_search = TopoDijkstraRun::query(
+            &self.comp_graph,
+            &mut self.core_search.dijkstra_data,
+            &mut self.core_search.ops,
+            DijkstraInit::from_query(&query),
+        );
 
         while let Some(node) = comp_search.next_step_with_potential(|node| potential.potential(node)) {
             num_queue_pops += 1;
@@ -220,6 +225,14 @@ where
         let rank = self.virtual_topocore.order.rank(node);
         self.core_search.dijkstra_data.predecessors[rank as usize].0
     }
+
+    pub fn ops(&mut self) -> &mut Ops {
+        &mut self.core_search.ops.0
+    }
+
+    pub fn order(&self) -> &NodeOrder {
+        &self.virtual_topocore.order
+    }
 }
 
 pub struct PathServerWrapper<'s, G, O: DijkstraOps<G>, P, Q, const BCC_CORE: bool, const SKIP_DEG_2: bool, const SKIP_DEG_3: bool>(
@@ -338,8 +351,15 @@ where
     type PredecessorLink = O::PredecessorLink;
 
     #[inline(always)]
-    fn link(&mut self, graph: &VirtualTopocoreGraph<G>, label: &Self::Label, link: &Self::Arc) -> Self::LinkResult {
-        self.0.link(&graph.graph, label, link)
+    fn link(
+        &mut self,
+        graph: &VirtualTopocoreGraph<G>,
+        parents: &[(NodeId, Self::PredecessorLink)],
+        tail: NodeIdT,
+        label: &Self::Label,
+        link: &Self::Arc,
+    ) -> Self::LinkResult {
+        self.0.link(&graph.graph, parents, tail, label, link)
     }
 
     #[inline(always)]
@@ -392,7 +412,7 @@ where
         inspect: impl FnMut(NodeId, &TopoDijkstraRun<Graph, Ops, SKIP_DEG_2, SKIP_DEG_3>, &mut P),
         cap: Weight,
     ) -> Option<Weight> {
-        let mut dijkstra = TopoDijkstraRun::query(&self.graph, &mut self.dijkstra_data, &mut self.ops, query);
+        let mut dijkstra = TopoDijkstraRun::query(&self.graph, &mut self.dijkstra_data, &mut self.ops, DijkstraInit::from_query(&query));
         self.potential.init(query.to());
         Self::distance_manually_initialized(&mut dijkstra, query, &mut self.potential, inspect, cap)
     }
@@ -471,15 +491,8 @@ where
     }
 
     pub fn one_to_all(&mut self, from: NodeId) -> BiconnectedPathServerWrapper<Graph, Ops, P, Query, SKIP_DEG_2, SKIP_DEG_3> {
-        let mut dijkstra = TopoDijkstraRun::<Graph, Ops, SKIP_DEG_2, SKIP_DEG_3>::query(
-            &self.graph,
-            &mut self.dijkstra_data,
-            &mut self.ops,
-            Query {
-                from,
-                to: self.graph.num_nodes() as NodeId,
-            },
-        );
+        let mut dijkstra =
+            TopoDijkstraRun::<Graph, Ops, SKIP_DEG_2, SKIP_DEG_3>::query(&self.graph, &mut self.dijkstra_data, &mut self.ops, DijkstraInit::from(from));
         while let Some(_) = dijkstra.next_step() {}
         BiconnectedPathServerWrapper(
             self,
@@ -860,17 +873,11 @@ impl<P: BiDirPotential, D: BidirChooseDir> BiDirSkipLowDegRunner<P, D> {
         P::report();
 
         let mut ops = DefaultOpsWithLinkPath::default();
-        let mut forward_dijkstra = TopoDijkstraRun::<_, _, true, true>::query(&self.forward_graph, &mut self.forward_dijkstra_data, &mut ops, query);
+        let mut forward_dijkstra =
+            TopoDijkstraRun::<_, _, true, true>::query(&self.forward_graph, &mut self.forward_dijkstra_data, &mut ops, DijkstraInit::from(query.from()));
         let mut ops = DefaultOpsWithLinkPath::default();
-        let mut backward_dijkstra = TopoDijkstraRun::<_, _, true, true>::query(
-            &self.backward_graph,
-            &mut self.backward_dijkstra_data,
-            &mut ops,
-            Query {
-                from: query.to(),
-                to: query.from(),
-            },
-        );
+        let mut backward_dijkstra =
+            TopoDijkstraRun::<_, _, true, true>::query(&self.backward_graph, &mut self.backward_dijkstra_data, &mut ops, DijkstraInit::from(query.to()));
 
         self.potential.init(query.from(), query.to());
         report!("lower_bound", self.potential.forward_potential_raw(query.from()).unwrap_or(INFINITY));
@@ -1073,7 +1080,7 @@ impl<P: BiDirPotential + Clone + Send> MultiThreadedBiDirSkipLowDegServer<P> {
             &mut self.forward_dijkstra_data.predecessors,
             &mut self.forward_dijkstra_data.queue,
             &mut ops,
-            query,
+            DijkstraInit::from(query.from()),
         );
         let mut ops = DefaultOpsWithLinkPath::default();
         self.backward_dijkstra_data.distances.reset();
@@ -1083,10 +1090,7 @@ impl<P: BiDirPotential + Clone + Send> MultiThreadedBiDirSkipLowDegServer<P> {
             &mut self.backward_dijkstra_data.predecessors,
             &mut self.backward_dijkstra_data.queue,
             &mut ops,
-            Query {
-                from: query.to(),
-                to: query.from(),
-            },
+            DijkstraInit::from(query.to()),
         );
 
         let fw_reverse_dist = &self.backward_dijkstra_data.distances;

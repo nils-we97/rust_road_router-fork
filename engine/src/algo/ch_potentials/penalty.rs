@@ -249,15 +249,7 @@ impl<P: Potential + Send + Clone> Penalty<P> {
                 contained_edges: &alternative_graph_dijkstra.graph().contained_edges,
                 weights: alternative_graph_dijkstra.graph().graph.graph.weight(),
             };
-            for _ in DijkstraRun::query(
-                &reversed_graph,
-                &mut self.reverse_dijkstra_data,
-                &mut ops,
-                Query {
-                    from: core_to,
-                    to: self.reversed.num_nodes() as NodeId,
-                },
-            ) {}
+            for _ in DijkstraRun::query(&reversed_graph, &mut self.reverse_dijkstra_data, &mut ops, DijkstraInit::from(core_to)) {}
             let forward_dists = alternative_graph_dijkstra.one_to_all(core_from);
             let mut total_dist = 0.0;
             let mut avg_dist = 0;
@@ -336,7 +328,10 @@ impl<G: Graph> Graph for AlternativeGraph<G> {
 }
 
 impl<G: LinkIterable<L> + EdgeIdGraph, L> LinkIterable<L> for AlternativeGraph<G> {
-    type Iter<'a> = FilteredLinkIter<'a, <G as LinkIterable<L>>::Iter<'a>>;
+    type Iter<'a>
+    where
+        Self: 'a,
+    = FilteredLinkIter<'a, <G as LinkIterable<L>>::Iter<'a>>;
 
     #[inline(always)]
     fn link_iter(&self, node: NodeId) -> Self::Iter<'_> {
@@ -393,7 +388,10 @@ impl Graph for ReversedAlternativeGraph<'_> {
 }
 
 impl LinkIterable<Link> for ReversedAlternativeGraph<'_> {
-    type Iter<'a> = impl Iterator<Item = Link> + 'a;
+    type Iter<'a>
+    where
+        Self: 'a,
+    = impl Iterator<Item = Link> + 'a;
 
     fn link_iter(&self, node: NodeId) -> Self::Iter<'_> {
         self.graph.link_iter(node).filter_map(move |(NodeIdT(head), Reversed(EdgeIdT(edge_id)))| {

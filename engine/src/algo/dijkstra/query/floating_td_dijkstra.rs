@@ -24,10 +24,9 @@ impl Server {
             &self.graph,
             &mut self.data,
             &mut ops,
-            TDQuery {
-                from,
-                to: self.graph.num_nodes() as NodeId,
-                departure: departure_time,
+            DijkstraInit {
+                source: NodeIdT(from),
+                initial_state: departure_time,
             },
         );
 
@@ -44,7 +43,7 @@ impl Server {
     fn distance(&mut self, query: TDQuery<Timestamp>) -> Option<FlWeight> {
         report!("algo", "Floating TD-Dijkstra");
         let mut ops = FlTDDijkstraOps();
-        let mut dijkstra = DijkstraRun::query(&self.graph, &mut self.data, &mut ops, query);
+        let mut dijkstra = DijkstraRun::query(&self.graph, &mut self.data, &mut ops, DijkstraInit::from_query(&query));
 
         while let Some(node) = dijkstra.next() {
             if node == query.to {
@@ -56,8 +55,7 @@ impl Server {
     }
 
     fn path(&self, query: TDQuery<Timestamp>) -> Vec<(NodeId, Timestamp)> {
-        let mut path = Vec::new();
-        path.push((query.to, self.data.distances[query.to as usize]));
+        let mut path = vec![(query.to, self.data.distances[query.to as usize])];
 
         while path.last().unwrap().0 != query.from {
             let next = self.data.predecessors[path.last().unwrap().0 as usize].0;
@@ -92,6 +90,7 @@ impl TDQueryServer<Timestamp, FlWeight> for Server {
     }
 }
 
+#[derive(Default)]
 struct FlTDDijkstraOps();
 
 impl DijkstraOps<TDGraph> for FlTDDijkstraOps {
@@ -101,7 +100,7 @@ impl DijkstraOps<TDGraph> for FlTDDijkstraOps {
     type PredecessorLink = ();
 
     #[inline(always)]
-    fn link(&mut self, graph: &TDGraph, label: &Timestamp, link: &Self::Arc) -> Self::LinkResult {
+    fn link(&mut self, graph: &TDGraph, _parents: &[(NodeId, Self::PredecessorLink)], _tail: NodeIdT, label: &Timestamp, link: &Self::Arc) -> Self::LinkResult {
         *label + graph.travel_time_function(link.1 .0).evaluate(*label)
     }
 
@@ -115,15 +114,11 @@ impl DijkstraOps<TDGraph> for FlTDDijkstraOps {
     }
 
     #[inline(always)]
-    fn predecessor_link(&self, _link: &Self::Arc) -> Self::PredecessorLink {
-        ()
-    }
+    fn predecessor_link(&self, _link: &Self::Arc) -> Self::PredecessorLink {}
 }
 
-impl Default for FlTDDijkstraOps {
-    fn default() -> Self {
-        FlTDDijkstraOps {}
-    }
+impl Reset for Timestamp {
+    const DEFAULT: Self = Self::NEVER;
 }
 
 impl Label for Timestamp {

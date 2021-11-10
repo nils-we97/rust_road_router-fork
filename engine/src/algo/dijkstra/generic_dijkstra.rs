@@ -2,7 +2,6 @@
 
 use super::*;
 use crate::algo::dijkstra::gen_topo_dijkstra::Neutral;
-use std::borrow::Borrow;
 
 pub struct DijkstraRun<'a, Graph = OwnedGraph, Ops = DefaultOps>
 where
@@ -25,7 +24,7 @@ where
     Graph: LinkIterable<Ops::Arc>,
     Ops: DijkstraOps<Graph>,
 {
-    pub fn query(graph: &'b Graph, data: &'b mut DijkstraData<Ops::Label, Ops::PredecessorLink>, ops: &'b mut Ops, query: impl GenQuery<Ops::Label>) -> Self {
+    pub fn query(graph: &'b Graph, data: &'b mut DijkstraData<Ops::Label, Ops::PredecessorLink>, ops: &'b mut Ops, init: DijkstraInit<Ops::Label>) -> Self {
         let mut s = Self {
             graph,
             ops,
@@ -35,7 +34,7 @@ where
             num_relaxed_arcs: 0,
             num_queue_pushs: 0,
         };
-        s.initialize(query);
+        s.initialize(init);
         s
     }
 
@@ -53,17 +52,20 @@ where
         s
     }
 
-    pub fn initialize(&mut self, query: impl GenQuery<Ops::Label>) {
+    pub fn initialize(&mut self, init: DijkstraInit<Ops::Label>) {
         self.queue.clear();
         self.distances.reset();
-        self.add_start_node(query);
+        self.add_start_node(init);
     }
 
-    pub fn add_start_node(&mut self, query: impl GenQuery<Ops::Label>) {
-        let from = query.from();
-        let init = query.initial_state();
-        self.queue.push(State { key: init.key(), node: from });
-        self.distances[from as usize] = init;
+    pub fn add_start_node(&mut self, init: DijkstraInit<Ops::Label>) {
+        let NodeIdT(from) = init.source;
+        let initial = init.initial_state;
+        self.queue.push(State {
+            key: initial.key(),
+            node: from,
+        });
+        self.distances[from as usize] = initial;
         self.predecessors[from as usize].0 = from;
     }
 
@@ -111,10 +113,12 @@ where
         O: std::ops::Add<<Ops::Label as super::Label>::Key, Output = <Ops::Label as super::Label>::Key>,
     {
         self.queue.pop().map(|State { node, .. }| {
-            for link in self.graph.borrow().link_iter(node) {
+            for link in self.graph.link_iter(node) {
                 if edge_predicate(&link) {
                     self.num_relaxed_arcs += 1;
-                    let linked = self.ops.link(self.graph.borrow(), &self.distances[node as usize], &link);
+                    let linked = self
+                        .ops
+                        .link(self.graph, self.predecessors, NodeIdT(node), &self.distances[node as usize], &link);
 
                     if self.ops.merge(&mut self.distances[link.head() as usize], linked) {
                         self.predecessors[link.head() as usize] = (node, self.ops.predecessor_link(&link));
@@ -162,7 +166,7 @@ where
     }
 
     pub fn graph(&self) -> &Graph {
-        self.graph.borrow()
+        self.graph
     }
 
     pub fn queue(&self) -> &IndexdMinHeap<State<<Ops::Label as super::Label>::Key>> {
@@ -191,13 +195,17 @@ where
     }
 }
 
-pub struct ComplexDijkstraRun<'a, Graph = OwnedGraph, Ops = DefaultOps>
+#[derive(Clone)]
+pub struct NodeQueueLabelOrder<L>(pub L);
+pub type MultiCritNodeData<L> = crate::datastr::heap::Heap<NodeQueueLabelOrder<L>>;
+
+pub struct MultiCritDijkstraRun<'a, Graph = OwnedGraph, Ops = DefaultOps>
 where
-    Ops: ComplexDijkstraOps<Graph>,
+    Ops: MultiCritDijkstraOps<Graph>,
 {
     graph: &'a Graph,
 
-    distances: &'a mut TimestampedVector<Ops::Label>,
+    distances: &'a mut TimestampedVector<MultiCritNodeData<Ops::Label>>,
     predecessors: &'a mut [(NodeId, Ops::PredecessorLink)],
     queue: &'a mut IndexdMinHeap<State<<Ops::Label as super::Label>::Key>>,
 
@@ -207,16 +215,17 @@ where
     num_queue_pushs: usize,
 }
 
-impl<'b, Graph, Ops> ComplexDijkstraRun<'b, Graph, Ops>
+impl<'b, Graph, Ops> MultiCritDijkstraRun<'b, Graph, Ops>
 where
     Graph: LinkIterable<Ops::Arc>,
-    Ops: ComplexDijkstraOps<Graph>,
+    Ops: MultiCritDijkstraOps<Graph>,
+    NodeQueueLabelOrder<Ops::Label>: Ord,
 {
     pub fn query<P, O>(
         graph: &'b Graph,
-        data: &'b mut DijkstraData<Ops::Label, Ops::PredecessorLink>,
+        data: &'b mut DijkstraData<Ops::Label, Ops::PredecessorLink, MultiCritNodeData<Ops::Label>>,
         ops: &'b mut Ops,
-        query: impl GenQuery<Ops::Label>,
+        init: DijkstraInit<Ops::Label>,
         potential: P,
     ) -> Self
     where
@@ -232,11 +241,16 @@ where
             num_relaxed_arcs: 0,
             num_queue_pushs: 0,
         };
-        s.initialize(query, potential);
+        s.initialize(init, potential);
         s
     }
 
-    pub fn continue_query(graph: &'b Graph, data: &'b mut DijkstraData<Ops::Label, Ops::PredecessorLink>, ops: &'b mut Ops, node: NodeId) -> Self {
+    pub fn continue_query(
+        graph: &'b Graph,
+        data: &'b mut DijkstraData<Ops::Label, Ops::PredecessorLink, MultiCritNodeData<Ops::Label>>,
+        ops: &'b mut Ops,
+        node: NodeId,
+    ) -> Self {
         let mut s = Self {
             graph,
             ops,
@@ -250,34 +264,36 @@ where
         s
     }
 
-    pub fn initialize<P, O>(&mut self, query: impl GenQuery<Ops::Label>, potential: P)
+    pub fn initialize<P, O>(&mut self, init: DijkstraInit<Ops::Label>, potential: P)
     where
         P: FnMut(NodeId) -> Option<O>,
         O: std::ops::Add<<Ops::Label as super::Label>::Key, Output = <Ops::Label as super::Label>::Key>,
     {
         self.queue.clear();
         self.distances.reset();
-        self.add_start_node(query, potential);
+        self.add_start_node(init, potential);
     }
 
-    pub fn add_start_node<P, O>(&mut self, query: impl GenQuery<Ops::Label>, mut potential: P)
+    pub fn add_start_node<P, O>(&mut self, init: DijkstraInit<Ops::Label>, mut potential: P)
     where
         P: FnMut(NodeId) -> Option<O>,
         O: std::ops::Add<<Ops::Label as super::Label>::Key, Output = <Ops::Label as super::Label>::Key>,
     {
-        let from = query.from();
-        let init = query.initial_state();
-        if let Some(key) = potential(from).map(|p| p + init.key()) {
+        let NodeIdT(from) = init.source;
+        let initial = init.initial_state;
+        if let Some(key) = potential(from).map(|p| p + initial.key()) {
             self.queue.push(State { key, node: from });
         }
-        self.distances[from as usize] = init;
+        let mut node_queue = crate::datastr::heap::Heap::new();
+        node_queue.push(NodeQueueLabelOrder(initial));
+        self.distances[from as usize] = node_queue;
         self.predecessors[from as usize].0 = from;
     }
 
     fn reinit_queue(&mut self, node: NodeId) {
         self.queue.clear();
         self.queue.push(State {
-            key: self.distances[node as usize].key(),
+            key: self.distances[node as usize].peek().unwrap().0.key(),
             node,
         });
     }
@@ -301,7 +317,7 @@ where
     }
 
     #[inline(always)]
-    pub fn next_with_improve_callback(&mut self, improve_callback: impl FnMut(NodeId, &Ops::Label) -> bool) -> Option<NodeId>
+    pub fn next_with_improve_callback(&mut self, improve_callback: impl FnMut(NodeId, &MultiCritNodeData<Ops::Label>) -> bool) -> Option<NodeId>
     where
         <Ops::Label as super::Label>::Key: std::ops::Sub<Neutral, Output = <Ops::Label as super::Label>::Key> + Copy,
     {
@@ -309,7 +325,11 @@ where
     }
 
     #[inline(always)]
-    pub fn next_with_improve_callback_and_potential<P, O>(&mut self, improve_callback: impl FnMut(NodeId, &Ops::Label) -> bool, potential: P) -> Option<NodeId>
+    pub fn next_with_improve_callback_and_potential<P, O>(
+        &mut self,
+        improve_callback: impl FnMut(NodeId, &MultiCritNodeData<Ops::Label>) -> bool,
+        potential: P,
+    ) -> Option<NodeId>
     where
         P: FnMut(NodeId) -> Option<O>,
         O: std::ops::Add<<Ops::Label as super::Label>::Key, Output = <Ops::Label as super::Label>::Key>,
@@ -321,22 +341,31 @@ where
     #[inline(always)]
     fn settle_next_node<I, P, O>(&mut self, mut edge_predicate: impl FnMut(&Ops::Arc) -> bool, mut improve_callback: I, mut potential: P) -> Option<NodeId>
     where
-        I: FnMut(NodeId, &Ops::Label) -> bool,
+        I: FnMut(NodeId, &MultiCritNodeData<Ops::Label>) -> bool,
         P: FnMut(NodeId) -> Option<O>,
         O: std::ops::Add<<Ops::Label as super::Label>::Key, Output = <Ops::Label as super::Label>::Key>,
         <Ops::Label as super::Label>::Key: std::ops::Sub<O, Output = <Ops::Label as super::Label>::Key> + Copy,
     {
         self.queue.pop().map(|State { node, key }| {
-            for link in self.graph.borrow().link_iter(node) {
-                if edge_predicate(&link) {
+            let _ = self.distances[node as usize].pop().unwrap();
+            if let Some(NodeQueueLabelOrder(next_label)) = self.distances[node as usize].peek() {
+                self.queue.push(State {
+                    node,
+                    key: potential(node).unwrap() + next_label.key(),
+                })
+            }
+
+            for link in self.graph.link_iter(node) {
+                // we assume that a loop arc will never be used
+                if edge_predicate(&link) && link.head() != node {
                     self.num_relaxed_arcs += 1;
                     let linked = self.ops.link(
-                        self.graph.borrow(),
+                        self.graph,
                         self.distances,
                         self.predecessors,
                         NodeIdT(node),
                         key - potential(node).unwrap(),
-                        &self.distances[node as usize],
+                        &self.distances[node as usize].popped()[0].0,
                         &link,
                     );
 
@@ -374,12 +403,12 @@ where
         for node in active_nodes {
             self.queue.update_key(State {
                 node,
-                key: potential(node).map(|p| p + self.distances[node as usize].key()).unwrap(),
+                key: potential(node).map(|p| p + self.distances[node as usize].peek().unwrap().0.key()).unwrap(),
             })
         }
     }
 
-    pub fn tentative_distance(&self, node: NodeId) -> &Ops::Label {
+    pub fn tentative_distance(&self, node: NodeId) -> &MultiCritNodeData<Ops::Label> {
         &self.distances[node as usize]
     }
 
@@ -388,7 +417,7 @@ where
     }
 
     pub fn graph(&self) -> &Graph {
-        self.graph.borrow()
+        self.graph
     }
 
     pub fn queue(&self) -> &IndexdMinHeap<State<<Ops::Label as super::Label>::Key>> {
@@ -404,11 +433,12 @@ where
     }
 }
 
-impl<'b, Ops, Graph> Iterator for ComplexDijkstraRun<'b, Graph, Ops>
+impl<'b, Ops, Graph> Iterator for MultiCritDijkstraRun<'b, Graph, Ops>
 where
-    Ops: ComplexDijkstraOps<Graph>,
+    Ops: MultiCritDijkstraOps<Graph>,
     <Ops::Label as super::Label>::Key: std::ops::Sub<Neutral, Output = <Ops::Label as super::Label>::Key> + Copy,
     Graph: LinkIterable<Ops::Arc>,
+    NodeQueueLabelOrder<Ops::Label>: Ord,
 {
     type Item = NodeId;
 
