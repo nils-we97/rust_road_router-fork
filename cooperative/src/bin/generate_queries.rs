@@ -1,7 +1,9 @@
 use cooperative::experiments::queries::departure_distributions::{
     ConstantDeparture, DepartureDistribution, NormalDeparture, RushHourDeparture, UniformDeparture,
 };
-use cooperative::experiments::queries::population_density_based::generate_uniform_population_density_based_queries;
+use cooperative::experiments::queries::population_density_based::{
+    generate_geometric_population_density_based_queries, generate_uniform_population_density_based_queries,
+};
 use cooperative::experiments::queries::random_geometric::generate_random_geometric_queries;
 use cooperative::experiments::queries::random_uniform::generate_random_uniform_queries;
 use cooperative::experiments::queries::QueryType;
@@ -62,6 +64,15 @@ fn main() -> Result<(), Box<dyn Error>> {
                     &grid_population,
                     num_queries,
                     ConstantDeparture::new(),
+                ),
+                QueryType::PopulationGeometric => generate_geometric_population_density_based_queries(
+                    &graph,
+                    &longitude,
+                    &latitude,
+                    &grid_tree,
+                    &grid_population,
+                    num_queries,
+                    RushHourDeparture::new(),
                 ),
                 /*QueryType::PopulationGeometric => {}
                 QueryType::PopulationGeometricConstantDep => {}*/

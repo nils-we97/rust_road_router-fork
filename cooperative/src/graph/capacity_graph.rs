@@ -5,7 +5,6 @@ use rust_road_router::datastr::graph::{EdgeId, Graph, NodeId, Weight};
 use crate::graph::edge_buckets::{CapacityBuckets, SpeedBuckets};
 use crate::graph::{travel_time, velocity, Capacity, ExportableCapacity, ModifiableWeight, Velocity, MAX_BUCKETS};
 use rust_road_router::report::measure;
-use std::panic;
 
 /// Structure of a time-dependent graph with capacity buckets for each edge
 /// After each query, the capacities of all edges on the shortest path get modified

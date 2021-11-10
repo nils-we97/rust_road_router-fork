@@ -57,7 +57,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         graph.departure(),
         graph.travel_time(),
         &vec![86_400_000 / 12, 86_400_000 / 48],
-        graph.num_arcs() as u64 * 50,
+        graph.num_arcs() as u64 * 10,
     );
     let multi_level_bucket_pot = CCHMultiLevelIntervalPotential::new_forward(&customized_multi_levels, 2);
     let mut server = CapacityServer::new_with_potential(graph, multi_level_bucket_pot);
@@ -97,7 +97,7 @@ fn execute_queries<Pot: TDPotential>(server: &mut CapacityServer<Pot>, queries: 
     let mut num_queue_pops = 0u64;
     let mut num_relaxed_arcs = 0u64;
 
-    queries[..10000].iter().enumerate().for_each(|(idx, &query)| {
+    queries.iter().enumerate().for_each(|(idx, &query)| {
         let result = server.query_measured(query, false);
 
         time_total = time_total

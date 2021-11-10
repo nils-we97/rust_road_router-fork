@@ -9,7 +9,7 @@ use rust_road_router::datastr::graph::{EdgeId, EdgeIdT, Graph, LinkIterable, Nod
 use rust_road_router::datastr::timestamped_vector::TimestampedVector;
 use std::cmp::min;
 
-const LOWERBOUND_POT_THRESHOLD: Timestamp = 600_000; // = 10 minutes
+const LOWERBOUND_POT_THRESHOLD: Timestamp = 300_000; // = 5 minutes
 
 pub struct CCHMultiLevelIntervalPotential<'a> {
     customized: &'a CustomizedMultiLevels<'a>,
@@ -25,6 +25,7 @@ pub struct CCHMultiLevelIntervalPotential<'a> {
     current_metrics: Vec<usize>,
     current_intervals: Vec<Timestamp>,
     current_max_corridor: Weight,
+    use_simple_pot: bool,
 }
 
 impl<'a> CCHMultiLevelIntervalPotential<'a> {
@@ -58,6 +59,7 @@ impl<'a> CCHMultiLevelIntervalPotential<'a> {
             current_metrics: Vec::new(),
             current_intervals: Vec::new(),
             current_max_corridor: MAX_BUCKETS,
+            use_simple_pot: false,
         }
     }
 
@@ -74,7 +76,10 @@ impl<'a> TDPotential for CCHMultiLevelIntervalPotential<'a> {
 
         // 1st fallback: metric only contains lowerbound-weights
         if self.customized.bucket_tree.elements.len() == 1 {
+            self.use_simple_pot = true;
             return;
+        } else {
+            self.use_simple_pot = false;
         }
 
         // 1. use interval query to determine corridor (for now, only the latest arrival is relevant)
@@ -86,6 +91,7 @@ impl<'a> TDPotential for CCHMultiLevelIntervalPotential<'a> {
         if let Some((corridor_lower, corridor_upper)) = corridor {
             // 2nd fallback: use lowerbound pot if the corridor is too tight
             if corridor_upper - corridor_lower <= LOWERBOUND_POT_THRESHOLD {
+                self.use_simple_pot = true;
                 return;
             }
 
@@ -142,10 +148,9 @@ impl<'a> TDPotential for CCHMultiLevelIntervalPotential<'a> {
 
     fn potential(&mut self, node: u32, timestamp: u32) -> Option<u32> {
         // check if lowerbound potential suffices -> metrics have not been initialized!
-        if self.current_metrics.is_empty() {
+        if self.use_simple_pot {
             self.forward_potential.potential(node, timestamp).filter(|&pot| pot < INFINITY)
         } else {
-            println!("Regular case!");
             // regular case - the induced corridor was too large, so a fine-grained approach
             // improves the potential quality significantly
             let node = self.customized.cch.node_order.rank(node);
