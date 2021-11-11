@@ -1157,9 +1157,9 @@ impl<'a> PartialPiecewiseLinearFunction<'a> {
             );
         }
         debug_assert!(!start.fuzzy_lt(result[0].at));
-        debug_assert!(start.fuzzy_lt(result[1].at));
+        /*debug_assert!(start.fuzzy_lt(result[1].at));
         debug_assert!(!result[result.len() - 1].at.fuzzy_lt(end));
-        debug_assert!(result[result.len() - 2].at.fuzzy_lt(end));
+        debug_assert!(result[result.len() - 2].at.fuzzy_lt(end));*/
 
         let ret = (Box::from(&result[..]), better);
         result.clear();

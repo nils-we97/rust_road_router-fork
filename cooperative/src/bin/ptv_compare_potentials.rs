@@ -1,12 +1,11 @@
-//use cooperative::dijkstra::elimination_tree::approximated_periodic_ttf::customized::CustomizedApproximatedPeriodicTTF;
+use cooperative::dijkstra::elimination_tree::approximated_periodic_ttf::customized::CustomizedApproximatedPeriodicTTF;
 use cooperative::dijkstra::elimination_tree::multi_level_buckets::customized::CustomizedMultiLevels;
-//use cooperative::dijkstra::potentials::corridor_lowerbound_potential::CorridorLowerboundPotential;
+use cooperative::dijkstra::potentials::corridor_lowerbound_potential::CorridorLowerboundPotential;
 use cooperative::dijkstra::potentials::multi_level_interval_potential::CCHMultiLevelIntervalPotential;
 use cooperative::dijkstra::potentials::TDPotential;
 use cooperative::dijkstra::ptv_server::PTVQueryServer;
-use cooperative::experiments::queries::departure_distributions::{DepartureDistribution, RushHourDeparture};
-use cooperative::experiments::queries::random_uniform::generate_random_uniform_queries;
 use cooperative::graph::MAX_BUCKETS;
+use cooperative::io::io_queries::load_queries;
 use cooperative::util::cli_args::parse_arg_required;
 use rust_road_router::algo::ch_potentials::CCHPotData;
 use rust_road_router::algo::customizable_contraction_hierarchy::CCH;
@@ -25,9 +24,9 @@ use std::path::Path;
 /// Uses a given PTV graph and executes a set of pre-defined queries
 /// then executes a set of queries (without updates) on several potentials
 ///
-/// Additional parameters: <path_to_graph> todo: <query_path>
+/// Additional parameters: <path_to_graph> <query_path>
 fn main() -> Result<(), Box<dyn Error>> {
-    let graph_directory = parse_args()?;
+    let (graph_directory, query_directory) = parse_args()?;
     let path = Path::new(&graph_directory);
 
     let ((graph, lower_bound), time) = measure(|| {
@@ -38,8 +37,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     });
     println!("Loaded graph in {} ms", time.to_std().unwrap().as_nanos() as f64 / 1_000_000.0);
 
-    // generate queries -> todo use pre-generated queries instead
-    let queries = generate_random_uniform_queries(graph.num_nodes() as u32, 1000, RushHourDeparture::new());
+    // load pre-generated queries
+    let queries = load_queries(&path.join("queries").join(query_directory))?;
 
     // init cch
     let order = Vec::load_from(path.join("cch_perm"))?;
@@ -61,14 +60,24 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     // ----------------------------------------------------------------------------- //
     // 2nd potential: Corridor-Lowerbound Potential
-    /*let customized_corridor_lowerbound = CustomizedApproximatedPeriodicTTF::new(&cch, &departure, &travel_time, 200, 48);
+    let customized_corridor_lowerbound = CustomizedApproximatedPeriodicTTF::new(&cch, &departure, &travel_time, 200, 48);
     let corridor_lowerbound_pot = CorridorLowerboundPotential::new(&customized_corridor_lowerbound);
     let mut server = PTVQueryServer::new_with_potential(graph, corridor_lowerbound_pot);
 
-    execute_queries(&mut server, &queries, "Corridor Lowerbound Potential");*/
+    execute_queries(&mut server, &queries, "Corridor Lowerbound Potential");
+    let (graph, pot) = server.decompose();
+    drop(pot);
 
-    let customized_multi_levels = CustomizedMultiLevels::new(&cch, &departure, &travel_time, &vec![86_400_000 / 24], graph.num_arcs() as u64 * 120000);
-    let multi_level_bucket_pot = CCHMultiLevelIntervalPotential::new_forward(&customized_multi_levels, 1);
+    // ----------------------------------------------------------------------------- //
+    // 3rd potential: Multi-Level-Bucket Potential
+    let customized_multi_levels = CustomizedMultiLevels::new(
+        &cch,
+        &departure,
+        &travel_time,
+        &vec![86_400_000 / 4, 86_400_000 / 16],
+        graph.num_arcs() as u64 * 120000,
+    );
+    let multi_level_bucket_pot = CCHMultiLevelIntervalPotential::new_forward(&customized_multi_levels, 2);
     let mut server = PTVQueryServer::new_with_potential(graph, multi_level_bucket_pot);
     execute_queries(&mut server, &queries, "Multi Level Bucket Pot");
 
@@ -119,11 +128,12 @@ fn execute_queries<Pot: TDPotential>(server: &mut PTVQueryServer<Pot>, queries: 
     println!("-----------------------------");
 }
 
-fn parse_args() -> Result<String, Box<dyn Error>> {
+fn parse_args() -> Result<(String, String), Box<dyn Error>> {
     let mut args = env::args().skip(1);
 
     let graph_directory: String = parse_arg_required(&mut args, "Graph Directory")?;
-    Ok(graph_directory)
+    let query_directory: String = parse_arg_required(&mut args, "Query Directory")?;
+    Ok((graph_directory, query_directory))
 }
 
 fn retrieve_departure_and_travel_time(graph: &TDGraph) -> (Vec<Vec<Timestamp>>, Vec<Vec<Weight>>) {
