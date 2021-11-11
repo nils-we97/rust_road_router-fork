@@ -255,6 +255,21 @@ fn extract_interval_minima(weights: &Vec<Vec<TTFPoint>>, num_intervals: u32) -> 
             let mut interval_min = vec![INFINITY; num_intervals as usize];
             let mut bucket_idx = 0;
 
+            // deal with constant functions
+            let ttf = if ttf.last().unwrap().at.fuzzy_lt(Timestamp::new(86400.0)) {
+                debug_assert_eq!(ttf.len(), 1, "Expected constant function, got: {:#?}", &ttf);
+                let val = ttf.first().unwrap().val;
+                vec![
+                    TTFPoint { at: Timestamp::ZERO, val },
+                    TTFPoint {
+                        at: Timestamp::new(86400.0),
+                        val,
+                    },
+                ]
+            } else {
+                ttf.clone()
+            };
+
             debug_assert!(
                 ttf.last().unwrap().at.fuzzy_eq(Timestamp::new(86400.0)),
                 "last value: {}",
@@ -273,7 +288,7 @@ fn extract_interval_minima(weights: &Vec<Vec<TTFPoint>>, num_intervals: u32) -> 
             });
 
             // also collect values at interval borders
-            let plf = PeriodicPiecewiseLinearFunction::new(ttf);
+            let plf = PeriodicPiecewiseLinearFunction::new(&ttf);
             interval_min.iter_mut().enumerate().for_each(|(idx, val)| {
                 let ts = convert_timestamp_u32_to_f64((idx as u32) * interval_length);
                 let ts_next = convert_timestamp_u32_to_f64((idx as u32 + 1) * interval_length);
