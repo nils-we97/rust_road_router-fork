@@ -1,6 +1,9 @@
+pub mod label;
+
 use crate::dijkstra::elimination_tree::multi_level_buckets::customized::CustomizedMultiLevels;
 use crate::dijkstra::elimination_tree::multi_level_buckets::MultiLevelEliminationTreeWalk;
 use crate::dijkstra::potentials::cch::custom_cch_pot::CCHLowerUpperPotential;
+use crate::dijkstra::potentials::multi_level_interval_potential::label::MultiLevelBucketLabel;
 use crate::dijkstra::potentials::TDPotential;
 use crate::graph::MAX_BUCKETS;
 use rust_road_router::algo::customizable_contraction_hierarchy::{CCH, CCHT};
@@ -17,7 +20,7 @@ pub struct CCHMultiLevelIntervalPotential<'a> {
     potentials: TimestampedVector<Vec<Weight>>,
     forward_cch_graph: UnweightedFirstOutGraph<&'a [EdgeId], &'a [NodeId]>,
     forward_cch_weights: &'a Vec<Vec<Weight>>,
-    backward_distances: TimestampedVector<Vec<Weight>>,
+    backward_distances: TimestampedVector<MultiLevelBucketLabel>,
     backward_cch_graph: UnweightedFirstOutGraph<&'a [EdgeId], &'a [NodeId]>,
     backward_cch_weights: &'a Vec<Vec<Weight>>,
     forward_potential: CCHLowerUpperPotential<'a, CCH>,
@@ -29,7 +32,7 @@ pub struct CCHMultiLevelIntervalPotential<'a> {
 }
 
 impl<'a> CCHMultiLevelIntervalPotential<'a> {
-    pub fn new_forward(customized: &'a CustomizedMultiLevels<'a>) -> Self {
+    pub fn new_forward(customized: &'a CustomizedMultiLevels<'a>, num_levels: usize) -> Self {
         let (forward_cch_graph, forward_cch_weights) = customized.forward_graph();
         let (backward_cch_graph, backward_cch_weights) = customized.backward_graph();
         let n = forward_cch_graph.num_nodes();
@@ -54,7 +57,7 @@ impl<'a> CCHMultiLevelIntervalPotential<'a> {
             forward_potential,
             stack: Vec::new(),
             potentials: TimestampedVector::new(n),
-            backward_distances: TimestampedVector::new(n),
+            backward_distances: TimestampedVector::new_with_default(n, MultiLevelBucketLabel::new(num_levels + 1)),
             num_pot_computations: 0,
             current_metrics: Vec::new(),
             current_intervals: Vec::new(),
@@ -160,7 +163,7 @@ impl<'a> TDPotential for CCHMultiLevelIntervalPotential<'a> {
             // 1. upward search until a node with existing distance to target is found
             // it suffices to check for the lowerbound distance which is always found at index 0
             let mut cur_node = node;
-            while self.potentials[cur_node as usize][0] >= INFINITY {
+            while self.potentials[cur_node as usize].is_empty() {
                 self.num_pot_computations += 1;
                 self.stack.push(cur_node);
                 if let Some(parent) = elimination_tree[cur_node as usize].value() {
@@ -193,7 +196,7 @@ impl<'a> TDPotential for CCHMultiLevelIntervalPotential<'a> {
                     });*/
                 }
 
-                self.potentials[current_node as usize] = distances.clone();
+                self.potentials[current_node as usize] = distances.data.clone();
             }
 
             // 3. retrieve the value within the most-suited interval

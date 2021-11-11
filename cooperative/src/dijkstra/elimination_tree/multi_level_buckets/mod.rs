@@ -1,3 +1,4 @@
+use crate::dijkstra::potentials::multi_level_interval_potential::label::MultiLevelBucketLabel;
 use rust_road_router::datastr::graph::{EdgeId, EdgeIdT, LinkIterable, NodeId, NodeIdT, UnweightedFirstOutGraph, Weight};
 use rust_road_router::datastr::timestamped_vector::TimestampedVector;
 use rust_road_router::util::in_range_option::InRangeOption;
@@ -11,7 +12,7 @@ pub struct MultiLevelEliminationTreeWalk<'a> {
     graph: &'a UnweightedFirstOutGraph<&'a [EdgeId], &'a [NodeId]>,
     weights: &'a Vec<Vec<Weight>>,
     used_metrics: &'a Vec<usize>,
-    distances: &'a mut TimestampedVector<Vec<Weight>>,
+    distances: &'a mut TimestampedVector<MultiLevelBucketLabel>,
     elimination_tree: &'a [InRangeOption<NodeId>],
     next: Option<NodeId>,
 }
@@ -22,12 +23,12 @@ impl<'a> MultiLevelEliminationTreeWalk<'a> {
         weights: &'a Vec<Vec<Weight>>,
         used_metrics: &'a Vec<usize>,
         elimination_tree: &'a [InRangeOption<NodeId>],
-        distances: &'a mut TimestampedVector<Vec<Weight>>,
+        distances: &'a mut TimestampedVector<MultiLevelBucketLabel>,
         from: NodeId,
     ) -> Self {
         // reset distances
         distances.reset();
-        distances[from as usize] = vec![0; used_metrics.len()];
+        distances[from as usize].set_all(0);
 
         Self {
             graph,
@@ -78,6 +79,6 @@ impl<'a> MultiLevelEliminationTreeWalk<'a> {
     }
 
     pub fn tentative_distance(&self, node: NodeId) -> &Vec<Weight> {
-        &self.distances[node as usize]
+        &self.distances[node as usize].data
     }
 }

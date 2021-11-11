@@ -59,7 +59,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         &vec![86_400_000 / 12, 86_400_000 / 48],
         graph.num_arcs() as u64 * 10,
     );
-    let multi_level_bucket_pot = CCHMultiLevelIntervalPotential::new_forward(&customized_multi_levels);
+    let multi_level_bucket_pot = CCHMultiLevelIntervalPotential::new_forward(&customized_multi_levels, 2);
     let mut server = CapacityServer::new_with_potential(graph, multi_level_bucket_pot);
 
     execute_queries(&mut server, &queries, "Multi-Level-Bucket Potential");

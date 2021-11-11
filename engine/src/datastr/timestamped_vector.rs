@@ -61,6 +61,15 @@ impl<T: Reset> TimestampedVector<T> {
         }
     }
 
+    pub fn new_with_default(size: usize, default: T) -> TimestampedVector<T> {
+        TimestampedVector {
+            data: vec![default.clone(); size],
+            current: 0,
+            timestamps: vec![0; size],
+            default,
+        }
+    }
+
     /// Reset all elements to the default.
     /// Amortized O(1).
     pub fn reset(&mut self) {
