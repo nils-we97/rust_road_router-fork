@@ -8,7 +8,8 @@ use rust_road_router::datastr::graph::{Link, LinkIterable, NodeId};
 
 use crate::experiments::queries::departure_distributions::DepartureDistribution;
 
-const INV_AVERAGE_TRIP_LENGTH: f64 = 0.000025; // 1 / 40000, avg trip length is ~40 km
+//const INV_AVERAGE_TRIP_LENGTH: f64 = 0.000025; // 1 / 40000, avg trip length is ~40 km
+const INV_AVERAGE_TRIP_DURATION: f64 = 1.0 / (3_600_000.0); // avg trip duration: 1 hour
 
 pub fn generate_random_geometric_queries<G: LinkIterable<Link>, D: DepartureDistribution>(
     graph: &G,
@@ -16,7 +17,7 @@ pub fn generate_random_geometric_queries<G: LinkIterable<Link>, D: DepartureDist
     mut departure_distribution: D,
 ) -> Vec<TDQuery<Timestamp>> {
     let mut rng = thread_rng();
-    let distribution = Geometric::new(INV_AVERAGE_TRIP_LENGTH).unwrap();
+    let distribution = Geometric::new(INV_AVERAGE_TRIP_DURATION).unwrap();
 
     // init dijkstra context
     let mut data = DijkstraData::new(graph.num_nodes());
