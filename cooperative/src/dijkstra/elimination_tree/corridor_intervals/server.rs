@@ -35,6 +35,10 @@ impl<'a, CCH: CCHT> CorridorEliminationTreeServer<'a, CCH> {
         }
     }
 
+    pub fn backward_distances(&self) -> &TimestampedVector<(Weight, Weight)> {
+        &self.bw_distances
+    }
+
     pub fn query(&mut self, from: NodeId, to: NodeId) -> Option<(Weight, Weight)> {
         // get ranks
         let from = self.cch.node_order().rank(from);
@@ -64,31 +68,31 @@ impl<'a, CCH: CCHT> CorridorEliminationTreeServer<'a, CCH> {
         loop {
             match (fw_walk.peek(), bw_walk.peek()) {
                 (Some(fw_node), Some(bw_node)) if fw_node < bw_node => {
-                    // TODO consider using bound checks here as well
-                    fw_walk.next();
+                    if fw_walk.tentative_distance(fw_node).0 < tentative_distance.1 {
+                        fw_walk.next();
+                    } else {
+                        fw_walk.skip_next();
+                    }
                 }
                 (Some(fw_node), Some(bw_node)) if fw_node > bw_node => {
-                    // TODO consider using bound checks here as well
-                    bw_walk.next();
+                    if bw_walk.tentative_distance(bw_node).0 < tentative_distance.1 {
+                        bw_walk.next();
+                    } else {
+                        bw_walk.skip_next();
+                    }
                 }
                 (Some(node), Some(_node)) => {
                     debug_assert_eq!(node, _node);
 
-                    // nodes can be skipped if both the upper and lower distance is beaten by the global tentative distance
-                    let fw_tent = fw_walk.tentative_distance(node);
-                    if fw_tent.0 < tentative_distance.0 || fw_tent.1 < tentative_distance.1 {
-                        // either the lower or the upper bounds can still be improved
-                        // therefore, relax the outgoing edges of the next vertex
+                    // nodes can be skipped if the lower distance already exceeds the tenative upper bound
+                    if fw_walk.tentative_distance(node).0 < tentative_distance.1 {
                         fw_walk.next();
                     } else {
-                        // if both lower and upper bound distance cannot be improved anymore,
-                        // the forward search can be aborted
                         fw_walk.skip_next();
                     }
 
                     // analogous for backward search
-                    let bw_tent = bw_walk.tentative_distance(node);
-                    if bw_tent.0 < tentative_distance.0 || bw_tent.1 < tentative_distance.1 {
+                    if bw_walk.tentative_distance(node).0 < tentative_distance.1 {
                         bw_walk.next();
                     } else {
                         bw_walk.skip_next();
