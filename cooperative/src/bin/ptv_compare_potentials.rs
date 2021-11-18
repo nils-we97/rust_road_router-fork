@@ -57,10 +57,11 @@ fn main() -> Result<(), Box<dyn Error>> {
     execute_queries(&mut server, &queries, "CCH Lowerbound Potential");
     let (graph, cch_lowerbound_pot) = server.decompose();
     drop(cch_lowerbound_pot);
+    drop(cch_pot_data);
 
     // ----------------------------------------------------------------------------- //
     // 2nd potential: Corridor-Lowerbound Potential
-    let customized_corridor_lowerbound = CustomizedApproximatedPeriodicTTF::new(&cch, &departure, &travel_time, 200, 48);
+    let customized_corridor_lowerbound = CustomizedApproximatedPeriodicTTF::new(&cch, &departure, &travel_time, 150, 72);
     let corridor_lowerbound_pot = CorridorLowerboundPotential::new(&customized_corridor_lowerbound);
     let mut server = PTVQueryServer::new_with_potential(graph, corridor_lowerbound_pot);
 

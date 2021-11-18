@@ -55,7 +55,7 @@ impl<'a> TDPotential for CorridorLowerboundPotential<'a> {
     fn init(&mut self, source: u32, target: u32, timestamp: u32) {
         // 1. use interval query to determine the corridor
         self.forward_potential.init(source, target, timestamp);
-        let (target_dist_lower, target_dist_upper) = self.forward_potential.potential_bounds(source).unwrap();
+        let (target_dist_lower, target_dist_upper) = self.forward_potential.potential_bounds(source).unwrap_or((timestamp, timestamp));
 
         //println!("Interval query bounds: {} - {}", target_dist_lower, target_dist_upper);
         self.query_start = timestamp;

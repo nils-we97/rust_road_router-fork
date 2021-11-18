@@ -148,6 +148,9 @@ fn customize_basic(cch: &CCH, upward_weights: &mut Vec<Vec<TTFPoint>>, downward_
             DOWNWARD_WORKSPACE.with(|node_incoming_weights| {
                 let mut node_incoming_weights = node_incoming_weights.borrow_mut();
 
+                let mut merge_buffer_1 = Vec::new();
+                let mut merge_buffer_2 = Vec::new();
+
                 for current_node in nodes {
                     let current_node = current_node as NodeId;
                     let mut edges = cch.neighbor_edge_indices_usize(current_node);
@@ -193,7 +196,7 @@ fn customize_basic(cch: &CCH, upward_weights: &mut Vec<Vec<TTFPoint>>, downward_
 
                             *relax = if merge_result.len() > approximation_threshold {
                                 PeriodicPiecewiseLinearFunction::new(&merge_result)
-                                    .lower_bound_ttf(&mut Vec::new(), &mut Vec::new())
+                                    .lower_bound_ttf(&mut merge_buffer_1, &mut merge_buffer_2)
                                     .to_vec()
                             } else {
                                 merge_result.to_vec()
@@ -208,7 +211,7 @@ fn customize_basic(cch: &CCH, upward_weights: &mut Vec<Vec<TTFPoint>>, downward_
 
                             *relax = if merge_result.len() > approximation_threshold {
                                 PeriodicPiecewiseLinearFunction::new(&merge_result)
-                                    .lower_bound_ttf(&mut Vec::new(), &mut Vec::new())
+                                    .lower_bound_ttf(&mut merge_buffer_1, &mut merge_buffer_2)
                                     .to_vec()
                             } else {
                                 merge_result.to_vec()
