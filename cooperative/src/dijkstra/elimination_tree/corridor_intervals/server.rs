@@ -35,8 +35,8 @@ impl<'a, CCH: CCHT> CorridorEliminationTreeServer<'a, CCH> {
         }
     }
 
-    pub fn backward_distances(&self) -> &TimestampedVector<(Weight, Weight)> {
-        &self.bw_distances
+    pub fn forward_distances(&self) -> &TimestampedVector<(Weight, Weight)> {
+        &self.fw_distances
     }
 
     pub fn query(&mut self, from: NodeId, to: NodeId) -> Option<(Weight, Weight)> {

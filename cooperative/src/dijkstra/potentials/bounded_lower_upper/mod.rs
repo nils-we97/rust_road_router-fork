@@ -12,7 +12,9 @@ pub struct BoundedLowerUpperPotential<'a, CCH> {
     potentials: TimestampedVector<InRangeOption<(Weight, Weight)>>,
     forward_cch_graph: UnweightedFirstOutGraph<&'a [EdgeId], &'a [NodeId]>,
     forward_cch_weights: Vec<(Weight, Weight)>,
-    backward_distances: TimestampedVector<(Weight, Weight)>,
+    backward_cch_graph: UnweightedFirstOutGraph<&'a [EdgeId], &'a [NodeId]>,
+    backward_cch_weights: Vec<(Weight, Weight)>,
+    forward_distances: TimestampedVector<(Weight, Weight)>,
     num_pot_computations: usize,
     target_bounds: Option<(Weight, Weight)>,
 }
@@ -27,8 +29,8 @@ impl<'a, CCH: CCHT> BoundedLowerUpperPotential<'a, CCH> {
             cch,
             forward_cch_graph.clone(),
             forward_cch_weights.clone(),
-            backward_cch_graph,
-            backward_cch_weights,
+            backward_cch_graph.clone(),
+            backward_cch_weights.clone(),
         );
 
         Self {
@@ -38,7 +40,9 @@ impl<'a, CCH: CCHT> BoundedLowerUpperPotential<'a, CCH> {
             potentials: TimestampedVector::new(n),
             forward_cch_graph,
             forward_cch_weights,
-            backward_distances: TimestampedVector::new(n),
+            backward_cch_graph,
+            backward_cch_weights,
+            forward_distances: TimestampedVector::new(n),
             num_pot_computations: 0,
             target_bounds: None,
         }
@@ -46,24 +50,22 @@ impl<'a, CCH: CCHT> BoundedLowerUpperPotential<'a, CCH> {
 
     pub fn init(&mut self, source: u32, target: u32) -> Option<(Weight, Weight)> {
         self.potentials.reset();
-        self.backward_distances.reset();
+        self.forward_distances.reset();
         self.num_pot_computations = 0;
 
         // 1. interval query to determine bounds at target node
         self.target_bounds = self.elimination_tree_server.query(source, target);
 
         if self.target_bounds.is_some() {
-            // 2. initialize backward-upward search space with distances from interval query
-            let target = self.cch.node_order().rank(target);
-            let query_backward_distances = self.elimination_tree_server.backward_distances();
-
-            self.backward_distances[target as usize] = (0, 0);
+            // 2. initialize forward-upward search space with distances from interval query
+            let source = self.cch.node_order().rank(source);
+            let query_forward_distances = self.elimination_tree_server.forward_distances();
 
             // updating the distances is straightforward and we do not have to relax any edges!
-            let mut cur_node = Some(target);
+            let mut cur_node = Some(source);
             while let Some(node) = cur_node {
                 cur_node = self.cch.elimination_tree()[node as usize].value();
-                self.backward_distances[node as usize] = query_backward_distances[node as usize];
+                self.forward_distances[node as usize] = query_forward_distances[node as usize];
             }
         }
 
@@ -86,10 +88,10 @@ impl<'a, CCH: CCHT> BoundedLowerUpperPotential<'a, CCH> {
 
             // propagate the result back to the original start node, do some additional pruning
             while let Some(current_node) = self.stack.pop() {
-                let (mut dist_lower, mut dist_upper) = self.backward_distances[current_node as usize];
+                let (mut dist_lower, mut dist_upper) = self.forward_distances[current_node as usize];
 
-                for (NodeIdT(next_node), EdgeIdT(edge)) in LinkIterable::<(NodeIdT, EdgeIdT)>::link_iter(&self.forward_cch_graph, current_node) {
-                    let (edge_weight_lower, edge_weight_upper) = self.forward_cch_weights[edge as usize];
+                for (NodeIdT(next_node), EdgeIdT(edge)) in LinkIterable::<(NodeIdT, EdgeIdT)>::link_iter(&self.backward_cch_graph, current_node) {
+                    let (edge_weight_lower, edge_weight_upper) = self.backward_cch_weights[edge as usize];
                     let (next_potential_lower, next_potential_upper) = self.potentials[next_node as usize].value().unwrap();
 
                     dist_lower = min(dist_lower, edge_weight_lower + next_potential_lower);
@@ -104,6 +106,7 @@ impl<'a, CCH: CCHT> BoundedLowerUpperPotential<'a, CCH> {
                 };
 
                 self.potentials[current_node as usize] = InRangeOption::new(Some((pot_lower, pot_upper)));
+                //self.potentials[current_node as usize] = InRangeOption::new(Some((0, target_upper)));
             }
 
             self.potentials[rank as usize].value().filter(|&(lower, _)| lower < INFINITY)

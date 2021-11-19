@@ -82,39 +82,32 @@ impl<'a> TDPotential for CorridorLowerboundPotential<'a> {
                     let edge_id = edge as usize;
 
                     if let Some((node_lower, node_upper)) = self.forward_potential.potential_bounds(next_node) {
-                        if target_dist_upper >= node_lower {
-                            // collect start & end interval of current node
-                            let start = if target_dist_lower > node_upper {
-                                timestamp + target_dist_lower - node_upper
-                            } else {
-                                timestamp
-                            };
+                        debug_assert!(target_dist_upper >= node_lower);
 
-                            let start_idx = ((start % MAX_BUCKETS) / self.interval_length) as usize;
-                            let end_idx = (((timestamp + target_dist_upper - node_lower) % MAX_BUCKETS) / self.interval_length) as usize;
+                        let start_idx = (((timestamp + node_lower) % MAX_BUCKETS) / self.interval_length) as usize;
+                        let end_idx = (((timestamp + node_upper) % MAX_BUCKETS) / self.interval_length) as usize;
 
-                            let edge_weight = if start_idx <= end_idx {
-                                self.backward_cch_weights[edge_id][start_idx..=end_idx].iter().min().cloned().unwrap()
-                            } else {
-                                min(
-                                    self.backward_cch_weights[edge_id][start_idx..].iter().min().cloned().unwrap(),
-                                    self.backward_cch_weights[edge_id][..=end_idx].iter().min().cloned().unwrap(),
-                                )
-                            };
+                        let edge_weight = if start_idx <= end_idx {
+                            self.backward_cch_weights[edge_id][start_idx..=end_idx].iter().min().cloned().unwrap()
+                        } else {
+                            min(
+                                self.backward_cch_weights[edge_id][start_idx..].iter().min().cloned().unwrap(),
+                                self.backward_cch_weights[edge_id][..=end_idx].iter().min().cloned().unwrap(),
+                            )
+                        };
 
-                            // update distances
-                            self.backward_distances[next_node as usize] = min(
-                                self.backward_distances[next_node as usize],
-                                self.backward_distances[current_node as usize] + edge_weight,
-                            );
-                        }
+                        // update distances
+                        self.backward_distances[next_node as usize] = min(
+                            self.backward_distances[next_node as usize],
+                            self.backward_distances[current_node as usize] + edge_weight,
+                        );
                     }
                 }
             }
         }
     }
 
-    fn potential(&mut self, node: u32, _timestamp: u32) -> Option<u32> {
+    fn potential(&mut self, node: u32, timestamp: u32) -> Option<u32> {
         if let Some((target_dist_lower, target_dist_upper)) = self.target_dist_bounds {
             let node = self.customized.cch.node_order.rank(node);
             let elimination_tree = self.customized.cch.elimination_tree();
@@ -135,14 +128,8 @@ impl<'a> TDPotential for CorridorLowerboundPotential<'a> {
             while let Some(current_node) = self.stack.pop() {
                 // check if the current node is feasible, i.e. is able to reach the target within the valid corridor
                 if let Some((node_lower, node_upper)) = self.forward_potential.potential_bounds(current_node) {
-                    let start = if target_dist_lower > node_upper {
-                        self.query_start + target_dist_lower - node_upper
-                    } else {
-                        self.query_start
-                    };
-
-                    let start_interval = ((start % MAX_BUCKETS) / self.interval_length) as usize;
-                    let end_interval = (((self.query_start + target_dist_upper - node_lower) % MAX_BUCKETS) / self.interval_length) as usize;
+                    let start_interval = (((self.query_start + node_lower) % MAX_BUCKETS) / self.interval_length) as usize;
+                    let end_interval = (((self.query_start + node_upper) % MAX_BUCKETS) / self.interval_length) as usize;
 
                     for (NodeIdT(next_node), EdgeIdT(edge)) in LinkIterable::<(NodeIdT, EdgeIdT)>::link_iter(&self.forward_cch_graph, current_node) {
                         // even in the forward direction, we're still performing backward linking,
