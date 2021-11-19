@@ -1,9 +1,10 @@
+use crate::dijkstra::elimination_tree::approximated_periodic_ttf::customized_catchup::customize_internal;
 use crate::dijkstra::elimination_tree::parallelization::SeparatorBasedParallelCustomization;
 use crate::dijkstra::potentials::{convert_timestamp_f64_to_u32, convert_timestamp_u32_to_f64};
 use crate::graph::MAX_BUCKETS;
 use rayon::prelude::*;
 use rust_road_router::algo::customizable_contraction_hierarchy::{CCH, CCHT};
-use rust_road_router::datastr::graph::floating_time_dependent::{FlWeight, PeriodicPiecewiseLinearFunction, TTFPoint, Timestamp, PLF};
+use rust_road_router::datastr::graph::floating_time_dependent::{FlWeight, PeriodicPiecewiseLinearFunction, TDGraph, TTFPoint, Timestamp, PLF};
 use rust_road_router::datastr::graph::{EdgeId, EdgeIdT, Graph, LinkIterable, NodeId, NodeIdT, Reversed, UnweightedFirstOutGraph, INFINITY};
 use rust_road_router::report::{report_time, report_time_with_key};
 use scoped_tls::scoped_thread_local;
@@ -57,7 +58,27 @@ impl<'a> CustomizedApproximatedPeriodicTTF<'a> {
         customize_basic(cch, &mut upward_weights, &mut downward_weights, approximation_threshold);
 
         // 5. adjust weights back to integer values
-        // todo consider some more advances preprocessing, e.g. interval minima ds from algorithm engineering
+        let upward_intervals = extract_interval_minima(&upward_weights, num_intervals);
+        let downward_intervals = extract_interval_minima(&downward_weights, num_intervals);
+
+        let upward_bounds = extract_bounds(&upward_weights);
+        let downward_bounds = extract_bounds(&downward_weights);
+
+        Self {
+            cch,
+            upward_intervals,
+            downward_intervals,
+            upward_bounds,
+            downward_bounds,
+            num_intervals,
+        }
+    }
+
+    pub fn new_from_ptv(cch: &'a CCH, graph: &'a TDGraph, _approximation_threshold: usize, num_intervals: u32) -> Self {
+        debug_assert!(MAX_BUCKETS % num_intervals == 0);
+
+        let (upward_weights, downward_weights) = customize_internal(cch, graph);
+
         let upward_intervals = extract_interval_minima(&upward_weights, num_intervals);
         let downward_intervals = extract_interval_minima(&downward_weights, num_intervals);
 
@@ -191,31 +212,30 @@ fn customize_basic(cch: &CCH, upward_weights: &mut Vec<Vec<TTFPoint>>, downward_
                             // relax lower triangle: check if path (current_node -> low_node -> node)
                             // is faster than current weight along (current_node -> node)
                             let linked = PeriodicPiecewiseLinearFunction::new(first_down_weight).link(&PeriodicPiecewiseLinearFunction::new(upward_weight));
-                            let (merge_result, _) =
+                            let (mut merge_result, _) =
                                 PeriodicPiecewiseLinearFunction::new(relax).merge(&PeriodicPiecewiseLinearFunction::new(&linked), &mut Vec::new());
 
-                            *relax = if merge_result.len() > approximation_threshold {
-                                PeriodicPiecewiseLinearFunction::new(&merge_result)
-                                    .lower_bound_ttf(&mut merge_buffer_1, &mut merge_buffer_2)
-                                    .to_vec()
-                            } else {
-                                merge_result.to_vec()
-                            };
+                            // approximate as long as there are too many breakpoints
+                            let mut count = 0;
+                            while merge_result.len() > approximation_threshold && count < 5 {
+                                count += 1;
+                                merge_result = PeriodicPiecewiseLinearFunction::new(&merge_result).lower_bound_ttf(&mut merge_buffer_1, &mut merge_buffer_2);
+                            }
+                            *relax = merge_result.to_vec();
 
                             // downward weights: other way around, as we're switching the edge direction! first down to the lower node, then upward to the current node
                             let relax = unsafe { node_incoming_weights.get_unchecked_mut(node as usize) };
                             let linked = PeriodicPiecewiseLinearFunction::new(downward_weight).link(&PeriodicPiecewiseLinearFunction::new(first_up_weight));
 
-                            let (merge_result, _) =
+                            let (mut merge_result, _) =
                                 PeriodicPiecewiseLinearFunction::new(relax).merge(&PeriodicPiecewiseLinearFunction::new(&linked), &mut Vec::new());
 
-                            *relax = if merge_result.len() > approximation_threshold {
-                                PeriodicPiecewiseLinearFunction::new(&merge_result)
-                                    .lower_bound_ttf(&mut merge_buffer_1, &mut merge_buffer_2)
-                                    .to_vec()
-                            } else {
-                                merge_result.to_vec()
-                            };
+                            count = 0;
+                            while merge_result.len() > approximation_threshold && count < 5 {
+                                count += 1;
+                                merge_result = PeriodicPiecewiseLinearFunction::new(&merge_result).lower_bound_ttf(&mut merge_buffer_1, &mut merge_buffer_2);
+                            }
+                            *relax = merge_result.to_vec();
                         }
                     }
 

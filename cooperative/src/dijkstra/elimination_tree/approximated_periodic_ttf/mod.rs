@@ -4,6 +4,7 @@ use rust_road_router::util::in_range_option::InRangeOption;
 use std::cmp::min;
 
 pub mod customized;
+pub mod customized_catchup;
 pub mod interval_minima;
 
 #[derive(Debug)]
