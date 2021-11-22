@@ -62,7 +62,7 @@ impl<'a> TDPotential for CorridorLowerboundPotential<'a> {
         // 1. use interval query to determine the corridor at target
         self.target_dist_bounds = self.forward_potential.init(source, target);
 
-        if let Some((target_dist_lower, target_dist_upper)) = self.target_dist_bounds {
+        if let Some((_, target_dist_upper)) = self.target_dist_bounds {
             // 2. initialize custom elimination tree
             let target = self.customized.cch.node_order().rank(target);
             self.potentials.reset();
@@ -107,8 +107,8 @@ impl<'a> TDPotential for CorridorLowerboundPotential<'a> {
         }
     }
 
-    fn potential(&mut self, node: u32, timestamp: u32) -> Option<u32> {
-        if let Some((target_dist_lower, target_dist_upper)) = self.target_dist_bounds {
+    fn potential(&mut self, node: u32, _timestamp: u32) -> Option<u32> {
+        if self.target_dist_bounds.is_some() {
             let node = self.customized.cch.node_order.rank(node);
             let elimination_tree = self.customized.cch.elimination_tree();
 

@@ -61,7 +61,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     // ----------------------------------------------------------------------------- //
     // 2nd potential: Corridor-Lowerbound Potential
-    let customized_corridor_lowerbound = CustomizedApproximatedPeriodicTTF::new(&cch, &departure, &travel_time, 150, 72);
+    let customized_corridor_lowerbound = CustomizedApproximatedPeriodicTTF::new(&cch, &departure, &travel_time, 1000, 100);
     let corridor_lowerbound_pot = CorridorLowerboundPotential::new(&customized_corridor_lowerbound);
     let mut server = PTVQueryServer::new_with_potential(graph, corridor_lowerbound_pot);
 
@@ -71,37 +71,12 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     // ----------------------------------------------------------------------------- //
     // 3rd potential: Multi-Level-Bucket Potential
-    /*let thresholds = [80_000, 120_000, 150_000];
-    let interval_lengths = [
-        vec![86_400_000 / 4, 86_400_000 / 12],
-        vec![86_400_000 / 6, 86_400_000 / 12],
-        vec![86_400_000 / 6, 86_400_000 / 18],
-        vec![86_400_000 / 12],
-        vec![86_400_000 / 12, 86_400_000 / 24],
-        vec![86_400_000 / 12, 86_400_000 / 48],
-        vec![86_400_000 / 24],
-        vec![86_400_000 / 24, 86_400_000 / 48],
-    ];
-
-    for threshold in thresholds {
-        for (idx, interval_len) in interval_lengths.iter().enumerate() {
-            let customized_multi_levels = CustomizedMultiLevels::new(&cch, &departure, &travel_time, interval_len, graph.num_arcs() as u64 * threshold);
-            let multi_level_bucket_pot = CCHMultiLevelIntervalPotential::new_forward(&customized_multi_levels, interval_len.len());
-            let mut server = PTVQueryServer::new_with_potential(graph, multi_level_bucket_pot);
-
-            let pot_name = format!("Multi Level Bucket Pot (threshold: {}, interval idx: {})", threshold, idx);
-            execute_queries(&mut server, &queries, &pot_name);
-
-            graph = server.decompose().0;
-        }
-    }*/
-
     let customized_multi_levels = CustomizedMultiLevels::new(
         &cch,
         &departure,
         &travel_time,
-        &vec![86_400_000 / 4, 86_400_000 / 16],
-        graph.num_arcs() as u64 * 120000,
+        &vec![86_400_000 / 12, 86_400_000 / 48],
+        graph.num_arcs() as u64 * 200000,
     );
     let multi_level_bucket_pot = CCHMultiLevelIntervalPotential::new_forward(&customized_multi_levels, 2);
     let mut server = PTVQueryServer::new_with_potential(graph, multi_level_bucket_pot);

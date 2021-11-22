@@ -39,6 +39,10 @@ impl<'a, CCH: CCHT> CorridorEliminationTreeServer<'a, CCH> {
         &self.fw_distances
     }
 
+    pub fn backward_distances(&self) -> &TimestampedVector<(Weight, Weight)> {
+        &self.bw_distances
+    }
+
     pub fn query(&mut self, from: NodeId, to: NodeId) -> Option<(Weight, Weight)> {
         // get ranks
         let from = self.cch.node_order().rank(from);

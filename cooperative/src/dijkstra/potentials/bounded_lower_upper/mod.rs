@@ -10,8 +10,6 @@ pub struct BoundedLowerUpperPotential<'a, CCH> {
     elimination_tree_server: CorridorEliminationTreeServer<'a, CCH>,
     stack: Vec<NodeId>,
     potentials: TimestampedVector<InRangeOption<(Weight, Weight)>>,
-    forward_cch_graph: UnweightedFirstOutGraph<&'a [EdgeId], &'a [NodeId]>,
-    forward_cch_weights: Vec<(Weight, Weight)>,
     backward_cch_graph: UnweightedFirstOutGraph<&'a [EdgeId], &'a [NodeId]>,
     backward_cch_weights: Vec<(Weight, Weight)>,
     forward_distances: TimestampedVector<(Weight, Weight)>,
@@ -38,8 +36,6 @@ impl<'a, CCH: CCHT> BoundedLowerUpperPotential<'a, CCH> {
             cch,
             stack: Vec::new(),
             potentials: TimestampedVector::new(n),
-            forward_cch_graph,
-            forward_cch_weights,
             backward_cch_graph,
             backward_cch_weights,
             forward_distances: TimestampedVector::new(n),
@@ -99,14 +95,13 @@ impl<'a, CCH: CCHT> BoundedLowerUpperPotential<'a, CCH> {
                 }
 
                 // pruning: ignore node if the lower bound already exceeds the known upper bound to the target
-                let (pot_lower, pot_upper) = if dist_lower < target_upper {
+                let (pot_lower, pot_upper) = if dist_lower <= target_upper {
                     (dist_lower, dist_upper)
                 } else {
                     (INFINITY, INFINITY)
                 };
 
                 self.potentials[current_node as usize] = InRangeOption::new(Some((pot_lower, pot_upper)));
-                //self.potentials[current_node as usize] = InRangeOption::new(Some((0, target_upper)));
             }
 
             self.potentials[rank as usize].value().filter(|&(lower, _)| lower < INFINITY)
