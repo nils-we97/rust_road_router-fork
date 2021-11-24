@@ -5,12 +5,13 @@ use crate::graph::MAX_BUCKETS;
 use rust_road_router::algo::customizable_contraction_hierarchy::{CCH, CCHT};
 use rust_road_router::datastr::graph::{EdgeId, EdgeIdT, Graph, LinkIterable, NodeId, NodeIdT, UnweightedFirstOutGraph, Weight, INFINITY};
 use rust_road_router::datastr::timestamped_vector::TimestampedVector;
+use rust_road_router::util::in_range_option::InRangeOption;
 use std::cmp::min;
 
 pub struct CorridorLowerboundPotential<'a> {
     customized: &'a CustomizedApproximatedPeriodicTTF<'a>,
     stack: Vec<NodeId>,
-    potentials: TimestampedVector<Weight>,
+    potentials: TimestampedVector<InRangeOption<Weight>>,
     forward_cch_graph: UnweightedFirstOutGraph<&'a [EdgeId], &'a [NodeId]>,
     forward_cch_weights: &'a Vec<Vec<Weight>>,
     backward_distances: TimestampedVector<Weight>,
@@ -87,14 +88,27 @@ impl<'a> TDPotential for CorridorLowerboundPotential<'a> {
                         let start_idx = (((timestamp + node_lower) % MAX_BUCKETS) / self.interval_length) as usize;
                         let end_idx = (((timestamp + node_upper) % MAX_BUCKETS) / self.interval_length) as usize;
 
-                        let edge_weight = if start_idx <= end_idx {
+                        let mut idx = start_idx;
+                        let mut edge_weight = self.backward_cch_weights[edge_id][idx];
+                        while idx != end_idx {
+                            idx += 1;
+                            if idx == self.customized.num_intervals as usize {
+                                idx = 0;
+                            }
+
+                            if self.backward_cch_weights[edge_id][idx] < edge_weight {
+                                edge_weight = self.backward_cch_weights[edge_id][idx];
+                            }
+                        }
+
+                        /*let edge_weight = if start_idx <= end_idx {
                             self.backward_cch_weights[edge_id][start_idx..=end_idx].iter().min().cloned().unwrap()
                         } else {
                             min(
                                 self.backward_cch_weights[edge_id][start_idx..].iter().min().cloned().unwrap(),
                                 self.backward_cch_weights[edge_id][..=end_idx].iter().min().cloned().unwrap(),
                             )
-                        };
+                        };*/
 
                         // update distances
                         self.backward_distances[next_node as usize] = min(
@@ -109,12 +123,12 @@ impl<'a> TDPotential for CorridorLowerboundPotential<'a> {
 
     fn potential(&mut self, node: u32, _timestamp: u32) -> Option<u32> {
         if self.target_dist_bounds.is_some() {
-            let node = self.customized.cch.node_order.rank(node);
+            let node = self.customized.cch.node_order().rank(node);
             let elimination_tree = self.customized.cch.elimination_tree();
 
             // 1. upward search until a node with existing distance to target is found
             let mut cur_node = node;
-            while self.potentials[cur_node as usize] == INFINITY {
+            while self.potentials[cur_node as usize].value().is_none() {
                 self.num_pot_computations += 1;
                 self.stack.push(cur_node);
                 if let Some(parent) = elimination_tree[cur_node as usize].value() {
@@ -135,9 +149,23 @@ impl<'a> TDPotential for CorridorLowerboundPotential<'a> {
                         // even in the forward direction, we're still performing backward linking,
                         // current edges are all starting at `current_node`
                         // -> take the same edge interval of all outgoing edges as given by the corridor
-
+                        let next_potential = self.potentials[next_node as usize].value().unwrap_or(INFINITY);
                         // cover edge case: intervals span over midnight
-                        let edge_interval_min = if start_interval <= end_interval {
+
+                        let mut idx = start_interval;
+                        let mut edge_weight = self.forward_cch_weights[edge as usize][idx];
+                        while idx != end_interval {
+                            idx += 1;
+                            if idx == self.customized.num_intervals as usize {
+                                idx = 0;
+                            }
+
+                            if self.forward_cch_weights[edge as usize][idx] < edge_weight {
+                                edge_weight = self.forward_cch_weights[edge as usize][idx];
+                            }
+                        }
+
+                        /*let edge_interval_min = if start_interval <= end_interval {
                             self.forward_cch_weights[edge as usize][start_interval..=end_interval]
                                 .iter()
                                 .min()
@@ -148,17 +176,14 @@ impl<'a> TDPotential for CorridorLowerboundPotential<'a> {
                                 self.forward_cch_weights[edge as usize][start_interval..].iter().min().cloned().unwrap(),
                                 self.forward_cch_weights[edge as usize][..=end_interval].iter().min().cloned().unwrap(),
                             )
-                        };
-                        self.backward_distances[current_node as usize] = min(
-                            self.backward_distances[current_node as usize],
-                            edge_interval_min + self.potentials[next_node as usize],
-                        );
+                        };*/
+                        self.backward_distances[current_node as usize] = min(self.backward_distances[current_node as usize], edge_weight + next_potential);
                     }
-                    self.potentials[current_node as usize] = self.backward_distances[current_node as usize];
+                    self.potentials[current_node as usize] = InRangeOption::new(Some(self.backward_distances[current_node as usize]));
                 }
             }
 
-            Some(self.potentials[node as usize]).filter(|&pot| pot < INFINITY)
+            self.potentials[node as usize].value().filter(|&pot| pot < INFINITY)
         } else {
             None
         }

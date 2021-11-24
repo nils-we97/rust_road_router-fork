@@ -159,7 +159,6 @@ impl<'a> TDPotential for CCHMultiLevelIntervalPotential<'a> {
             let elimination_tree = self.customized.cch.elimination_tree();
 
             // 1. upward search until a node with existing distance to target is found
-            // it suffices to check for the lowerbound distance which is always found at index 0
             let mut cur_node = node;
             while !self.context.potentials[cur_node as usize] {
                 self.num_pot_computations += 1;
@@ -218,43 +217,3 @@ impl<'a> TDPotential for CCHMultiLevelIntervalPotential<'a> {
         }
     }
 }
-
-/*
-pub fn potential_bounds(&mut self, node: NodeId) -> Option<(Weight, Weight)> {
-        let node = self.customized.cch.node_order().rank(node);
-
-        // upward search until a node with existing distance to target is found
-        let mut cur_node = node;
-        while self.potentials[cur_node as usize].value().is_none() {
-            self.num_pot_computations += 1;
-            self.stack.push(cur_node);
-            if let Some(parent) = self.customized.cch.elimination_tree()[cur_node as usize].value() {
-                cur_node = parent;
-            } else {
-                break;
-            }
-        }
-
-        // propagate the result back to the original start node
-        while let Some(current_node) = self.stack.pop() {
-            let (mut dist_lower, mut dist_upper) = self.backward_distances[current_node as usize];
-
-            for (NodeIdT(next_node), EdgeIdT(edge)) in LinkIterable::<(NodeIdT, EdgeIdT)>::link_iter(&self.forward_cch_graph, current_node) {
-                let (edge_weight_lower, edge_weight_upper) = self.forward_cch_weights[edge as usize];
-                let (next_potential_lower, next_potential_upper) = self.potentials[next_node as usize].value().unwrap();
-
-                dist_lower = min(dist_lower, edge_weight_lower + next_potential_lower);
-                dist_upper = min(dist_upper, edge_weight_upper + next_potential_upper);
-            }
-
-            self.potentials[current_node as usize] = InRangeOption::new(Some((dist_lower, dist_upper)));
-        }
-
-        let (dist_lower, dist_upper) = self.potentials[node as usize].value().unwrap();
-        if dist_lower < INFINITY && dist_upper < INFINITY {
-            Some((dist_lower, dist_upper))
-        } else {
-            None
-        }
-    }
- */
