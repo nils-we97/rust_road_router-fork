@@ -1,4 +1,5 @@
 use cooperative::dijkstra::elimination_tree::approximated_periodic_ttf::customized::CustomizedApproximatedPeriodicTTF;
+use cooperative::dijkstra::elimination_tree::approximated_periodic_ttf::customized_catchup::convert_to_td_graph;
 use cooperative::dijkstra::elimination_tree::multi_level_buckets::customized::CustomizedMultiLevels;
 use cooperative::dijkstra::potentials::corridor_lowerbound_potential::CorridorLowerboundPotential;
 use cooperative::dijkstra::potentials::multi_level_interval_potential::CCHMultiLevelIntervalPotential;
@@ -61,7 +62,9 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     // ----------------------------------------------------------------------------- //
     // 2nd potential: Corridor-Lowerbound Potential
-    let customized_corridor_lowerbound = CustomizedApproximatedPeriodicTTF::new(&cch, &departure, &travel_time, 1000, 100);
+    //let customized_corridor_lowerbound = CustomizedApproximatedPeriodicTTF::new(&cch, &departure, &travel_time, 1000, 96);
+    let td_graph = convert_to_td_graph(&graph);
+    let customized_corridor_lowerbound = CustomizedApproximatedPeriodicTTF::new_from_ptv(&cch, &td_graph, 96);
     let corridor_lowerbound_pot = CorridorLowerboundPotential::new(&customized_corridor_lowerbound);
     let mut server = PTVQueryServer::new_with_potential(graph, corridor_lowerbound_pot);
 
@@ -75,8 +78,8 @@ fn main() -> Result<(), Box<dyn Error>> {
         &cch,
         &departure,
         &travel_time,
-        &vec![86_400_000 / 12, 86_400_000 / 48],
-        graph.num_arcs() as u64 * 200000,
+        &vec![86_400_000 / 4, 86_400_000 / 16],
+        graph.num_arcs() as u64 * 1_200_000,
     );
     let multi_level_bucket_pot = CCHMultiLevelIntervalPotential::new_forward(&customized_multi_levels, 2);
     let mut server = PTVQueryServer::new_with_potential(graph, multi_level_bucket_pot);

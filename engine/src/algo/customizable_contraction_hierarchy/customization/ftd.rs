@@ -556,10 +556,10 @@ where
             );
 
             // free up space - we will never need the explicit functions again during customization
-            for (_, Reversed(EdgeIdT(edge_id))) in cch.inverted.link_iter(current_node as NodeId) {
+            /*for (_, Reversed(EdgeIdT(edge_id))) in cch.inverted.link_iter(current_node as NodeId) {
                 upward[edge_id as usize - edge_offset].clear_plf();
                 downward[edge_id as usize - edge_offset].clear_plf();
-            }
+            }*/
 
             NODES_CUSTOMIZED.fetch_add(1, Ordering::Relaxed);
         }

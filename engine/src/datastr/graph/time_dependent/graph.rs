@@ -89,6 +89,18 @@ impl Graph {
         &self.head[..]
     }
 
+    pub fn first_ipp_of_arc(&self) -> &[IPPIndex] {
+        &self.first_ipp_of_arc[..]
+    }
+
+    pub fn ipp_departure_time(&self) -> &[Timestamp] {
+        &self.ipp_departure_time[..]
+    }
+
+    pub fn ipp_travel_time(&self) -> &[Weight] {
+        &self.ipp_travel_time[..]
+    }
+
     /// Total number of interpolation points
     pub fn num_ipps(&self) -> usize {
         self.ipp_departure_time.len()

@@ -1,4 +1,4 @@
-use crate::dijkstra::elimination_tree::approximated_periodic_ttf::customized_catchup::customize_internal;
+use crate::dijkstra::elimination_tree::approximated_periodic_ttf::customized_catchup::customize_ptv_graph;
 use crate::dijkstra::elimination_tree::parallelization::SeparatorBasedParallelCustomization;
 use crate::dijkstra::potentials::{convert_timestamp_f64_to_u32, convert_timestamp_u32_to_f64};
 use crate::graph::MAX_BUCKETS;
@@ -16,7 +16,6 @@ use std::ops::Range;
 scoped_thread_local!(static UPWARD_WORKSPACE: RefCell<Vec<Vec<TTFPoint>>>);
 scoped_thread_local!(static DOWNWARD_WORKSPACE: RefCell<Vec<Vec<TTFPoint>>>);
 
-// todo some advanced preprocessing to enable faster data access
 pub struct CustomizedApproximatedPeriodicTTF<'a> {
     pub cch: &'a CCH,
     pub upward_intervals: Vec<Vec<u32>>,
@@ -74,10 +73,10 @@ impl<'a> CustomizedApproximatedPeriodicTTF<'a> {
         }
     }
 
-    pub fn new_from_ptv(cch: &'a CCH, graph: &'a TDGraph, _approximation_threshold: usize, num_intervals: u32) -> Self {
+    pub fn new_from_ptv(cch: &'a CCH, graph: &'a TDGraph, num_intervals: u32) -> Self {
         debug_assert!(MAX_BUCKETS % num_intervals == 0);
 
-        let (upward_weights, downward_weights) = customize_internal(cch, graph);
+        let (upward_weights, downward_weights) = customize_ptv_graph(cch, graph);
 
         let upward_intervals = extract_interval_minima(&upward_weights, num_intervals);
         let downward_intervals = extract_interval_minima(&downward_weights, num_intervals);
