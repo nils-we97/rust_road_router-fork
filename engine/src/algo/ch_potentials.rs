@@ -96,6 +96,10 @@ impl CCHPotData {
             backward_inverted: self.customized.cch().forward_inverted(),
         }
     }
+
+    pub fn customized(&self) -> &Customized<DirectedCCH, DirectedCCH> {
+        &self.customized
+    }
 }
 
 #[derive(Clone)]
@@ -157,7 +161,7 @@ where
                 dist = std::cmp::min(dist, edge.weight + self.potentials[edge.node as usize].value().unwrap())
             }
 
-            self.potentials[node as usize] = InRangeOption::new(Some(dist));
+            self.potentials[node as usize] = InRangeOption::some(dist);
         }
 
         let dist = self.potentials[node as usize].value().unwrap();
@@ -226,7 +230,7 @@ impl<'a> Potential for CCHPotentialWithPathUnpacking<'a> {
                 }
             }
 
-            self.potentials[node as usize] = InRangeOption::new(Some(dist));
+            self.potentials[node as usize] = InRangeOption::some(dist);
         }
 
         let dist = self.potentials[node as usize].value().unwrap();
@@ -361,7 +365,7 @@ impl<GF: LinkIterGraph, GB: LinkIterGraph> Potential for CHPotential<GF, GB> {
                 }
                 if !missing {
                     self.num_pot_computations += 1;
-                    self.potentials[node as usize] = InRangeOption::new(Some(dist));
+                    self.potentials[node as usize] = InRangeOption::some(dist);
                     self.stack.pop();
                 }
             }
@@ -419,27 +423,27 @@ impl Reconstruct for CHPotLoader {
 }
 
 impl CHPotLoader {
+    pub fn forward_graph(&self) -> BorrowedGraph {
+        FirstOutGraph::new(&self.forward_first_out[..], &self.forward_head[..], &self.forward_weight[..])
+    }
+
+    pub fn backward_graph(&self) -> BorrowedGraph {
+        FirstOutGraph::new(&self.backward_first_out[..], &self.backward_head[..], &self.backward_weight[..])
+    }
+
+    pub fn order(&self) -> &NodeOrder {
+        &self.order
+    }
+
     pub fn potentials(&self) -> (CHPotential<BorrowedGraph, BorrowedGraph>, CHPotential<BorrowedGraph, BorrowedGraph>) {
         (
-            CHPotential::new(
-                FirstOutGraph::new(&self.forward_first_out[..], &self.forward_head[..], &self.forward_weight[..]),
-                FirstOutGraph::new(&self.backward_first_out[..], &self.backward_head[..], &self.backward_weight[..]),
-                self.order.clone(),
-            ),
-            CHPotential::new(
-                FirstOutGraph::new(&self.backward_first_out[..], &self.backward_head[..], &self.backward_weight[..]),
-                FirstOutGraph::new(&self.forward_first_out[..], &self.forward_head[..], &self.forward_weight[..]),
-                self.order.clone(),
-            ),
+            CHPotential::new(self.forward_graph(), self.backward_graph(), self.order.clone()),
+            CHPotential::new(self.backward_graph(), self.forward_graph(), self.order.clone()),
         )
     }
 
     pub fn bucket_ch_pot(&self) -> BucketCHPotential<BorrowedGraph, BorrowedGraph> {
-        BucketCHPotential::new(
-            FirstOutGraph::new(&self.forward_first_out[..], &self.forward_head[..], &self.forward_weight[..]),
-            FirstOutGraph::new(&self.backward_first_out[..], &self.backward_head[..], &self.backward_weight[..]),
-            self.order.clone(),
-        )
+        BucketCHPotential::new(self.forward_graph(), self.backward_graph(), self.order.clone())
     }
 }
 
@@ -563,7 +567,7 @@ impl Indexing for NodeIdT {
 }
 
 #[derive(Clone)]
-struct BucketCHSelectionData {
+pub struct BucketCHSelectionData {
     distances: TimestampedVector<Vec<(NodeId, Weight)>>,
     queue: IndexdMinHeap<NodeIdT>,
     incoming: Vec<Vec<(NodeIdT, EdgeIdT)>>,
@@ -583,7 +587,7 @@ impl BucketCHSelectionData {
     }
 }
 
-struct BucketCHSelectionRun<'a, G> {
+pub struct BucketCHSelectionRun<'a, G> {
     graph: &'a G,
     distances: &'a mut TimestampedVector<Vec<(NodeId, Weight)>>,
     queue: &'a mut IndexdMinHeap<NodeIdT>,
@@ -645,6 +649,10 @@ impl<'a, G: LinkIterable<(NodeIdT, EdgeIdT)> + EdgeRandomAccessGraph<Link>> Buck
 
             NodeIdT(node)
         })
+    }
+
+    pub fn tentative_distance(&self, node: NodeId) -> &[(u32, Weight)] {
+        &self.distances[node as usize][..]
     }
 }
 
