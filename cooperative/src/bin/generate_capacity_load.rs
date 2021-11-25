@@ -2,7 +2,7 @@ use std::env;
 use std::error::Error;
 use std::path::Path;
 
-use cooperative::dijkstra::potentials::cch::init_cch_potential;
+use cooperative::dijkstra::potentials::basic_cch::init_cch_potential;
 use cooperative::dijkstra::server::{CapacityServer, CapacityServerOps};
 use cooperative::graph::speed_functions::bpr_speed_function;
 use cooperative::io::io_graph::{load_capacity_graph, store_capacity_buckets};

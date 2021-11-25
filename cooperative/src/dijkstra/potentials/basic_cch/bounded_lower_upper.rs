@@ -1,4 +1,4 @@
-use crate::dijkstra::elimination_tree::corridor_intervals::server::CorridorEliminationTreeServer;
+use crate::dijkstra::potentials::cch_lower_upper::elimination_tree_server::CorridorEliminationTreeServer;
 use rust_road_router::algo::customizable_contraction_hierarchy::CCHT;
 use rust_road_router::datastr::graph::{EdgeId, EdgeIdT, Graph, LinkIterable, NodeId, NodeIdT, UnweightedFirstOutGraph, Weight, INFINITY};
 use rust_road_router::datastr::timestamped_vector::TimestampedVector;

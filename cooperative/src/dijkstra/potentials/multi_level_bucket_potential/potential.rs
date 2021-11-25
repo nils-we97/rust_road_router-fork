@@ -1,8 +1,6 @@
-pub mod label;
-
-use crate::dijkstra::elimination_tree::corridor_intervals::server::CorridorEliminationTreeServer;
-use crate::dijkstra::elimination_tree::multi_level_buckets::customized::CustomizedMultiLevels;
-use crate::dijkstra::potentials::multi_level_interval_potential::label::MultiLevelBucketLabel;
+use crate::dijkstra::potentials::cch_lower_upper::elimination_tree_server::CorridorEliminationTreeServer;
+use crate::dijkstra::potentials::multi_level_bucket_potential::customization::CustomizedMultiLevels;
+use crate::dijkstra::potentials::multi_level_bucket_potential::label::MultiLevelBucketLabel;
 use crate::dijkstra::potentials::TDPotential;
 use crate::graph::MAX_BUCKETS;
 use rust_road_router::algo::customizable_contraction_hierarchy::{CCH, CCHT};
@@ -10,7 +8,7 @@ use rust_road_router::datastr::graph::time_dependent::Timestamp;
 use rust_road_router::datastr::graph::{EdgeId, EdgeIdT, Graph, LinkIterable, NodeId, NodeIdT, UnweightedFirstOutGraph, Weight, INFINITY};
 use rust_road_router::datastr::timestamped_vector::TimestampedVector;
 
-pub struct CCHMultiLevelIntervalPotential<'a> {
+pub struct CCHMultiLevelBucketPotential<'a> {
     customized: &'a CustomizedMultiLevels<'a>,
     forward_cch_graph: UnweightedFirstOutGraph<&'a [EdgeId], &'a [NodeId]>,
     forward_cch_weights: &'a Vec<Vec<Weight>>,
@@ -18,10 +16,10 @@ pub struct CCHMultiLevelIntervalPotential<'a> {
     backward_cch_weights: &'a Vec<Vec<Weight>>,
     interval_query_server: CorridorEliminationTreeServer<'a, CCH>,
     num_pot_computations: usize,
-    context: MultiLevelIntervalPotentialContext,
+    context: MultiLevelBucketPotentialContext,
 }
 
-struct MultiLevelIntervalPotentialContext {
+struct MultiLevelBucketPotentialContext {
     stack: Vec<NodeId>,
     potentials: TimestampedVector<bool>,
     backward_distances: TimestampedVector<MultiLevelBucketLabel>,
@@ -31,7 +29,7 @@ struct MultiLevelIntervalPotentialContext {
     query_start: Timestamp,
 }
 
-impl<'a> CCHMultiLevelIntervalPotential<'a> {
+impl<'a> CCHMultiLevelBucketPotential<'a> {
     pub fn new_forward(customized: &'a CustomizedMultiLevels<'a>, num_levels: usize) -> Self {
         let (forward_cch_graph, forward_cch_weights) = customized.forward_graph();
         let (backward_cch_graph, backward_cch_weights) = customized.backward_graph();
@@ -55,7 +53,7 @@ impl<'a> CCHMultiLevelIntervalPotential<'a> {
             pot_backward_weights,
         );
 
-        let context = MultiLevelIntervalPotentialContext {
+        let context = MultiLevelBucketPotentialContext {
             stack: Vec::new(),
             potentials: TimestampedVector::new(n),
             backward_distances: TimestampedVector::new_with_default(n, MultiLevelBucketLabel::new(num_levels + 1)),
@@ -82,7 +80,7 @@ impl<'a> CCHMultiLevelIntervalPotential<'a> {
     }
 }
 
-impl<'a> TDPotential for CCHMultiLevelIntervalPotential<'a> {
+impl<'a> TDPotential for CCHMultiLevelBucketPotential<'a> {
     fn init(&mut self, source: u32, target: u32, timestamp: u32) {
         self.context.current_metrics.clear();
         self.context.current_intervals.clear();

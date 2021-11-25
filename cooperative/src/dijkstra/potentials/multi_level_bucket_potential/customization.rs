@@ -1,5 +1,5 @@
-use crate::dijkstra::elimination_tree::multi_level_buckets::bucket_tree::MultiLevelBucketTree;
-use crate::dijkstra::elimination_tree::parallelization::SeparatorBasedParallelCustomization;
+use crate::dijkstra::potentials::cch_parallelization_util::SeparatorBasedParallelCustomization;
+use crate::dijkstra::potentials::multi_level_bucket_potential::bucket_tree::MultiLevelBucketTree;
 use crate::graph::MAX_BUCKETS;
 use rayon::prelude::*;
 use rust_road_router::algo::customizable_contraction_hierarchy::{CCH, CCHT};

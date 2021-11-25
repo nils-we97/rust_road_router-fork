@@ -1,8 +1,8 @@
-use cooperative::dijkstra::elimination_tree::approximated_periodic_ttf::customized::CustomizedApproximatedPeriodicTTF;
-use cooperative::dijkstra::elimination_tree::approximated_periodic_ttf::customized_catchup::convert_to_td_graph;
-use cooperative::dijkstra::elimination_tree::multi_level_buckets::customized::CustomizedMultiLevels;
+use cooperative::dijkstra::potentials::corridor_lowerbound_potential::customization::CustomizedApproximatedPeriodicTTF;
+use cooperative::dijkstra::potentials::corridor_lowerbound_potential::customization_catchup::convert_to_td_graph;
 use cooperative::dijkstra::potentials::corridor_lowerbound_potential::CorridorLowerboundPotential;
-use cooperative::dijkstra::potentials::multi_level_interval_potential::CCHMultiLevelIntervalPotential;
+use cooperative::dijkstra::potentials::multi_level_bucket_potential::customization::CustomizedMultiLevels;
+use cooperative::dijkstra::potentials::multi_level_bucket_potential::CCHMultiLevelBucketPotential;
 use cooperative::dijkstra::potentials::TDPotential;
 use cooperative::dijkstra::ptv_server::PTVQueryServer;
 use cooperative::graph::MAX_BUCKETS;
@@ -81,7 +81,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         &vec![86_400_000 / 4, 86_400_000 / 16],
         graph.num_arcs() as u64 * 1_200_000,
     );
-    let multi_level_bucket_pot = CCHMultiLevelIntervalPotential::new_forward(&customized_multi_levels, 2);
+    let multi_level_bucket_pot = CCHMultiLevelBucketPotential::new_forward(&customized_multi_levels, 2);
     let mut server = PTVQueryServer::new_with_potential(graph, multi_level_bucket_pot);
     execute_queries(&mut server, &queries, "Multi Level Bucket Pot");
 

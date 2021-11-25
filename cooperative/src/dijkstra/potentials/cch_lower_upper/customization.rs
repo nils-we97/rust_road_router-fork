@@ -1,4 +1,4 @@
-use crate::dijkstra::elimination_tree::parallelization::{SeparatorBasedParallelCustomization, SeparatorBasedPerfectParallelCustomization};
+use crate::dijkstra::potentials::cch_parallelization_util::{SeparatorBasedParallelCustomization, SeparatorBasedPerfectParallelCustomization};
 use rayon::prelude::*;
 use rust_road_router::algo::customizable_contraction_hierarchy::{DirectedCCH, CCH, CCHT};
 use rust_road_router::datastr::graph::{
@@ -16,14 +16,14 @@ scoped_thread_local!(static UPWARD_WORKSPACE: RefCell<Vec<(Weight, Weight)>>);
 scoped_thread_local!(static DOWNWARD_WORKSPACE: RefCell<Vec<(Weight, Weight)>>);
 scoped_thread_local!(static PERFECT_WORKSPACE: RefCell<Vec<InRangeOption<EdgeId>>>);
 
-pub struct CustomizedUpperLower {
+pub struct CustomizedLowerUpper {
     pub cch: DirectedCCH,
     pub upward: Vec<(Weight, Weight)>,
     pub downward: Vec<(Weight, Weight)>,
     pub _phantom: std::marker::PhantomData<DirectedCCH>,
 }
 
-impl CustomizedUpperLower {
+impl CustomizedLowerUpper {
     pub fn new(cch: &CCH, travel_times: &Vec<Vec<Weight>>) -> Self {
         let m = cch.num_arcs();
 

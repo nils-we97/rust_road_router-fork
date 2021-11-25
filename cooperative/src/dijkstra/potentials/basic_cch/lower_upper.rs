@@ -1,4 +1,4 @@
-use crate::dijkstra::elimination_tree::corridor_intervals::CorridorEliminationTreeWalk;
+use crate::dijkstra::potentials::cch_lower_upper::elimination_tree_server::CorridorEliminationTreeWalk;
 use rust_road_router::algo::a_star::Potential;
 use rust_road_router::algo::customizable_contraction_hierarchy::CCHT;
 use rust_road_router::datastr::graph::{EdgeId, EdgeIdT, Graph, LinkIterable, NodeId, NodeIdT, UnweightedFirstOutGraph, Weight, INFINITY};
@@ -36,25 +36,6 @@ impl<'a, CCH: CCHT> CCHLowerUpperPotential<'a, CCH> {
             num_pot_computations: 0,
         }
     }
-
-    /*pub fn new_backward(customized: &'a CustomizedUpperLower) -> Self {
-        let (forward_cch_graph, forward_cch_weights) = customized.backward_graph();
-        let (backward_cch_graph, backward_cch_weights) = customized.forward_graph();
-        let n = forward_cch_graph.num_nodes();
-
-        Self {
-            customized,
-            stack: Vec::new(),
-            potentials: TimestampedVector::new(n, InRangeOption::new(None)),
-            forward_cch_graph,
-            forward_cch_weights,
-            backward_distances: TimestampedVector::new(n, (INFINITY, INFINITY)),
-            backward_parents: vec![n as NodeId; n],
-            backward_cch_graph,
-            backward_cch_weights,
-            num_pot_computations: 0,
-        }
-    }*/
 
     pub fn num_pot_computations(&self) -> usize {
         self.num_pot_computations

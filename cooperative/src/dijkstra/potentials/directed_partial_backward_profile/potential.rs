@@ -1,7 +1,7 @@
 use std::cmp::min;
 
-use crate::dijkstra::elimination_tree::corridor_intervals::customized::CustomizedUpperLower;
-use crate::dijkstra::elimination_tree::corridor_intervals::server::CorridorEliminationTreeServer;
+use crate::dijkstra::potentials::cch_lower_upper::customization::CustomizedLowerUpper;
+use crate::dijkstra::potentials::cch_lower_upper::elimination_tree_server::CorridorEliminationTreeServer;
 use crate::dijkstra::potentials::directed_partial_backward_profile::query::TDDirectedPartialBackwardProfileQuery;
 use crate::dijkstra::potentials::partial_backward_profile::ops::TDPartialBackwardProfilePotentialOps;
 use crate::dijkstra::potentials::{convert_timestamp_f64_to_u32, convert_timestamp_u32_to_f64, TDPotential};
@@ -31,7 +31,7 @@ pub struct TDDirectedPartialBackwardProfilePotential<'a> {
 }
 
 impl<'a> TDDirectedPartialBackwardProfilePotential<'a> {
-    pub fn new(graph: &CapacityGraph, customized_upper_lower: &'a CustomizedUpperLower, cch_pot_data: &'a CCHPotData) -> Self {
+    pub fn new(graph: &CapacityGraph, customized_upper_lower: &'a CustomizedLowerUpper, cch_pot_data: &'a CCHPotData) -> Self {
         // copy graph structure for potentials
         let num_nodes = graph.num_nodes();
 

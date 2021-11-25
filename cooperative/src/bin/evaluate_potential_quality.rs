@@ -1,7 +1,7 @@
 use cooperative::dijkstra::elimination_tree::approximated_periodic_ttf::customized::CustomizedApproximatedPeriodicTTF;
 use cooperative::dijkstra::elimination_tree::multi_level_buckets::customized::CustomizedMultiLevels;
 use cooperative::dijkstra::potentials::corridor_lowerbound_potential::CorridorLowerboundPotential;
-use cooperative::dijkstra::potentials::multi_level_interval_potential::CCHMultiLevelIntervalPotential;
+use cooperative::dijkstra::potentials::multi_level_bucket_potential::CCHMultiLevelBucketPotential;
 use cooperative::dijkstra::potentials::TDPotential;
 use cooperative::dijkstra::server::{CapacityServer, CapacityServerOps};
 use cooperative::experiments::queries::{generate_queries, QueryType};

@@ -1,7 +1,7 @@
-use crate::dijkstra::elimination_tree::corridor_intervals::CorridorEliminationTreeWalk;
 use rust_road_router::algo::customizable_contraction_hierarchy::CCHT;
-use rust_road_router::datastr::graph::{EdgeId, NodeId, UnweightedFirstOutGraph, Weight, INFINITY};
+use rust_road_router::datastr::graph::{EdgeId, EdgeIdT, LinkIterable, NodeId, NodeIdT, UnweightedFirstOutGraph, Weight, INFINITY};
 use rust_road_router::datastr::timestamped_vector::TimestampedVector;
+use rust_road_router::util::in_range_option::InRangeOption;
 use std::borrow::Borrow;
 use std::cmp::min;
 
@@ -123,5 +123,75 @@ impl<'a, CCH: CCHT> CorridorEliminationTreeServer<'a, CCH> {
             (INFINITY, INFINITY) => None,
             dist => Some(dist),
         }
+    }
+}
+
+#[derive(Debug)]
+pub struct CorridorEliminationTreeWalk<'a> {
+    graph: &'a UnweightedFirstOutGraph<&'a [EdgeId], &'a [NodeId]>,
+    weights: &'a Vec<(Weight, Weight)>,
+    distances: &'a mut TimestampedVector<(Weight, Weight)>,
+    elimination_tree: &'a [InRangeOption<NodeId>],
+    next: Option<NodeId>,
+}
+
+impl<'a> CorridorEliminationTreeWalk<'a> {
+    pub fn init(
+        graph: &'a UnweightedFirstOutGraph<&'a [EdgeId], &'a [NodeId]>,
+        weights: &'a Vec<(Weight, Weight)>,
+        elimination_tree: &'a [InRangeOption<NodeId>],
+        distances: &'a mut TimestampedVector<(Weight, Weight)>,
+        from: NodeId,
+    ) -> Self {
+        // reset distances
+        distances.reset();
+        distances[from as usize] = (0, 0);
+
+        Self {
+            graph,
+            weights,
+            distances,
+            elimination_tree,
+            next: Some(from),
+        }
+    }
+
+    pub fn next(&mut self) -> Option<NodeId> {
+        // Examine the next node on the path to the elimination tree node
+        if let Some(node) = self.next {
+            self.next = self.elimination_tree[node as usize].value();
+
+            // For each node we can reach, see if we can find a way with
+            // a lower distance going through this node
+            for (next_node, edge) in LinkIterable::<(NodeIdT, EdgeIdT)>::link_iter(self.graph, node) {
+                let edge = edge.0 as usize;
+                let next_node = next_node.0 as usize;
+
+                // update tentative distances, for both lower and upper bound
+                self.distances[next_node] = (
+                    min(self.distances[next_node].0, self.distances[node as usize].0 + self.weights[edge].0),
+                    min(self.distances[next_node].1, self.distances[node as usize].1 + self.weights[edge].1),
+                );
+            }
+
+            Some(node)
+        } else {
+            None
+        }
+    }
+
+    pub fn peek(&self) -> Option<NodeId> {
+        self.next
+    }
+
+    pub fn skip_next(&mut self) {
+        // Iterator::skip(n) would still call `next` and thus relax edges, we want to actually skip them
+        if let Some(node) = self.next {
+            self.next = self.elimination_tree[node as usize].value();
+        }
+    }
+
+    pub fn tentative_distance(&self, node: NodeId) -> (Weight, Weight) {
+        self.distances[node as usize]
     }
 }

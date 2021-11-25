@@ -1,5 +1,5 @@
 use cooperative::dijkstra::model::PathResult;
-use cooperative::dijkstra::potentials::cch::init_cch_potential;
+use cooperative::dijkstra::potentials::basic_cch::init_cch_potential;
 use cooperative::dijkstra::potentials::TDPotential;
 use cooperative::dijkstra::server::{CapacityServer, CapacityServerOps};
 use cooperative::experiments::queries::{generate_queries, QueryType};

@@ -2,10 +2,10 @@ use std::env;
 use std::error::Error;
 use std::path::Path;
 
-use cooperative::dijkstra::elimination_tree::approximated_periodic_ttf::customized::CustomizedApproximatedPeriodicTTF;
-use cooperative::dijkstra::elimination_tree::multi_level_buckets::customized::CustomizedMultiLevels;
+use cooperative::dijkstra::potentials::corridor_lowerbound_potential::customization::CustomizedApproximatedPeriodicTTF;
 use cooperative::dijkstra::potentials::corridor_lowerbound_potential::CorridorLowerboundPotential;
-use cooperative::dijkstra::potentials::multi_level_interval_potential::CCHMultiLevelIntervalPotential;
+use cooperative::dijkstra::potentials::multi_level_bucket_potential::customization::CustomizedMultiLevels;
+use cooperative::dijkstra::potentials::multi_level_bucket_potential::CCHMultiLevelBucketPotential;
 use cooperative::dijkstra::potentials::TDPotential;
 use cooperative::dijkstra::server::{CapacityServer, CapacityServerOps};
 use cooperative::graph::speed_functions::bpr_speed_function;
@@ -59,7 +59,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         &vec![86_400_000 / 12, 86_400_000 / 48],
         graph.num_arcs() as u64 * 10,
     );
-    let multi_level_bucket_pot = CCHMultiLevelIntervalPotential::new_forward(&customized_multi_levels, 2);
+    let multi_level_bucket_pot = CCHMultiLevelBucketPotential::new_forward(&customized_multi_levels, 2);
     let mut server = CapacityServer::new_with_potential(graph, multi_level_bucket_pot);
 
     execute_queries(&mut server, &queries, "Multi-Level-Bucket Potential");

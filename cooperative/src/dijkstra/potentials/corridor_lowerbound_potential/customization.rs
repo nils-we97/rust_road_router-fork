@@ -1,5 +1,5 @@
-use crate::dijkstra::elimination_tree::approximated_periodic_ttf::customized_catchup::customize_ptv_graph;
-use crate::dijkstra::elimination_tree::parallelization::SeparatorBasedParallelCustomization;
+use crate::dijkstra::potentials::cch_parallelization_util::SeparatorBasedParallelCustomization;
+use crate::dijkstra::potentials::corridor_lowerbound_potential::customization_catchup::customize_ptv_graph;
 use crate::dijkstra::potentials::{convert_timestamp_f64_to_u32, convert_timestamp_u32_to_f64};
 use crate::graph::MAX_BUCKETS;
 use rayon::prelude::*;
