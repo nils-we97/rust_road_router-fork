@@ -2,12 +2,11 @@ use std::borrow::Borrow;
 
 use rust_road_router::algo::dijkstra::{DijkstraData, DijkstraInit, DijkstraRun};
 use rust_road_router::datastr::graph::floating_time_dependent::{FlWeight, TTFPoint, Timestamp};
-use rust_road_router::datastr::graph::{BuildReversed, Graph, NodeId, ReversedGraphWithEdgeIds, Weight};
+use rust_road_router::datastr::graph::{BuildReversed, EdgeIdT, LinkIterable, NodeId, NodeIdT, ReversedGraphWithEdgeIds, Weight};
 
 use crate::dijkstra::potentials::backward_profile::ops::TDBackwardProfilePotentialOps;
 use crate::dijkstra::potentials::backward_profile::query::TDBackwardProfileQuery;
 use crate::dijkstra::potentials::{convert_timestamp_f64_to_u32, convert_timestamp_u32_to_f64, TDPotential};
-use crate::graph::capacity_graph::CapacityGraph;
 use crate::graph::MAX_BUCKETS;
 use crate::util::profile_search::find_profile_index;
 
@@ -18,22 +17,26 @@ pub struct TDBackwardProfilePotential {
     backward_graph: ReversedGraphWithEdgeIds,
     travel_time_profile: Vec<Vec<TTFPoint>>,
     dijkstra: DijkstraData<Vec<TTFPoint>>,
+    approximation_threshold: usize,
 }
 
 impl TDBackwardProfilePotential {
-    pub fn new(graph: &CapacityGraph) -> Self {
+    pub fn new<G: LinkIterable<(NodeIdT, EdgeIdT)>>(
+        graph: &G,
+        departure: &Vec<Vec<u32>>,
+        travel_time: &Vec<Vec<Weight>>,
+        approximation_threshold: usize,
+    ) -> Self {
         let num_nodes = graph.num_nodes();
         let backward_graph = ReversedGraphWithEdgeIds::reversed(graph);
-
-        let departure = graph.departure();
-        let travel_time = graph.travel_time();
 
         let mut ret = Self {
             backward_graph,
             travel_time_profile: Vec::new(), // placeholder, filled below
             dijkstra: DijkstraData::new(num_nodes),
+            approximation_threshold,
         };
-        ret.update_weights(&departure, &travel_time);
+        ret.update_weights(departure, travel_time);
         ret
     }
 
@@ -62,14 +65,14 @@ impl TDPotential for TDBackwardProfilePotential {
     fn init(&mut self, _source: NodeId, target: NodeId, _timestamp: u32) {
         //initialize backwards profile dijkstra
         let query = TDBackwardProfileQuery(target);
-        let mut ops = TDBackwardProfilePotentialOps(&self.travel_time_profile);
+        let mut ops = TDBackwardProfilePotentialOps::new(&self.travel_time_profile, self.approximation_threshold);
         let mut run = DijkstraRun::query(self.backward_graph.borrow(), &mut self.dijkstra, &mut ops, DijkstraInit::from_query(&query));
 
         // run through the whole graph
         let mut counter = 0;
         while let Some(_node) = run.next() {
             counter += 1;
-            if counter % 1000 == 0 {
+            if counter % 10000 == 0 {
                 println!("Finished {} nodes", counter);
             }
         }

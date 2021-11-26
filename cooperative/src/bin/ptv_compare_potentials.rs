@@ -49,6 +49,12 @@ fn main() -> Result<(), Box<dyn Error>> {
     // create departure/travel time structure
     let (departure, travel_time) = retrieve_departure_and_travel_time(&graph);
 
+    // 0th potential: naive backward
+    /*let naive_backward_pot = TDBackwardProfilePotential::new(&graph, &departure, &travel_time, 200);
+    let mut server = PTVQueryServer::new_with_potential(graph, naive_backward_pot);
+    execute_queries(&mut server, &queries, "Naive Backward Potential");
+    let (graph, _) = server.decompose();*/
+
     // 1st potential: CCH lowerbound
     let lower_bound_graph = FirstOutGraph::new(graph.first_out(), graph.head(), &lower_bound[..]);
     let cch_pot_data = CCHPotData::new(&cch, &lower_bound_graph);
@@ -62,7 +68,6 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     // ----------------------------------------------------------------------------- //
     // 2nd potential: Corridor-Lowerbound Potential
-    //let customized_corridor_lowerbound = CustomizedApproximatedPeriodicTTF::new(&cch, &departure, &travel_time, 1000, 96);
     let td_graph = convert_to_td_graph(&graph);
     let customized_corridor_lowerbound = CustomizedApproximatedPeriodicTTF::new_from_ptv(&cch, &td_graph, 96);
     let corridor_lowerbound_pot = CorridorLowerboundPotential::new(&customized_corridor_lowerbound);
@@ -78,8 +83,8 @@ fn main() -> Result<(), Box<dyn Error>> {
         &cch,
         &departure,
         &travel_time,
-        &vec![86_400_000 / 4, 86_400_000 / 16],
-        graph.num_arcs() as u64 * 1_200_000,
+        &vec![86_400_000 / 6, 86_400_000 / 18],
+        graph.num_arcs() as u64 * 100_000,
     );
     let multi_level_bucket_pot = CCHMultiLevelBucketPotential::new_forward(&customized_multi_levels, 2);
     let mut server = PTVQueryServer::new_with_potential(graph, multi_level_bucket_pot);
