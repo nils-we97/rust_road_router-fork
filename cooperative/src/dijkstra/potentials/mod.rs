@@ -3,7 +3,6 @@ use rust_road_router::datastr::graph::time_dependent::Timestamp;
 use rust_road_router::datastr::graph::{NodeId, Weight};
 
 pub mod backward_profile;
-pub mod basic_cch;
 pub mod cch_lower_upper;
 pub mod cch_parallelization_util;
 pub mod corridor_lowerbound_potential;

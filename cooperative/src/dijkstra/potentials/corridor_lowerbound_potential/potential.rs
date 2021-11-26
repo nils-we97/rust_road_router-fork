@@ -1,4 +1,4 @@
-use crate::dijkstra::potentials::basic_cch::bounded_lower_upper::BoundedLowerUpperPotential;
+use crate::dijkstra::potentials::cch_lower_upper::bounded_potential::BoundedLowerUpperPotential;
 use crate::dijkstra::potentials::corridor_lowerbound_potential::customization::CustomizedApproximatedPeriodicTTF;
 use crate::dijkstra::potentials::TDPotential;
 use crate::graph::MAX_BUCKETS;
