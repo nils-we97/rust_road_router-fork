@@ -3,10 +3,12 @@ use crate::dijkstra::potentials::corridor_lowerbound_potential::customization_ca
 use crate::dijkstra::potentials::{convert_timestamp_f64_to_u32, convert_timestamp_u32_to_f64};
 use crate::graph::MAX_BUCKETS;
 use rayon::prelude::*;
-use rust_road_router::algo::customizable_contraction_hierarchy::{CCH, CCHT};
+use rust_road_router::algo::customizable_contraction_hierarchy::{DirectedCCH, CCH, CCHT};
 use rust_road_router::datastr::graph::floating_time_dependent::{FlWeight, PeriodicPiecewiseLinearFunction, TDGraph, TTFPoint, Timestamp, PLF};
-use rust_road_router::datastr::graph::{EdgeId, EdgeIdT, Graph, LinkIterable, NodeId, NodeIdT, Reversed, UnweightedFirstOutGraph, INFINITY};
-use rust_road_router::report::{report_time, report_time_with_key};
+use rust_road_router::datastr::graph::{
+    BuildReversed, EdgeId, EdgeIdT, Graph, LinkIterable, NodeId, NodeIdT, Reversed, ReversedGraphWithEdgeIds, UnweightedFirstOutGraph, INFINITY,
+};
+use rust_road_router::report::{measure, report_time, report_time_with_key};
 use scoped_tls::scoped_thread_local;
 use std::cell::RefCell;
 use std::cmp::{max, min};
@@ -16,8 +18,8 @@ use std::ops::Range;
 scoped_thread_local!(static UPWARD_WORKSPACE: RefCell<Vec<Vec<TTFPoint>>>);
 scoped_thread_local!(static DOWNWARD_WORKSPACE: RefCell<Vec<Vec<TTFPoint>>>);
 
-pub struct CustomizedApproximatedPeriodicTTF<'a> {
-    pub cch: &'a CCH,
+pub struct CustomizedApproximatedPeriodicTTF<CCH> {
+    pub cch: CCH,
     pub upward_intervals: Vec<Vec<u32>>,
     pub downward_intervals: Vec<Vec<u32>>,
     pub upward_bounds: Vec<(u32, u32)>,
@@ -25,7 +27,7 @@ pub struct CustomizedApproximatedPeriodicTTF<'a> {
     pub num_intervals: u32,
 }
 
-impl<'a> CustomizedApproximatedPeriodicTTF<'a> {
+impl<'a> CustomizedApproximatedPeriodicTTF<&'a CCH> {
     pub fn new(cch: &'a CCH, departures: &Vec<Vec<u32>>, travel_times: &Vec<Vec<u32>>, approximation_threshold: usize, num_intervals: u32) -> Self {
         debug_assert!(MAX_BUCKETS % num_intervals == 0);
         let m = cch.num_arcs();
@@ -72,17 +74,30 @@ impl<'a> CustomizedApproximatedPeriodicTTF<'a> {
             num_intervals,
         }
     }
+}
 
-    pub fn new_from_ptv(cch: &'a CCH, graph: &'a TDGraph, num_intervals: u32) -> Self {
+impl CustomizedApproximatedPeriodicTTF<DirectedCCH> {
+    pub fn new_from_ptv(cch: &CCH, graph: &TDGraph, num_intervals: u32) -> Self {
         debug_assert!(MAX_BUCKETS % num_intervals == 0);
 
-        let (upward_weights, downward_weights) = customize_ptv_graph(cch, graph);
+        let (mut upward_weights, mut downward_weights) = customize_ptv_graph(cch, graph);
 
-        let upward_intervals = extract_interval_minima(&upward_weights, num_intervals);
-        let downward_intervals = extract_interval_minima(&downward_weights, num_intervals);
+        let ((cch, upward_weights, downward_weights), time) = measure(|| build_customized_graph(cch, &mut upward_weights, &mut downward_weights));
+        println!("Re-Building new CCH graph took {} ms", time.to_std().unwrap().as_nanos() as f64 / 1_000_000.0);
 
-        let upward_bounds = extract_bounds(&upward_weights);
-        let downward_bounds = extract_bounds(&downward_weights);
+        let ((upward_intervals, downward_intervals, upward_bounds, downward_bounds), time) = measure(|| {
+            let upward_intervals = extract_interval_minima(&upward_weights, num_intervals);
+            let downward_intervals = extract_interval_minima(&downward_weights, num_intervals);
+
+            let upward_bounds = extract_bounds(&upward_weights);
+            let downward_bounds = extract_bounds(&downward_weights);
+
+            (upward_intervals, downward_intervals, upward_bounds, downward_bounds)
+        });
+        println!(
+            "Extracting intervals and bounds took {} ms",
+            time.to_std().unwrap().as_nanos() as f64 / 1_000_000.0
+        );
 
         Self {
             cch,
@@ -93,7 +108,9 @@ impl<'a> CustomizedApproximatedPeriodicTTF<'a> {
             num_intervals,
         }
     }
+}
 
+impl<CCH: CCHT> CustomizedApproximatedPeriodicTTF<CCH> {
     pub fn forward_graph(&self) -> (UnweightedFirstOutGraph<&[EdgeId], &[NodeId]>, &Vec<Vec<u32>>, &Vec<(u32, u32)>) {
         (
             UnweightedFirstOutGraph::new(self.cch.forward_first_out(), self.cch.forward_head()),
@@ -344,6 +361,90 @@ fn extract_bounds(weights: &Vec<Vec<TTFPoint>>) -> Vec<(u32, u32)> {
             (min(min_val, INFINITY), min(max_val, INFINITY))
         })
         .collect::<Vec<(u32, u32)>>()
+}
+
+fn build_customized_graph(
+    cch: &CCH,
+    upward_weights: &mut Vec<Vec<TTFPoint>>,
+    downward_weights: &mut Vec<Vec<TTFPoint>>,
+) -> (DirectedCCH, Vec<Vec<TTFPoint>>, Vec<Vec<TTFPoint>>) {
+    let m = cch.num_arcs();
+    let n = cch.num_nodes();
+
+    let forward = UnweightedFirstOutGraph::new(cch.forward_first_out(), cch.forward_head());
+    let backward = UnweightedFirstOutGraph::new(cch.backward_first_out(), cch.backward_head());
+
+    let mut forward_first_out = Vec::with_capacity(cch.first_out.len());
+    forward_first_out.push(0);
+    let mut forward_head = Vec::with_capacity(m);
+    let mut forward_weight = Vec::with_capacity(m);
+    let mut forward_cch_edge_to_orig_arc = Vec::with_capacity(m);
+
+    let mut backward_first_out = Vec::with_capacity(cch.first_out.len());
+    backward_first_out.push(0);
+    let mut backward_head = Vec::with_capacity(m);
+    let mut backward_weight = Vec::with_capacity(m);
+    let mut backward_cch_edge_to_orig_arc = Vec::with_capacity(m);
+
+    let mut forward_edge_counter = 0;
+    let mut backward_edge_counter = 0;
+
+    for node in 0..n as NodeId {
+        let edge_ids = cch.neighbor_edge_indices_usize(node);
+        let orig_arcs = &cch.cch_edge_to_orig_arc[edge_ids.clone()];
+
+        for (((NodeIdT(next_node), _), (forward_orig_arcs, _)), customized_weight) in LinkIterable::<(NodeIdT, EdgeIdT)>::link_iter(&forward, node)
+            .zip(orig_arcs.iter())
+            .zip(&mut upward_weights[edge_ids.clone()])
+        {
+            // pruning: ignore edge if lower bound exceeds customized upper bound
+            if !customized_weight.is_empty() {
+                forward_head.push(next_node);
+                forward_weight.push(customized_weight.clone());
+                forward_cch_edge_to_orig_arc.push(forward_orig_arcs.clone());
+                forward_edge_counter += 1;
+
+                // reduce memory consumption by removing unnecessary content
+                *customized_weight = vec![];
+            }
+        }
+        for (((NodeIdT(next_node), _), (_, backward_orig_arcs)), customized_weight) in LinkIterable::<(NodeIdT, EdgeIdT)>::link_iter(&backward, node)
+            .zip(orig_arcs.iter())
+            .zip(&mut downward_weights[edge_ids.clone()])
+        {
+            if !customized_weight.is_empty() {
+                backward_head.push(next_node);
+                backward_weight.push(customized_weight.clone());
+                backward_cch_edge_to_orig_arc.push(backward_orig_arcs.clone());
+                backward_edge_counter += 1;
+
+                // reduce memory consumption by removing unnecessary content
+                *customized_weight = vec![];
+            }
+        }
+        forward_first_out.push(forward_edge_counter);
+        backward_first_out.push(backward_edge_counter);
+    }
+
+    let forward_inverted = ReversedGraphWithEdgeIds::reversed(&UnweightedFirstOutGraph::new(&forward_first_out[..], &forward_head[..]));
+    let backward_inverted = ReversedGraphWithEdgeIds::reversed(&UnweightedFirstOutGraph::new(&backward_first_out[..], &backward_head[..]));
+    let node_order = cch.node_order.clone();
+    let elimination_tree = cch.elimination_tree.clone();
+
+    let cch = DirectedCCH::new(
+        forward_first_out,
+        forward_head,
+        backward_first_out,
+        backward_head,
+        node_order,
+        forward_cch_edge_to_orig_arc,
+        backward_cch_edge_to_orig_arc,
+        elimination_tree,
+        forward_inverted,
+        backward_inverted,
+    );
+
+    (cch, forward_weight, backward_weight)
 }
 
 fn empty_ttf() -> Vec<TTFPoint> {

@@ -1,6 +1,6 @@
 use rust_road_router::algo::customizable_contraction_hierarchy::ftd_cch::customize_internal;
 use rust_road_router::algo::customizable_contraction_hierarchy::CCH;
-use rust_road_router::datastr::graph::floating_time_dependent::{FlWeight, PartialShortcutGraph, Shortcut, TDGraph, TTFPoint, Timestamp};
+use rust_road_router::datastr::graph::floating_time_dependent::{PartialShortcutGraph, Shortcut, TDGraph, TTFPoint};
 
 pub fn customize_ptv_graph(cch: &CCH, graph: &TDGraph) -> (Vec<Vec<TTFPoint>>, Vec<Vec<TTFPoint>>) {
     // retrieve shortcuts
@@ -19,18 +19,7 @@ fn extract_shortcuts(shortcuts: &Vec<Shortcut>, shortcut_graph: &PartialShortcut
         .iter()
         .map(|shortcut| match shortcut.periodic_ttf(shortcut_graph) {
             Some(x) => x.bound_plfs().0.to_vec(),
-            None => {
-                vec![
-                    TTFPoint {
-                        at: Timestamp::ZERO,
-                        val: FlWeight::INFINITY,
-                    },
-                    TTFPoint {
-                        at: Timestamp(86400.0),
-                        val: FlWeight::INFINITY,
-                    },
-                ]
-            }
+            None => vec![],
         })
         .collect::<Vec<Vec<TTFPoint>>>()
 }

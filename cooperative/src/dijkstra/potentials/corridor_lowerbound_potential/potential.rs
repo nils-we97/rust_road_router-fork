@@ -2,14 +2,14 @@ use crate::dijkstra::potentials::cch_lower_upper::bounded_potential::BoundedLowe
 use crate::dijkstra::potentials::corridor_lowerbound_potential::customization::CustomizedApproximatedPeriodicTTF;
 use crate::dijkstra::potentials::TDPotential;
 use crate::graph::MAX_BUCKETS;
-use rust_road_router::algo::customizable_contraction_hierarchy::{CCH, CCHT};
+use rust_road_router::algo::customizable_contraction_hierarchy::CCHT;
 use rust_road_router::datastr::graph::{EdgeId, EdgeIdT, Graph, LinkIterable, NodeId, NodeIdT, UnweightedFirstOutGraph, Weight, INFINITY};
 use rust_road_router::datastr::timestamped_vector::TimestampedVector;
 use rust_road_router::util::in_range_option::InRangeOption;
 use std::cmp::min;
 
-pub struct CorridorLowerboundPotential<'a> {
-    customized: &'a CustomizedApproximatedPeriodicTTF<'a>,
+pub struct CorridorLowerboundPotential<'a, CCH> {
+    customized: &'a CustomizedApproximatedPeriodicTTF<CCH>,
     stack: Vec<NodeId>,
     potentials: TimestampedVector<InRangeOption<Weight>>,
     forward_cch_graph: UnweightedFirstOutGraph<&'a [EdgeId], &'a [NodeId]>,
@@ -24,13 +24,13 @@ pub struct CorridorLowerboundPotential<'a> {
     interval_length: u32,
 }
 
-impl<'a> CorridorLowerboundPotential<'a> {
-    pub fn new(customized: &'a CustomizedApproximatedPeriodicTTF<'a>) -> Self {
+impl<'a, CCH: CCHT> CorridorLowerboundPotential<'a, CCH> {
+    pub fn new(customized: &'a CustomizedApproximatedPeriodicTTF<CCH>) -> Self {
         let (forward_cch_graph, forward_cch_weights, forward_cch_bounds) = customized.forward_graph();
         let (backward_cch_graph, backward_cch_weights, backward_cch_bounds) = customized.backward_graph();
         let n = forward_cch_graph.num_nodes();
 
-        let forward_potential = BoundedLowerUpperPotential::new(customized.cch, forward_cch_bounds.clone(), backward_cch_bounds.clone());
+        let forward_potential = BoundedLowerUpperPotential::new(&customized.cch, forward_cch_bounds.clone(), backward_cch_bounds.clone());
         let interval_length = MAX_BUCKETS / customized.num_intervals;
 
         Self {
@@ -55,7 +55,7 @@ impl<'a> CorridorLowerboundPotential<'a> {
     }
 }
 
-impl<'a> TDPotential for CorridorLowerboundPotential<'a> {
+impl<'a, CCH: CCHT> TDPotential for CorridorLowerboundPotential<'a, CCH> {
     fn init(&mut self, source: u32, target: u32, timestamp: u32) {
         self.num_pot_computations = 0;
         self.query_start = timestamp;
