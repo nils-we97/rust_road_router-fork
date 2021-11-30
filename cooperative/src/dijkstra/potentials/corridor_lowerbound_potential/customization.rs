@@ -80,24 +80,34 @@ impl CustomizedApproximatedPeriodicTTF<DirectedCCH> {
     pub fn new_from_ptv(cch: &CCH, graph: &TDGraph, num_intervals: u32) -> Self {
         debug_assert!(MAX_BUCKETS % num_intervals == 0);
 
-        let (mut upward_weights, mut downward_weights) = customize_ptv_graph(cch, graph);
-
-        let ((cch, upward_weights, downward_weights), time) = measure(|| build_customized_graph(cch, &mut upward_weights, &mut downward_weights));
-        println!("Re-Building new CCH graph took {} ms", time.to_std().unwrap().as_nanos() as f64 / 1_000_000.0);
-
-        let ((upward_intervals, downward_intervals, upward_bounds, downward_bounds), time) = measure(|| {
-            let upward_intervals = extract_interval_minima(&upward_weights, num_intervals);
-            let downward_intervals = extract_interval_minima(&downward_weights, num_intervals);
-
-            let upward_bounds = extract_bounds(&upward_weights);
-            let downward_bounds = extract_bounds(&downward_weights);
-
-            (upward_intervals, downward_intervals, upward_bounds, downward_bounds)
-        });
+        let ((mut upward_weights, mut downward_weights), time) = measure(|| customize_ptv_graph(cch, graph, num_intervals));
         println!(
-            "Extracting intervals and bounds took {} ms",
+            "Interval Minima Customization took {} ms",
             time.to_std().unwrap().as_nanos() as f64 / 1_000_000.0
         );
+
+        // extract relevant data
+        let (mut upward_intervals, upward_bounds): (Vec<Vec<u32>>, Vec<(u32, u32)>) = upward_weights
+            .iter_mut()
+            .map(|wrapper| {
+                let ret = (wrapper.interval_minima.clone(), wrapper.bounds);
+                wrapper.interval_minima = vec![];
+                ret
+            })
+            .unzip();
+
+        let (mut downward_intervals, downward_bounds): (Vec<Vec<u32>>, Vec<(u32, u32)>) = downward_weights
+            .iter_mut()
+            .map(|wrapper| {
+                let ret = (wrapper.interval_minima.clone(), wrapper.bounds);
+                wrapper.interval_minima = vec![];
+                ret
+            })
+            .unzip();
+
+        let ((cch, upward_intervals, downward_intervals, upward_bounds, downward_bounds), time) =
+            measure(|| build_customized_graph(cch, &mut upward_intervals, &upward_bounds, &mut downward_intervals, &downward_bounds));
+        println!("Re-Building new CCH graph took {} ms", time.to_std().unwrap().as_nanos() as f64 / 1_000_000.0);
 
         Self {
             cch,
@@ -365,9 +375,11 @@ fn extract_bounds(weights: &Vec<Vec<TTFPoint>>) -> Vec<(u32, u32)> {
 
 fn build_customized_graph(
     cch: &CCH,
-    upward_weights: &mut Vec<Vec<TTFPoint>>,
-    downward_weights: &mut Vec<Vec<TTFPoint>>,
-) -> (DirectedCCH, Vec<Vec<TTFPoint>>, Vec<Vec<TTFPoint>>) {
+    upward_intervals: &mut Vec<Vec<u32>>,
+    upward_bounds: &Vec<(u32, u32)>,
+    downward_intervals: &mut Vec<Vec<u32>>,
+    downward_bounds: &Vec<(u32, u32)>,
+) -> (DirectedCCH, Vec<Vec<u32>>, Vec<Vec<u32>>, Vec<(u32, u32)>, Vec<(u32, u32)>) {
     let m = cch.num_arcs();
     let n = cch.num_nodes();
 
@@ -377,13 +389,15 @@ fn build_customized_graph(
     let mut forward_first_out = Vec::with_capacity(cch.first_out.len());
     forward_first_out.push(0);
     let mut forward_head = Vec::with_capacity(m);
-    let mut forward_weight = Vec::with_capacity(m);
+    let mut forward_weights = Vec::with_capacity(m);
+    let mut forward_bounds = Vec::with_capacity(m);
     let mut forward_cch_edge_to_orig_arc = Vec::with_capacity(m);
 
     let mut backward_first_out = Vec::with_capacity(cch.first_out.len());
     backward_first_out.push(0);
     let mut backward_head = Vec::with_capacity(m);
-    let mut backward_weight = Vec::with_capacity(m);
+    let mut backward_weights = Vec::with_capacity(m);
+    let mut backward_bounds = Vec::with_capacity(m);
     let mut backward_cch_edge_to_orig_arc = Vec::with_capacity(m);
 
     let mut forward_edge_counter = 0;
@@ -393,33 +407,37 @@ fn build_customized_graph(
         let edge_ids = cch.neighbor_edge_indices_usize(node);
         let orig_arcs = &cch.cch_edge_to_orig_arc[edge_ids.clone()];
 
-        for (((NodeIdT(next_node), _), (forward_orig_arcs, _)), customized_weight) in LinkIterable::<(NodeIdT, EdgeIdT)>::link_iter(&forward, node)
+        for ((((NodeIdT(next_node), _), (forward_orig_arcs, _)), intervals), bounds) in LinkIterable::<(NodeIdT, EdgeIdT)>::link_iter(&forward, node)
             .zip(orig_arcs.iter())
-            .zip(&mut upward_weights[edge_ids.clone()])
+            .zip(&mut upward_intervals[edge_ids.clone()])
+            .zip(&upward_bounds[edge_ids.clone()])
         {
             // pruning: ignore edge if lower bound exceeds customized upper bound
-            if !customized_weight.is_empty() {
+            if !intervals.is_empty() {
                 forward_head.push(next_node);
-                forward_weight.push(customized_weight.clone());
+                forward_weights.push(intervals.clone());
+                forward_bounds.push(*bounds);
                 forward_cch_edge_to_orig_arc.push(forward_orig_arcs.clone());
                 forward_edge_counter += 1;
 
                 // reduce memory consumption by removing unnecessary content
-                *customized_weight = vec![];
+                *intervals = vec![];
             }
         }
-        for (((NodeIdT(next_node), _), (_, backward_orig_arcs)), customized_weight) in LinkIterable::<(NodeIdT, EdgeIdT)>::link_iter(&backward, node)
+        for ((((NodeIdT(next_node), _), (_, backward_orig_arcs)), intervals), bounds) in LinkIterable::<(NodeIdT, EdgeIdT)>::link_iter(&backward, node)
             .zip(orig_arcs.iter())
-            .zip(&mut downward_weights[edge_ids.clone()])
+            .zip(&mut downward_intervals[edge_ids.clone()])
+            .zip(&downward_bounds[edge_ids.clone()])
         {
-            if !customized_weight.is_empty() {
+            if !intervals.is_empty() {
                 backward_head.push(next_node);
-                backward_weight.push(customized_weight.clone());
+                backward_weights.push(intervals.clone());
+                backward_bounds.push(*bounds);
                 backward_cch_edge_to_orig_arc.push(backward_orig_arcs.clone());
                 backward_edge_counter += 1;
 
                 // reduce memory consumption by removing unnecessary content
-                *customized_weight = vec![];
+                *intervals = vec![];
             }
         }
         forward_first_out.push(forward_edge_counter);
@@ -444,7 +462,7 @@ fn build_customized_graph(
         backward_inverted,
     );
 
-    (cch, forward_weight, backward_weight)
+    (cch, forward_weights, backward_weights, forward_bounds, backward_bounds)
 }
 
 fn empty_ttf() -> Vec<TTFPoint> {

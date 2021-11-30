@@ -25,7 +25,7 @@ use self::geometry::*;
 mod graph;
 pub use self::graph::{Graph as TDGraph, LiveGraph, TDGraphTrait};
 
-mod shortcut;
+pub mod shortcut;
 pub use self::shortcut::*;
 
 mod partial_shortcut;

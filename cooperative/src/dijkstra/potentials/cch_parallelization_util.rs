@@ -1,6 +1,7 @@
+use rayon::prelude::*;
 use rust_road_router::algo::customizable_contraction_hierarchy::separator_decomposition::SeparatorTree;
 use rust_road_router::algo::customizable_contraction_hierarchy::CCH;
-use rust_road_router::datastr::graph::Graph;
+use rust_road_router::datastr::graph::{EdgeId, Graph, NodeId};
 use std::ops::Range;
 
 pub struct SeparatorBasedParallelCustomization<'a, T, F, G> {
@@ -203,5 +204,58 @@ where
                 }
             });
         }
+    }
+}
+
+pub trait ForEachIter<'s, 'c, S> {
+    fn for_each(
+        &self,
+        current_node: NodeId,
+        upward_active: &'s mut [S],
+        downward_active: &'s mut [S],
+        f: impl Send + Sync + Fn((((&'c NodeId, EdgeId), &'s mut S), &'s mut S)),
+    );
+}
+
+pub struct SeqIter<'c>(pub &'c CCH);
+
+impl<'s, 'c, S> ForEachIter<'s, 'c, S> for SeqIter<'c> {
+    fn for_each(
+        &self,
+        current_node: NodeId,
+        upward_active: &'s mut [S],
+        downward_active: &'s mut [S],
+        f: impl Send + Sync + Fn((((&'c NodeId, EdgeId), &'s mut S), &'s mut S)),
+    ) {
+        self.0.head[self.0.neighbor_edge_indices_usize(current_node)]
+            .iter()
+            .zip(self.0.neighbor_edge_indices(current_node))
+            .zip(upward_active.iter_mut())
+            .zip(downward_active.iter_mut())
+            .for_each(f);
+    }
+}
+
+pub struct ParIter<'c>(pub &'c CCH);
+
+impl<'s, 'c, S: 's> ForEachIter<'s, 'c, S> for ParIter<'c>
+where
+    S: Send,
+    &'s mut [S]: IntoParallelIterator<Item = &'s mut S>,
+    <&'s mut [S] as IntoParallelIterator>::Iter: IndexedParallelIterator,
+{
+    fn for_each(
+        &self,
+        current_node: NodeId,
+        upward_active: &'s mut [S],
+        downward_active: &'s mut [S],
+        f: impl Send + Sync + Fn((((&'c NodeId, EdgeId), &'s mut S), &'s mut S)),
+    ) {
+        self.0.head[self.0.neighbor_edge_indices_usize(current_node)]
+            .par_iter()
+            .zip_eq(self.0.neighbor_edge_indices(current_node))
+            .zip_eq(upward_active.par_iter_mut())
+            .zip_eq(downward_active.par_iter_mut())
+            .for_each(f);
     }
 }

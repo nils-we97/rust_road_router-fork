@@ -24,8 +24,8 @@ pub const APPROX_THRESHOLD: usize = include!(concat!(env!("OUT_DIR"), "/TDCCH_AP
 /// Also during customization we keep the corresponding travel time function around for as long as we need it.
 #[derive(Debug)]
 pub struct Shortcut {
-    sources: Sources,
-    cache: Option<ATTFContainer<Box<[TTFPoint]>>>,
+    pub sources: Sources,
+    pub cache: Option<ATTFContainer<Box<[TTFPoint]>>>,
     pub lower_bound: FlWeight,
     pub upper_bound: FlWeight,
     constant: bool,
@@ -200,14 +200,23 @@ impl Shortcut {
                 let (self_ipps, other_ipps) = other_target.storage().top_plfs();
                 PartialPiecewiseLinearFunction::new(self_ipps).merge(&PartialPiecewiseLinearFunction::new(other_ipps), start, end, &mut buffers.buffer)
             });
-            if cfg!(feature = "tdcch-approx") && merged.num_points() > APPROX_THRESHOLD {
-                let old = merged.num_points();
-                if cfg!(feature = "detailed-stats") {
-                    CONSIDERED_FOR_APPROX.fetch_add(old, Relaxed);
-                }
-                merged = PeriodicATTF::from(&merged).approximate(buffers);
-                if cfg!(feature = "detailed-stats") {
-                    SAVED_BY_APPROX.fetch_add(old as isize - merged.num_points() as isize, Relaxed);
+
+            // approximate function several times to reduce number of breakpoints
+            if cfg!(feature = "tdcch-approx") {
+                while merged.num_points() > APPROX_THRESHOLD {
+                    let old = merged.num_points();
+                    if cfg!(feature = "detailed-stats") {
+                        CONSIDERED_FOR_APPROX.fetch_add(old, Relaxed);
+                    }
+                    merged = PeriodicATTF::from(&merged).approximate(buffers);
+                    if cfg!(feature = "detailed-stats") {
+                        SAVED_BY_APPROX.fetch_add(old as isize - merged.num_points() as isize, Relaxed);
+                    }
+
+                    if old == merged.num_points() {
+                        // break to avoid infinite loop
+                        break;
+                    }
                 }
             }
 
