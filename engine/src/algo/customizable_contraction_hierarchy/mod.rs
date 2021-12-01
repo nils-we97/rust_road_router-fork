@@ -17,6 +17,7 @@ pub use customization::{customize, customize_directed, customize_perfect};
 pub mod separator_decomposition;
 use separator_decomposition::*;
 mod reorder;
+use crate::util::in_range_option::Sentinel;
 pub use reorder::*;
 pub mod query;
 
@@ -465,5 +466,114 @@ impl CCHT for DirectedCCH {
 
     fn elimination_tree(&self) -> &[InRangeOption<NodeId>] {
         &self.elimination_tree[..]
+    }
+}
+
+impl Deconstruct for DirectedCCH {
+    fn store_each(&self, store: &dyn Fn(&str, &dyn Store) -> std::io::Result<()>) -> std::io::Result<()> {
+        store("forward_first_out", &self.forward_first_out)?;
+        store("forward_head", &self.forward_head)?;
+        store("backward_first_out", &self.backward_first_out)?;
+        store("backward_head", &self.backward_head)?;
+        store("ranks", &self.node_order.ranks().to_vec())?;
+
+        let elimination_tree = self
+            .elimination_tree
+            .iter()
+            .map(|val| val.value().unwrap_or(u32::SENTINEL))
+            .collect::<Vec<u32>>();
+        store("elimination_tree", &elimination_tree)?;
+
+        // build prefix sum for forward edge conversion
+        let mut fw_prefix_sum = vec![0];
+        self.forward_cch_edge_to_orig_arc
+            .iter()
+            .for_each(|v| fw_prefix_sum.push(*fw_prefix_sum.last().unwrap() + v.len() as u32));
+        let forward_cch_edge_to_orig_arc = self.forward_cch_edge_to_orig_arc.iter().flatten().map(|&EdgeIdT(v)| v).collect::<Vec<u32>>();
+        store("forward_cch_edge_to_orig_arc", &forward_cch_edge_to_orig_arc)?;
+        store("forward_cch_edge_to_orig_arc_prefix_sum", &fw_prefix_sum)?;
+
+        // build prefix sum for backward edge conversion
+        let mut bw_prefix_sum = vec![0];
+        self.backward_cch_edge_to_orig_arc
+            .iter()
+            .for_each(|v| bw_prefix_sum.push(*bw_prefix_sum.last().unwrap() + v.len() as u32));
+        let backward_cch_edge_to_orig_arc = self.backward_cch_edge_to_orig_arc.iter().flatten().map(|&EdgeIdT(v)| v).collect::<Vec<u32>>();
+        store("backward_cch_edge_to_orig_arc", &backward_cch_edge_to_orig_arc)?;
+        store("backward_cch_edge_to_orig_arc_prefix_sum", &bw_prefix_sum)?;
+
+        Ok(())
+    }
+}
+
+impl Reconstruct for DirectedCCH {
+    fn reconstruct_with(loader: Loader) -> std::io::Result<Self> {
+        let forward_first_out: Vec<EdgeId> = loader.load("forward_first_out")?;
+        let forward_head: Vec<NodeId> = loader.load("forward_head")?;
+        let backward_first_out: Vec<EdgeId> = loader.load("backward_first_out")?;
+        let backward_head: Vec<EdgeId> = loader.load("backward_head")?;
+        let node_order = loader.load("ranks").map(NodeOrder::from_ranks)?;
+        let elimination_tree: Vec<u32> = loader.load("elimination_tree")?;
+
+        let elimination_tree = elimination_tree
+            .iter()
+            .map(|&val| {
+                if val == u32::SENTINEL {
+                    InRangeOption::NONE
+                } else {
+                    InRangeOption::some(val)
+                }
+            })
+            .collect::<Vec<InRangeOption<u32>>>();
+
+        let forward_cch_edge_to_orig_arc_raw: Vec<u32> = loader.load("forward_cch_edge_to_orig_arc")?;
+        let fw_prefix_sum: Vec<u32> = loader.load("forward_cch_edge_to_orig_arc_prefix_sum")?;
+
+        let forward_cch_edge_to_orig_arc = fw_prefix_sum
+            .windows(2)
+            .map(|a| {
+                let lower_inclusive = a[0] as usize;
+                let upper_exclusive = a[1] as usize;
+
+                forward_cch_edge_to_orig_arc_raw[lower_inclusive..upper_exclusive]
+                    .iter()
+                    .cloned()
+                    .map(EdgeIdT)
+                    .collect::<Vec<EdgeIdT>>()
+            })
+            .collect::<Vec<Vec<EdgeIdT>>>();
+
+        let backward_cch_edge_to_orig_arc_raw: Vec<u32> = loader.load("backward_cch_edge_to_orig_arc")?;
+        let bw_prefix_sum: Vec<u32> = loader.load("backward_cch_edge_to_orig_arc_prefix_sum")?;
+
+        let backward_cch_edge_to_orig_arc = bw_prefix_sum
+            .windows(2)
+            .map(|a| {
+                let lower_inclusive = a[0] as usize;
+                let upper_exclusive = a[1] as usize;
+
+                backward_cch_edge_to_orig_arc_raw[lower_inclusive..upper_exclusive]
+                    .iter()
+                    .cloned()
+                    .map(EdgeIdT)
+                    .collect::<Vec<EdgeIdT>>()
+            })
+            .collect::<Vec<Vec<EdgeIdT>>>();
+
+        let forward_inverted = ReversedGraphWithEdgeIds::reversed(&UnweightedFirstOutGraph::new(&forward_first_out[..], &forward_head[..]));
+        let backward_inverted = ReversedGraphWithEdgeIds::reversed(&UnweightedFirstOutGraph::new(&backward_first_out[..], &backward_head[..]));
+
+        Ok(DirectedCCH {
+            forward_first_out,
+            forward_head,
+            backward_first_out,
+            backward_head,
+            node_order,
+            forward_cch_edge_to_orig_arc,
+            backward_cch_edge_to_orig_arc,
+            elimination_tree,
+            forward_inverted,
+            backward_inverted,
+        })
     }
 }

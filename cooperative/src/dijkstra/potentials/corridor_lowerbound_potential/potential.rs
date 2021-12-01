@@ -13,10 +13,10 @@ pub struct CorridorLowerboundPotential<'a, CCH> {
     stack: Vec<NodeId>,
     potentials: TimestampedVector<InRangeOption<Weight>>,
     forward_cch_graph: UnweightedFirstOutGraph<&'a [EdgeId], &'a [NodeId]>,
-    forward_cch_weights: &'a Vec<Vec<Weight>>, // Vec<Weight>
+    forward_cch_weights: &'a Vec<Weight>,
     backward_distances: TimestampedVector<Weight>,
     backward_cch_graph: UnweightedFirstOutGraph<&'a [EdgeId], &'a [NodeId]>,
-    backward_cch_weights: &'a Vec<Vec<Weight>>, // Vec<Weight>
+    backward_cch_weights: &'a Vec<Weight>,
     forward_potential: BoundedLowerUpperPotential<'a, CCH>,
     num_pot_computations: usize,
     target_dist_bounds: Option<(Weight, Weight)>,
@@ -96,10 +96,12 @@ impl<'a, CCH: CCHT> TDPotential for CorridorLowerboundPotential<'a, CCH> {
                         let end_idx = (((timestamp + node_upper) % MAX_BUCKETS) / self.interval_length) as usize;
 
                         let mut idx = start_idx;
-                        let mut edge_weight = self.backward_cch_weights[edge_id][idx];
+                        let mut edge_weight = *unsafe { self.backward_cch_weights.get_unchecked(self.customized.num_intervals as usize * edge_id + idx) };
                         while idx != end_idx {
                             idx = (idx + 1) % self.customized.num_intervals as usize;
-                            edge_weight = min(edge_weight, *unsafe { self.backward_cch_weights.get_unchecked(edge_id).get_unchecked(idx) });
+                            edge_weight = min(edge_weight, *unsafe {
+                                self.backward_cch_weights.get_unchecked(self.customized.num_intervals as usize * edge_id + idx)
+                            });
                         }
 
                         /*let edge_weight = if start_idx <= end_idx {
@@ -152,12 +154,12 @@ impl<'a, CCH: CCHT> TDPotential for CorridorLowerboundPotential<'a, CCH> {
                         // -> take the same edge interval of all outgoing edges as given by the corridor
                         if let Some(next_potential) = self.potentials[next_node as usize].value() {
                             let mut idx = start_interval;
-                            let mut edge_weight = self.forward_cch_weights[edge as usize][idx];
+                            let mut edge_weight = *unsafe { self.forward_cch_weights.get_unchecked((self.customized.num_intervals * edge) as usize + idx) };
                             while idx != end_interval {
                                 idx = (idx + 1) % self.customized.num_intervals as usize;
                                 // todo flatten vec!
                                 edge_weight = min(edge_weight, *unsafe {
-                                    self.forward_cch_weights.get_unchecked(edge as usize).get_unchecked(idx)
+                                    self.forward_cch_weights.get_unchecked((self.customized.num_intervals * edge) as usize + idx)
                                 });
                             }
 

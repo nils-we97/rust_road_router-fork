@@ -20,8 +20,8 @@ scoped_thread_local!(static DOWNWARD_WORKSPACE: RefCell<Vec<Vec<TTFPoint>>>);
 
 pub struct CustomizedApproximatedPeriodicTTF<CCH> {
     pub cch: CCH,
-    pub upward_intervals: Vec<Vec<u32>>,
-    pub downward_intervals: Vec<Vec<u32>>,
+    pub upward_intervals: Vec<u32>,
+    pub downward_intervals: Vec<u32>,
     pub upward_bounds: Vec<(u32, u32)>,
     pub downward_bounds: Vec<(u32, u32)>,
     pub num_intervals: u32,
@@ -87,6 +87,7 @@ impl CustomizedApproximatedPeriodicTTF<DirectedCCH> {
         );
 
         // extract relevant data
+        let mut num_removed_edges = 0;
         let (mut upward_intervals, upward_bounds): (Vec<Vec<u32>>, Vec<(u32, u32)>) = upward_weights
             .iter_mut()
             .map(|wrapper| {
@@ -95,10 +96,18 @@ impl CustomizedApproximatedPeriodicTTF<DirectedCCH> {
                     wrapper.interval_minima = vec![];
                     ret
                 } else {
-                    (vec![], (0, 0))
+                    num_removed_edges += 1;
+                    (vec![], (INFINITY, INFINITY))
                 }
             })
             .unzip();
+
+        println!(
+            "Reduction in upward direction: Removed {} of {} edges.",
+            num_removed_edges,
+            upward_weights.len()
+        );
+        num_removed_edges = 0;
 
         let (mut downward_intervals, downward_bounds): (Vec<Vec<u32>>, Vec<(u32, u32)>) = downward_weights
             .iter_mut()
@@ -108,14 +117,25 @@ impl CustomizedApproximatedPeriodicTTF<DirectedCCH> {
                     wrapper.interval_minima = vec![];
                     ret
                 } else {
-                    (vec![], (0, 0))
+                    num_removed_edges += 1;
+                    (vec![], (INFINITY, INFINITY))
                 }
             })
             .unzip();
+        println!(
+            "Reduction in downward direction: Removed {} of {} edges.",
+            num_removed_edges,
+            downward_weights.len()
+        );
 
+        // build directed cch, remove unnecessary shortcuts
         let ((cch, upward_intervals, downward_intervals, upward_bounds, downward_bounds), time) =
             measure(|| build_customized_graph(cch, &mut upward_intervals, &upward_bounds, &mut downward_intervals, &downward_bounds));
         println!("Re-Building new CCH graph took {} ms", time.to_std().unwrap().as_nanos() as f64 / 1_000_000.0);
+
+        // flatten upward/downward intervals into single-dimensional vectors
+        let upward_intervals = flatten_edge_intervals(&upward_intervals);
+        let downward_intervals = flatten_edge_intervals(&downward_intervals);
 
         Self {
             cch,
@@ -129,7 +149,7 @@ impl CustomizedApproximatedPeriodicTTF<DirectedCCH> {
 }
 
 impl<CCH: CCHT> CustomizedApproximatedPeriodicTTF<CCH> {
-    pub fn forward_graph(&self) -> (UnweightedFirstOutGraph<&[EdgeId], &[NodeId]>, &Vec<Vec<u32>>, &Vec<(u32, u32)>) {
+    pub fn forward_graph(&self) -> (UnweightedFirstOutGraph<&[EdgeId], &[NodeId]>, &Vec<u32>, &Vec<(u32, u32)>) {
         (
             UnweightedFirstOutGraph::new(self.cch.forward_first_out(), self.cch.forward_head()),
             &self.upward_intervals,
@@ -137,7 +157,7 @@ impl<CCH: CCHT> CustomizedApproximatedPeriodicTTF<CCH> {
         )
     }
 
-    pub fn backward_graph(&self) -> (UnweightedFirstOutGraph<&[EdgeId], &[NodeId]>, &Vec<Vec<u32>>, &Vec<(u32, u32)>) {
+    pub fn backward_graph(&self) -> (UnweightedFirstOutGraph<&[EdgeId], &[NodeId]>, &Vec<u32>, &Vec<(u32, u32)>) {
         (
             UnweightedFirstOutGraph::new(self.cch.backward_first_out(), self.cch.backward_head()),
             &self.downward_intervals,
@@ -302,12 +322,12 @@ fn customize_basic(cch: &CCH, upward_weights: &mut Vec<Vec<TTFPoint>>, downward_
     });
 }
 
-fn extract_interval_minima(weights: &Vec<Vec<TTFPoint>>, num_intervals: u32) -> Vec<Vec<u32>> {
+fn extract_interval_minima(weights: &Vec<Vec<TTFPoint>>, num_intervals: u32) -> Vec<u32> {
     let interval_length = MAX_BUCKETS / num_intervals;
 
     weights
         .iter()
-        .map(|ttf| {
+        .flat_map(|ttf| {
             // collect minima within the current interval
             let mut interval_min = vec![INFINITY; num_intervals as usize];
             let mut bucket_idx = 0;
@@ -361,7 +381,7 @@ fn extract_interval_minima(weights: &Vec<Vec<TTFPoint>>, num_intervals: u32) -> 
 
             interval_min
         })
-        .collect::<Vec<Vec<u32>>>()
+        .collect::<Vec<u32>>()
 }
 
 fn extract_bounds(weights: &Vec<Vec<TTFPoint>>) -> Vec<(u32, u32)> {
@@ -484,6 +504,11 @@ fn empty_ttf() -> Vec<TTFPoint> {
             val: FlWeight::INFINITY,
         },
     ]
+}
+
+fn flatten_edge_intervals(intervals: &Vec<Vec<u32>>) -> Vec<u32> {
+    // todo change vector layout!
+    intervals.iter().flatten().cloned().collect::<Vec<u32>>()
 }
 
 #[test]

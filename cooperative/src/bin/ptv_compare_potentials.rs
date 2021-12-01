@@ -6,6 +6,7 @@ use cooperative::dijkstra::potentials::multi_level_bucket_potential::CCHMultiLev
 use cooperative::dijkstra::potentials::TDPotential;
 use cooperative::dijkstra::ptv_server::PTVQueryServer;
 use cooperative::graph::MAX_BUCKETS;
+use cooperative::io::io_interval_minima_customization::load_interval_minima;
 use cooperative::io::io_queries::load_queries;
 use cooperative::util::cli_args::parse_arg_required;
 use rust_road_router::algo::ch_potentials::CCHPotData;
@@ -68,8 +69,9 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     // ----------------------------------------------------------------------------- //
     // 2nd potential: Corridor-Lowerbound Potential
-    let td_graph = convert_to_td_graph(&graph);
-    let customized_corridor_lowerbound = CustomizedApproximatedPeriodicTTF::new_from_ptv(&cch, &td_graph, 72);
+    //let td_graph = convert_to_td_graph(&graph);
+    let customized_corridor_lowerbound = load_interval_minima(&path.join("customized").join("customized_96"))?;
+    //let customized_corridor_lowerbound = CustomizedApproximatedPeriodicTTF::new_from_ptv(&cch, &td_graph, 72);
     let corridor_lowerbound_pot = CorridorLowerboundPotential::new(&customized_corridor_lowerbound);
     let mut server = PTVQueryServer::new_with_potential(graph, corridor_lowerbound_pot);
 
