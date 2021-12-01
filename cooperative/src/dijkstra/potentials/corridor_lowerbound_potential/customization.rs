@@ -90,18 +90,26 @@ impl CustomizedApproximatedPeriodicTTF<DirectedCCH> {
         let (mut upward_intervals, upward_bounds): (Vec<Vec<u32>>, Vec<(u32, u32)>) = upward_weights
             .iter_mut()
             .map(|wrapper| {
-                let ret = (wrapper.interval_minima.clone(), wrapper.bounds);
-                wrapper.interval_minima = vec![];
-                ret
+                if wrapper.shortcut.required {
+                    let ret = (wrapper.interval_minima.clone(), wrapper.bounds);
+                    wrapper.interval_minima = vec![];
+                    ret
+                } else {
+                    (vec![], (0, 0))
+                }
             })
             .unzip();
 
         let (mut downward_intervals, downward_bounds): (Vec<Vec<u32>>, Vec<(u32, u32)>) = downward_weights
             .iter_mut()
             .map(|wrapper| {
-                let ret = (wrapper.interval_minima.clone(), wrapper.bounds);
-                wrapper.interval_minima = vec![];
-                ret
+                if wrapper.shortcut.required {
+                    let ret = (wrapper.interval_minima.clone(), wrapper.bounds);
+                    wrapper.interval_minima = vec![];
+                    ret
+                } else {
+                    (vec![], (0, 0))
+                }
             })
             .unzip();
 

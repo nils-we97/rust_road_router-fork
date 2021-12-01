@@ -95,13 +95,12 @@ impl<'a, CCH: CCHT> BoundedLowerUpperPotential<'a, CCH> {
                 }
 
                 // pruning: ignore node if the lower bound already exceeds the known upper bound to the target
-                let (pot_lower, pot_upper) = if dist_lower <= target_upper {
-                    (dist_lower, dist_upper)
-                } else {
-                    (INFINITY, INFINITY)
-                };
+                if dist_lower > target_upper {
+                    dist_lower = INFINITY;
+                    dist_upper = INFINITY;
+                }
 
-                self.potentials[current_node as usize] = InRangeOption::new(Some((pot_lower, pot_upper)));
+                self.potentials[current_node as usize] = InRangeOption::new(Some((dist_lower, dist_upper)));
             }
 
             self.potentials[rank as usize].value().filter(|&(lower, _)| lower < INFINITY)

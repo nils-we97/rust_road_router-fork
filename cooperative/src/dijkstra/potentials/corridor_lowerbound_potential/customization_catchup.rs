@@ -342,6 +342,15 @@ pub fn customize_ptv_graph(cch: &CCH, metric: &TDGraph, num_intervals: u32) -> (
             .for_each(|s| debug_assert!(!s.shortcut.required || s.shortcut.lower_bound.fuzzy_lt(FlWeight::INFINITY)));
     });
 
+    // adjust upper bounds
+    upward.iter_mut().for_each(|wrapper| {
+        wrapper.bounds.1 = min(wrapper.bounds.1, convert_timestamp_f64_to_u32(wrapper.shortcut.upper_bound.0));
+    });
+
+    downward.iter_mut().for_each(|wrapper| {
+        wrapper.bounds.1 = min(wrapper.bounds.1, convert_timestamp_f64_to_u32(wrapper.shortcut.upper_bound.0));
+    });
+
     (upward, downward)
 }
 

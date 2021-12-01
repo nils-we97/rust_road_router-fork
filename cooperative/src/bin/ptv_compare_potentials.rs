@@ -69,13 +69,16 @@ fn main() -> Result<(), Box<dyn Error>> {
     // ----------------------------------------------------------------------------- //
     // 2nd potential: Corridor-Lowerbound Potential
     let td_graph = convert_to_td_graph(&graph);
-    let customized_corridor_lowerbound = CustomizedApproximatedPeriodicTTF::new_from_ptv(&cch, &td_graph, 96);
+    let customized_corridor_lowerbound = CustomizedApproximatedPeriodicTTF::new_from_ptv(&cch, &td_graph, 72);
     let corridor_lowerbound_pot = CorridorLowerboundPotential::new(&customized_corridor_lowerbound);
     let mut server = PTVQueryServer::new_with_potential(graph, corridor_lowerbound_pot);
 
     execute_queries(&mut server, &queries, "Corridor Lowerbound Potential");
     let (graph, pot) = server.decompose();
+    println!("Avg corridor length: {}", pot.corridor_len as f64 / pot.num_corridor_requests as f64);
+
     drop(pot);
+    drop(customized_corridor_lowerbound);
 
     // ----------------------------------------------------------------------------- //
     // 3rd potential: Multi-Level-Bucket Potential

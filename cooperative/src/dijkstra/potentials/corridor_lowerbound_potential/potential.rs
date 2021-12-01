@@ -13,15 +13,17 @@ pub struct CorridorLowerboundPotential<'a, CCH> {
     stack: Vec<NodeId>,
     potentials: TimestampedVector<InRangeOption<Weight>>,
     forward_cch_graph: UnweightedFirstOutGraph<&'a [EdgeId], &'a [NodeId]>,
-    forward_cch_weights: &'a Vec<Vec<Weight>>,
+    forward_cch_weights: &'a Vec<Vec<Weight>>, // Vec<Weight>
     backward_distances: TimestampedVector<Weight>,
     backward_cch_graph: UnweightedFirstOutGraph<&'a [EdgeId], &'a [NodeId]>,
-    backward_cch_weights: &'a Vec<Vec<Weight>>,
+    backward_cch_weights: &'a Vec<Vec<Weight>>, // Vec<Weight>
     forward_potential: BoundedLowerUpperPotential<'a, CCH>,
     num_pot_computations: usize,
     target_dist_bounds: Option<(Weight, Weight)>,
     query_start: u32,
     interval_length: u32,
+    pub corridor_len: u64,
+    pub num_corridor_requests: u64,
 }
 
 impl<'a, CCH: CCHT> CorridorLowerboundPotential<'a, CCH> {
@@ -47,6 +49,8 @@ impl<'a, CCH: CCHT> CorridorLowerboundPotential<'a, CCH> {
             num_pot_computations: 0,
             target_dist_bounds: None,
             query_start: 0,
+            corridor_len: 0,
+            num_corridor_requests: 0,
         }
     }
 
@@ -85,20 +89,17 @@ impl<'a, CCH: CCHT> TDPotential for CorridorLowerboundPotential<'a, CCH> {
                     if let Some((node_lower, node_upper)) = self.forward_potential.potential_bounds(next_node) {
                         debug_assert!(target_dist_upper >= node_lower);
 
+                        self.corridor_len += (node_upper - node_lower) as u64;
+                        self.num_corridor_requests += 1;
+
                         let start_idx = (((timestamp + node_lower) % MAX_BUCKETS) / self.interval_length) as usize;
                         let end_idx = (((timestamp + node_upper) % MAX_BUCKETS) / self.interval_length) as usize;
 
                         let mut idx = start_idx;
                         let mut edge_weight = self.backward_cch_weights[edge_id][idx];
                         while idx != end_idx {
-                            idx += 1;
-                            if idx == self.customized.num_intervals as usize {
-                                idx = 0;
-                            }
-
-                            if self.backward_cch_weights[edge_id][idx] < edge_weight {
-                                edge_weight = self.backward_cch_weights[edge_id][idx];
-                            }
+                            idx = (idx + 1) % self.customized.num_intervals as usize;
+                            edge_weight = min(edge_weight, *unsafe { self.backward_cch_weights.get_unchecked(edge_id).get_unchecked(idx) });
                         }
 
                         /*let edge_weight = if start_idx <= end_idx {
@@ -149,37 +150,38 @@ impl<'a, CCH: CCHT> TDPotential for CorridorLowerboundPotential<'a, CCH> {
                         // even in the forward direction, we're still performing backward linking,
                         // current edges are all starting at `current_node`
                         // -> take the same edge interval of all outgoing edges as given by the corridor
-                        let next_potential = self.potentials[next_node as usize].value().unwrap_or(INFINITY);
-                        // cover edge case: intervals span over midnight
-
-                        let mut idx = start_interval;
-                        let mut edge_weight = self.forward_cch_weights[edge as usize][idx];
-                        while idx != end_interval {
-                            idx += 1;
-                            if idx == self.customized.num_intervals as usize {
-                                idx = 0;
+                        if let Some(next_potential) = self.potentials[next_node as usize].value() {
+                            let mut idx = start_interval;
+                            let mut edge_weight = self.forward_cch_weights[edge as usize][idx];
+                            while idx != end_interval {
+                                idx = (idx + 1) % self.customized.num_intervals as usize;
+                                // todo flatten vec!
+                                edge_weight = min(edge_weight, *unsafe {
+                                    self.forward_cch_weights.get_unchecked(edge as usize).get_unchecked(idx)
+                                });
                             }
 
-                            if self.forward_cch_weights[edge as usize][idx] < edge_weight {
-                                edge_weight = self.forward_cch_weights[edge as usize][idx];
-                            }
+                            self.corridor_len += (node_upper - node_lower) as u64;
+                            self.num_corridor_requests += 1;
+
+                            /*let edge_interval_min = if start_interval <= end_interval {
+                                self.forward_cch_weights[edge as usize][start_interval..=end_interval]
+                                    .iter()
+                                    .min()
+                                    .cloned()
+                                    .unwrap()
+                            } else {
+                                min(
+                                    self.forward_cch_weights[edge as usize][start_interval..].iter().min().cloned().unwrap(),
+                                    self.forward_cch_weights[edge as usize][..=end_interval].iter().min().cloned().unwrap(),
+                                )
+                            };*/
+                            self.backward_distances[current_node as usize] = min(self.backward_distances[current_node as usize], edge_weight + next_potential);
                         }
-
-                        /*let edge_interval_min = if start_interval <= end_interval {
-                            self.forward_cch_weights[edge as usize][start_interval..=end_interval]
-                                .iter()
-                                .min()
-                                .cloned()
-                                .unwrap()
-                        } else {
-                            min(
-                                self.forward_cch_weights[edge as usize][start_interval..].iter().min().cloned().unwrap(),
-                                self.forward_cch_weights[edge as usize][..=end_interval].iter().min().cloned().unwrap(),
-                            )
-                        };*/
-                        self.backward_distances[current_node as usize] = min(self.backward_distances[current_node as usize], edge_weight + next_potential);
                     }
-                    self.potentials[current_node as usize] = InRangeOption::new(Some(self.backward_distances[current_node as usize]));
+                    self.potentials[current_node as usize] = InRangeOption::some(self.backward_distances[current_node as usize]);
+                } else {
+                    self.potentials[current_node as usize] = InRangeOption::some(INFINITY);
                 }
             }
 
