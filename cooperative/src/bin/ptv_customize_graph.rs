@@ -42,6 +42,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         std::fs::create_dir(&output_directory);
     }
 
+    println!("Started storing results...");
     store_interval_minima(&output_directory, &customized);
     println!("Stored customized struct in {}", output_directory.display());
 

@@ -129,13 +129,25 @@ impl CustomizedApproximatedPeriodicTTF<DirectedCCH> {
         );
 
         // build directed cch, remove unnecessary shortcuts
-        let ((cch, upward_intervals, downward_intervals, upward_bounds, downward_bounds), time) =
-            measure(|| build_customized_graph(cch, &mut upward_intervals, &upward_bounds, &mut downward_intervals, &downward_bounds));
+        // also directly flatten the interval structure
+        let ((cch, mut upward_intervals, mut downward_intervals, upward_bounds, downward_bounds), time) = measure(|| {
+            build_customized_graph(
+                cch,
+                &mut upward_intervals,
+                &upward_bounds,
+                &mut downward_intervals,
+                &downward_bounds,
+                num_intervals,
+            )
+        });
         println!("Re-Building new CCH graph took {} ms", time.to_std().unwrap().as_nanos() as f64 / 1_000_000.0);
 
         // flatten upward/downward intervals into single-dimensional vectors
-        let upward_intervals = flatten_edge_intervals(&upward_intervals);
-        let downward_intervals = flatten_edge_intervals(&downward_intervals);
+        // in order to reduce memory consumption, we allow some performance reductions
+        reorder_edge_intervals(&mut upward_intervals);
+        reorder_edge_intervals(&mut downward_intervals);
+
+        println!("Flattened intervals");
 
         Self {
             cch,
@@ -407,26 +419,33 @@ fn build_customized_graph(
     upward_bounds: &Vec<(u32, u32)>,
     downward_intervals: &mut Vec<Vec<u32>>,
     downward_bounds: &Vec<(u32, u32)>,
-) -> (DirectedCCH, Vec<Vec<u32>>, Vec<Vec<u32>>, Vec<(u32, u32)>, Vec<(u32, u32)>) {
+    num_intervals: u32,
+) -> (DirectedCCH, Vec<u32>, Vec<u32>, Vec<(u32, u32)>, Vec<(u32, u32)>) {
     let m = cch.num_arcs();
     let n = cch.num_nodes();
 
     let forward = UnweightedFirstOutGraph::new(cch.forward_first_out(), cch.forward_head());
     let backward = UnweightedFirstOutGraph::new(cch.backward_first_out(), cch.backward_head());
 
+    // count how many edges will survive
+    let upward_count = upward_intervals.iter().filter(|v| !v.is_empty()).count();
+    let downward_count = downward_intervals.iter().filter(|v| !v.is_empty()).count();
+
     let mut forward_first_out = Vec::with_capacity(cch.first_out.len());
     forward_first_out.push(0);
     let mut forward_head = Vec::with_capacity(m);
-    let mut forward_weights = Vec::with_capacity(m);
+    let mut forward_weights = Vec::with_capacity(upward_count * num_intervals as usize);
     let mut forward_bounds = Vec::with_capacity(m);
     let mut forward_cch_edge_to_orig_arc = Vec::with_capacity(m);
+    println!("Allocated forward structs");
 
     let mut backward_first_out = Vec::with_capacity(cch.first_out.len());
     backward_first_out.push(0);
     let mut backward_head = Vec::with_capacity(m);
-    let mut backward_weights = Vec::with_capacity(m);
+    let mut backward_weights = Vec::with_capacity(downward_count * num_intervals as usize);
     let mut backward_bounds = Vec::with_capacity(m);
     let mut backward_cch_edge_to_orig_arc = Vec::with_capacity(m);
+    println!("Allocated backward structs");
 
     let mut forward_edge_counter = 0;
     let mut backward_edge_counter = 0;
@@ -443,13 +462,14 @@ fn build_customized_graph(
             // pruning: ignore edge if lower bound exceeds customized upper bound
             if !intervals.is_empty() {
                 forward_head.push(next_node);
-                forward_weights.push(intervals.clone());
+                forward_weights.extend_from_slice(intervals);
                 forward_bounds.push(*bounds);
                 forward_cch_edge_to_orig_arc.push(forward_orig_arcs.clone());
                 forward_edge_counter += 1;
 
                 // reduce memory consumption by removing unnecessary content
-                *intervals = vec![];
+                intervals.clear();
+                intervals.shrink_to(0);
             }
         }
         for ((((NodeIdT(next_node), _), (_, backward_orig_arcs)), intervals), bounds) in LinkIterable::<(NodeIdT, EdgeIdT)>::link_iter(&backward, node)
@@ -459,13 +479,14 @@ fn build_customized_graph(
         {
             if !intervals.is_empty() {
                 backward_head.push(next_node);
-                backward_weights.push(intervals.clone());
+                backward_weights.extend_from_slice(intervals);
                 backward_bounds.push(*bounds);
                 backward_cch_edge_to_orig_arc.push(backward_orig_arcs.clone());
                 backward_edge_counter += 1;
 
                 // reduce memory consumption by removing unnecessary content
-                *intervals = vec![];
+                intervals.clear();
+                intervals.shrink_to(0);
             }
         }
         forward_first_out.push(forward_edge_counter);
@@ -506,9 +527,8 @@ fn empty_ttf() -> Vec<TTFPoint> {
     ]
 }
 
-fn flatten_edge_intervals(intervals: &Vec<Vec<u32>>) -> Vec<u32> {
+fn reorder_edge_intervals(_intervals: &mut Vec<u32>) {
     // todo change vector layout!
-    intervals.iter().flatten().cloned().collect::<Vec<u32>>()
 }
 
 #[test]
