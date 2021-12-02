@@ -35,15 +35,31 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let customized_directory = graph_directory.join("customized");
     if !customized_directory.exists() {
-        std::fs::create_dir(&customized_directory);
+        std::fs::create_dir(&customized_directory)?;
     }
     let output_directory = customized_directory.join(output_directory);
     if !output_directory.exists() {
-        std::fs::create_dir(&output_directory);
+        std::fs::create_dir(&output_directory)?;
     }
 
+    /*let upward_weights = Vec::<u32>::load_from(&output_directory.join("upward_intervals"))?;
+    upward_weights.iter().zip(customized.upward_intervals.iter()).for_each(|(&a, &b)| {
+        if a != b {
+            println!("expected {}, loaded {}", a, b);
+        }
+    });
+    drop(upward_weights);
+
+    let downward_weights = Vec::<u32>::load_from(&output_directory.join("downward_intervals"))?;
+    downward_weights.iter().zip(customized.downward_intervals.iter()).for_each(|(&a, &b)| {
+        if a != b {
+            println!("expected {}, loaded {}", a, b);
+        }
+    });
+    drop(downward_weights);*/
+
     println!("Started storing results...");
-    store_interval_minima(&output_directory, &customized);
+    store_interval_minima(&output_directory, &customized)?;
     println!("Stored customized struct in {}", output_directory.display());
 
     Ok(())

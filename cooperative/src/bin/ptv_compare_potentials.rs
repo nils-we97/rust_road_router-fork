@@ -10,10 +10,10 @@ use cooperative::io::io_interval_minima_customization::load_interval_minima;
 use cooperative::io::io_queries::load_queries;
 use cooperative::util::cli_args::parse_arg_required;
 use rust_road_router::algo::ch_potentials::CCHPotData;
-use rust_road_router::algo::customizable_contraction_hierarchy::CCH;
+use rust_road_router::algo::customizable_contraction_hierarchy::{CCH, CCHT};
 use rust_road_router::algo::TDQuery;
 use rust_road_router::datastr::graph::time_dependent::{TDGraph, Timestamp};
-use rust_road_router::datastr::graph::{EdgeId, FirstOutGraph, Graph, Weight};
+use rust_road_router::datastr::graph::{EdgeId, FirstOutGraph, Graph, Weight, INFINITY};
 use rust_road_router::datastr::node_order::NodeOrder;
 use rust_road_router::io::{Load, Reconstruct};
 use rust_road_router::report::measure;
@@ -70,8 +70,10 @@ fn main() -> Result<(), Box<dyn Error>> {
     // ----------------------------------------------------------------------------- //
     // 2nd potential: Corridor-Lowerbound Potential
     //let td_graph = convert_to_td_graph(&graph);
-    let customized_corridor_lowerbound = load_interval_minima(&path.join("customized").join("customized_96"))?;
-    //let customized_corridor_lowerbound = CustomizedApproximatedPeriodicTTF::new_from_ptv(&cch, &td_graph, 72);
+    let (customized_corridor_lowerbound, time) = measure(|| load_interval_minima(&path.join("customized").join("customized_96")).unwrap());
+    println!("Loaded customized data in {} ms", time.to_std().unwrap().as_nanos() as f64 / 1_000_000.0);
+
+    //let customized_corridor_lowerbound = CustomizedApproximatedPeriodicTTF::new_from_ptv(&cch, &td_graph, 96);
     let corridor_lowerbound_pot = CorridorLowerboundPotential::new(&customized_corridor_lowerbound);
     let mut server = PTVQueryServer::new_with_potential(graph, corridor_lowerbound_pot);
 
@@ -139,6 +141,11 @@ fn execute_queries<Pot: TDPotential>(server: &mut PTVQueryServer<Pot>, queries: 
         num_queue_pops / queries.len() as u64
     );
     println!("Total distance: {} (avg: {})", sum_distances, sum_distances / queries.len() as u64);
+    println!(
+        "Potential estimation: {} (avg: {})",
+        server.sum_potentials,
+        server.sum_potentials / queries.len() as u64
+    );
     println!("-----------------------------");
 }
 
