@@ -130,7 +130,7 @@ impl CustomizedApproximatedPeriodicTTF<DirectedCCH> {
 
         // build directed cch, remove unnecessary shortcuts
         // also directly flatten the interval structure
-        let ((cch, mut upward_intervals, mut downward_intervals, upward_bounds, downward_bounds), time) = measure(|| {
+        let ((cch, upward_intervals, downward_intervals, upward_bounds, downward_bounds), time) = measure(|| {
             build_customized_graph(
                 cch,
                 &mut upward_intervals,
@@ -143,11 +143,9 @@ impl CustomizedApproximatedPeriodicTTF<DirectedCCH> {
         println!("Re-Building new CCH graph took {} ms", time.to_std().unwrap().as_nanos() as f64 / 1_000_000.0);
 
         // flatten upward/downward intervals into single-dimensional vectors
-        // in order to reduce memory consumption, we allow some performance reductions
-        reorder_edge_intervals(&mut upward_intervals);
-        reorder_edge_intervals(&mut downward_intervals);
-
-        println!("Flattened intervals");
+        let upward_intervals = reorder_edge_intervals(&upward_intervals, cch.forward_head().len(), num_intervals);
+        let downward_intervals = reorder_edge_intervals(&downward_intervals, cch.backward_head().len(), num_intervals);
+        println!("Reordered intervals");
 
         Self {
             cch,
@@ -527,8 +525,15 @@ fn empty_ttf() -> Vec<TTFPoint> {
     ]
 }
 
-fn reorder_edge_intervals(_intervals: &mut Vec<u32>) {
-    // todo change vector layout!
+fn reorder_edge_intervals(intervals: &Vec<u32>, num_edges: usize, num_intervals: u32) -> Vec<u32> {
+    let mut ret = vec![0; intervals.len()];
+
+    for edge_id in 0..num_edges {
+        for interval_id in 0..num_intervals as usize {
+            ret[interval_id * num_edges + edge_id] = intervals[edge_id * num_intervals as usize + interval_id];
+        }
+    }
+    ret
 }
 
 #[test]

@@ -96,11 +96,11 @@ impl<'a, CCH: CCHT> TDPotential for CorridorLowerboundPotential<'a, CCH> {
                         let end_idx = (((timestamp + node_upper) % MAX_BUCKETS) / self.interval_length) as usize;
 
                         let mut idx = start_idx;
-                        let mut edge_weight = *unsafe { self.backward_cch_weights.get_unchecked(self.customized.num_intervals as usize * edge_id + idx) };
+                        let mut edge_weight = *unsafe { self.backward_cch_weights.get_unchecked(idx * self.backward_cch_graph.num_arcs() + edge_id) };
                         while idx != end_idx {
                             idx = (idx + 1) % self.customized.num_intervals as usize;
                             edge_weight = min(edge_weight, *unsafe {
-                                self.backward_cch_weights.get_unchecked(self.customized.num_intervals as usize * edge_id + idx)
+                                self.backward_cch_weights.get_unchecked(idx * self.backward_cch_graph.num_arcs() + edge_id)
                             });
                         }
 
@@ -154,12 +154,11 @@ impl<'a, CCH: CCHT> TDPotential for CorridorLowerboundPotential<'a, CCH> {
                         // -> take the same edge interval of all outgoing edges as given by the corridor
                         if let Some(next_potential) = self.potentials[next_node as usize].value() {
                             let mut idx = start_interval;
-                            let mut edge_weight = *unsafe { self.forward_cch_weights.get_unchecked((self.customized.num_intervals * edge) as usize + idx) };
+                            let mut edge_weight = *unsafe { self.forward_cch_weights.get_unchecked(idx * self.forward_cch_graph.num_arcs() + edge as usize) };
                             while idx != end_interval {
                                 idx = (idx + 1) % self.customized.num_intervals as usize;
-                                // todo flatten vec!
                                 edge_weight = min(edge_weight, *unsafe {
-                                    self.forward_cch_weights.get_unchecked((self.customized.num_intervals * edge) as usize + idx)
+                                    self.forward_cch_weights.get_unchecked(idx * self.forward_cch_graph.num_arcs() + edge as usize)
                                 });
                             }
 

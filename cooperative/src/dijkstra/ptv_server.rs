@@ -11,6 +11,7 @@ pub struct PTVQueryServer<Pot> {
     graph: TDGraph,
     dijkstra: DijkstraData<Weight, (), Weight>,
     potential: Pot,
+    pub sum_potentials: u64,
 }
 
 pub struct PTVQueryResult {
@@ -30,6 +31,7 @@ impl<Pot: TDPotential> PTVQueryServer<Pot> {
             graph,
             dijkstra: DijkstraData::new(nodes),
             potential,
+            sum_potentials: 0,
         }
     }
 
@@ -110,6 +112,7 @@ impl<Pot: TDPotential> PTVQueryServer<Pot> {
         }
 
         let time_query = time::now() - start;
+        self.sum_potentials += pot.potential(from, init).unwrap_or(0) as u64;
 
         /*println!(
             "Query results: {}, potential: {}",
