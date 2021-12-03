@@ -91,7 +91,7 @@ impl CustomizedApproximatedPeriodicTTF<DirectedCCH> {
         let (mut upward_intervals, upward_bounds): (Vec<Vec<u32>>, Vec<(u32, u32)>) = upward_weights
             .iter_mut()
             .map(|wrapper| {
-                if wrapper.shortcut.required {
+                if wrapper.shortcut.required && wrapper.bounds.0 <= wrapper.bounds.1 {
                     let ret = (wrapper.interval_minima.clone(), wrapper.bounds);
                     wrapper.interval_minima = vec![];
                     ret
@@ -112,7 +112,7 @@ impl CustomizedApproximatedPeriodicTTF<DirectedCCH> {
         let (mut downward_intervals, downward_bounds): (Vec<Vec<u32>>, Vec<(u32, u32)>) = downward_weights
             .iter_mut()
             .map(|wrapper| {
-                if wrapper.shortcut.required {
+                if wrapper.shortcut.required && wrapper.bounds.0 <= wrapper.bounds.1 {
                     let ret = (wrapper.interval_minima.clone(), wrapper.bounds);
                     wrapper.interval_minima = vec![];
                     ret
@@ -141,11 +141,6 @@ impl CustomizedApproximatedPeriodicTTF<DirectedCCH> {
             )
         });
         println!("Re-Building new CCH graph took {} ms", time.to_std().unwrap().as_nanos() as f64 / 1_000_000.0);
-
-        // flatten upward/downward intervals into single-dimensional vectors
-        let upward_intervals = reorder_edge_intervals(&upward_intervals, cch.forward_head().len(), num_intervals);
-        let downward_intervals = reorder_edge_intervals(&downward_intervals, cch.backward_head().len(), num_intervals);
-        println!("Reordered intervals");
 
         Self {
             cch,
@@ -425,14 +420,9 @@ fn build_customized_graph(
     let forward = UnweightedFirstOutGraph::new(cch.forward_first_out(), cch.forward_head());
     let backward = UnweightedFirstOutGraph::new(cch.backward_first_out(), cch.backward_head());
 
-    // count how many edges will survive
-    let upward_count = upward_intervals.iter().filter(|v| !v.is_empty()).count();
-    let downward_count = downward_intervals.iter().filter(|v| !v.is_empty()).count();
-
     let mut forward_first_out = Vec::with_capacity(cch.first_out.len());
     forward_first_out.push(0);
     let mut forward_head = Vec::with_capacity(m);
-    let mut forward_weights = Vec::with_capacity(upward_count * num_intervals as usize);
     let mut forward_bounds = Vec::with_capacity(m);
     let mut forward_cch_edge_to_orig_arc = Vec::with_capacity(m);
     println!("Allocated forward structs");
@@ -440,10 +430,18 @@ fn build_customized_graph(
     let mut backward_first_out = Vec::with_capacity(cch.first_out.len());
     backward_first_out.push(0);
     let mut backward_head = Vec::with_capacity(m);
-    let mut backward_weights = Vec::with_capacity(downward_count * num_intervals as usize);
+
     let mut backward_bounds = Vec::with_capacity(m);
     let mut backward_cch_edge_to_orig_arc = Vec::with_capacity(m);
     println!("Allocated backward structs");
+
+    // count how many edges will survive, allocate required memory
+    let upward_count = upward_intervals.iter().filter(|v| !v.is_empty()).count();
+    let downward_count = downward_intervals.iter().filter(|v| !v.is_empty()).count();
+
+    let mut forward_weights = vec![0; upward_count * num_intervals as usize];
+    let mut backward_weights = vec![0; downward_count * num_intervals as usize];
+    println!("Allocated weights");
 
     let mut forward_edge_counter = 0;
     let mut backward_edge_counter = 0;
@@ -460,7 +458,9 @@ fn build_customized_graph(
             // pruning: ignore edge if lower bound exceeds customized upper bound
             if !intervals.is_empty() {
                 forward_head.push(next_node);
-                forward_weights.extend_from_slice(intervals);
+                for interval_idx in 0..intervals.len() {
+                    forward_weights[interval_idx * upward_count + forward_edge_counter as usize] = intervals[interval_idx];
+                }
                 forward_bounds.push(*bounds);
                 forward_cch_edge_to_orig_arc.push(forward_orig_arcs.clone());
                 forward_edge_counter += 1;
@@ -477,7 +477,10 @@ fn build_customized_graph(
         {
             if !intervals.is_empty() {
                 backward_head.push(next_node);
-                backward_weights.extend_from_slice(intervals);
+
+                for interval_idx in 0..intervals.len() {
+                    backward_weights[interval_idx * downward_count + backward_edge_counter as usize] = intervals[interval_idx];
+                }
                 backward_bounds.push(*bounds);
                 backward_cch_edge_to_orig_arc.push(backward_orig_arcs.clone());
                 backward_edge_counter += 1;
@@ -525,7 +528,7 @@ fn empty_ttf() -> Vec<TTFPoint> {
     ]
 }
 
-fn reorder_edge_intervals(intervals: &Vec<u32>, num_edges: usize, num_intervals: u32) -> Vec<u32> {
+/*pub fn reorder_edge_intervals(intervals: &Vec<u32>, num_edges: usize, num_intervals: u32) -> Vec<u32> {
     let mut ret = vec![0; intervals.len()];
 
     for edge_id in 0..num_edges {
@@ -534,7 +537,7 @@ fn reorder_edge_intervals(intervals: &Vec<u32>, num_edges: usize, num_intervals:
         }
     }
     ret
-}
+}*/
 
 #[test]
 fn test_interval_minima() {

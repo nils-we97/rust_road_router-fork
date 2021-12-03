@@ -1,5 +1,3 @@
-use cooperative::dijkstra::potentials::corridor_lowerbound_potential::customization::CustomizedApproximatedPeriodicTTF;
-use cooperative::dijkstra::potentials::corridor_lowerbound_potential::customization_catchup::convert_to_td_graph;
 use cooperative::dijkstra::potentials::corridor_lowerbound_potential::CorridorLowerboundPotential;
 use cooperative::dijkstra::potentials::multi_level_bucket_potential::customization::CustomizedMultiLevels;
 use cooperative::dijkstra::potentials::multi_level_bucket_potential::CCHMultiLevelBucketPotential;
@@ -10,10 +8,10 @@ use cooperative::io::io_interval_minima_customization::load_interval_minima;
 use cooperative::io::io_queries::load_queries;
 use cooperative::util::cli_args::parse_arg_required;
 use rust_road_router::algo::ch_potentials::CCHPotData;
-use rust_road_router::algo::customizable_contraction_hierarchy::{CCH, CCHT};
+use rust_road_router::algo::customizable_contraction_hierarchy::CCH;
 use rust_road_router::algo::TDQuery;
 use rust_road_router::datastr::graph::time_dependent::{TDGraph, Timestamp};
-use rust_road_router::datastr::graph::{EdgeId, FirstOutGraph, Graph, Weight, INFINITY};
+use rust_road_router::datastr::graph::{EdgeId, FirstOutGraph, Graph, Weight};
 use rust_road_router::datastr::node_order::NodeOrder;
 use rust_road_router::io::{Load, Reconstruct};
 use rust_road_router::report::measure;
