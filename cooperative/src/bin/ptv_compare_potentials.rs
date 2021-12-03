@@ -63,10 +63,27 @@ fn main() -> Result<(), Box<dyn Error>> {
     execute_queries(&mut server, &queries, "CCH Lowerbound Potential");
     let (graph, cch_lowerbound_pot) = server.decompose();
     drop(cch_lowerbound_pot);
+
+    // ----------------------------------------------------------------------------- //
+    // 2nd potential: Multi-Level-Bucket Potential
+    let customized_multi_levels = CustomizedMultiLevels::new(
+        &cch,
+        &departure,
+        &travel_time,
+        &vec![86_400_000 / 6, 86_400_000 / 18],
+        graph.num_arcs() as u64 * 100_000,
+    );
+    let multi_level_bucket_pot = CCHMultiLevelBucketPotential::new_forward(&customized_multi_levels, &cch_pot_data, 2);
+    let mut server = PTVQueryServer::new_with_potential(graph, multi_level_bucket_pot);
+    execute_queries(&mut server, &queries, "Multi Level Bucket Pot");
+    let (graph, pot) = server.decompose();
+
+    drop(pot);
+    drop(customized_multi_levels);
     drop(cch_pot_data);
 
     // ----------------------------------------------------------------------------- //
-    // 2nd potential: Corridor-Lowerbound Potential
+    // 3rd potential: Corridor-Lowerbound Potential
     //let td_graph = convert_to_td_graph(&graph);
     let (customized_corridor_lowerbound, time) = measure(|| load_interval_minima(&path.join("customized").join("customized_96")).unwrap());
     println!("Loaded customized data in {} ms", time.to_std().unwrap().as_nanos() as f64 / 1_000_000.0);
@@ -76,24 +93,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut server = PTVQueryServer::new_with_potential(graph, corridor_lowerbound_pot);
 
     execute_queries(&mut server, &queries, "Corridor Lowerbound Potential");
-    let (graph, pot) = server.decompose();
-    println!("Average corridor length: {}", pot.average_corridor_length());
-
-    drop(pot);
-    drop(customized_corridor_lowerbound);
-
-    // ----------------------------------------------------------------------------- //
-    // 3rd potential: Multi-Level-Bucket Potential
-    let customized_multi_levels = CustomizedMultiLevels::new(
-        &cch,
-        &departure,
-        &travel_time,
-        &vec![86_400_000 / 6, 86_400_000 / 18],
-        graph.num_arcs() as u64 * 100_000,
-    );
-    let multi_level_bucket_pot = CCHMultiLevelBucketPotential::new_forward(&customized_multi_levels, 2);
-    let mut server = PTVQueryServer::new_with_potential(graph, multi_level_bucket_pot);
-    execute_queries(&mut server, &queries, "Multi Level Bucket Pot");
+    let (_, pot) = server.decompose();
+    println!("Average corridor length: {}s", pot.average_corridor_length() / 1000.0);
 
     Ok(())
 }
