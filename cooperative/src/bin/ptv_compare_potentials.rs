@@ -77,7 +77,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     execute_queries(&mut server, &queries, "Corridor Lowerbound Potential");
     let (graph, pot) = server.decompose();
-    println!("Avg corridor length: {}", pot.corridor_len as f64 / pot.num_corridor_requests as f64);
+    println!("Average corridor length: {}", pot.average_corridor_length());
 
     drop(pot);
     drop(customized_corridor_lowerbound);
@@ -126,7 +126,7 @@ fn execute_queries<Pot: TDPotential>(server: &mut PTVQueryServer<Pot>, queries: 
     println!("-----------------------------");
     println!("Result for {}:", pot_name);
     println!(
-        "Total runtime: {} ms (potential: {}, query: {})",
+        "Total runtime: {} ms (potential init: {}, query + pot: {})",
         time_total.to_std().unwrap().as_nanos() as f64 / 1_000_000.0,
         time_potentials.to_std().unwrap().as_nanos() as f64 / 1_000_000.0,
         time_queries.to_std().unwrap().as_nanos() as f64 / 1_000_000.0,
