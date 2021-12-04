@@ -13,6 +13,7 @@ use crate::io::io_population_grid::PopulationGridEntry;
 use kdtree::kdtree::Kdtree;
 
 pub mod departure_distributions;
+pub mod dijkstra_rank;
 pub mod population_density_based;
 pub mod random_geometric;
 pub mod random_uniform;
@@ -28,6 +29,7 @@ pub enum QueryType {
     PopulationUniformConstantDep,
     PopulationGeometric,
     PopulationGeometricConstantDep,
+    DijkstraRank,
 }
 
 impl FromStr for QueryType {
@@ -44,6 +46,7 @@ impl FromStr for QueryType {
             "POPULATION_UNIFORM_CONSTANT_DEPARTURE" => Ok(QueryType::PopulationUniformConstantDep),
             "POPULATION_GEOMETRIC" => Ok(QueryType::PopulationGeometric),
             "POPULATION_GEOMETRIC_CONSTANT_DEPARTURE" => Ok(QueryType::PopulationGeometricConstantDep),
+            "DIJKSTRA_RANK" => Ok(QueryType::DijkstraRank),
             _ => Err(CliErr("Unknown Query Type!")),
         }
     }
