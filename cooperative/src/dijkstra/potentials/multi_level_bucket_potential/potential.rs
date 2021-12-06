@@ -8,14 +8,15 @@ use rust_road_router::algo::customizable_contraction_hierarchy::{CCH, CCHT};
 use rust_road_router::datastr::graph::time_dependent::Timestamp;
 use rust_road_router::datastr::graph::{EdgeId, EdgeIdT, Graph, LinkIterable, NodeId, NodeIdT, UnweightedFirstOutGraph, Weight, INFINITY};
 use rust_road_router::datastr::timestamped_vector::TimestampedVector;
+use std::cmp::min;
 
 pub struct CCHMultiLevelBucketPotential<'a> {
     customized: &'a CustomizedMultiLevels<'a>,
     forward_cch_graph: UnweightedFirstOutGraph<&'a [EdgeId], &'a [NodeId]>,
-    forward_cch_weights: &'a Vec<Vec<Weight>>,
+    forward_cch_weights: &'a Vec<Weight>,
     backward_cch_graph: UnweightedFirstOutGraph<&'a [EdgeId], &'a [NodeId]>,
-    backward_cch_weights: &'a Vec<Vec<Weight>>,
-    interval_query_server: CorridorEliminationTreeServer<'a, CCH>,
+    backward_cch_weights: &'a Vec<Weight>,
+    interval_query_server: CorridorEliminationTreeServer<'a, CCH, Vec<(Weight, Weight)>>,
     fallback_potential: BorrowedCCHPot<'a>,
     context: MultiLevelBucketPotentialContext,
 }
@@ -39,13 +40,14 @@ impl<'a> CCHMultiLevelBucketPotential<'a> {
         let n = forward_cch_graph.num_nodes();
 
         // initialize lowerbound forward potential for interval query (also as fallback potential on tight corridors!)
-        let pot_forward_weights = forward_cch_weights
-            .iter()
-            .map(|weights| (weights[0], weights[1]))
+        let pot_forward_weights = (0..forward_cch_graph.num_arcs())
+            .into_iter()
+            .map(|edge_id| (forward_cch_weights[edge_id], forward_cch_weights[forward_cch_graph.num_arcs() + edge_id]))
             .collect::<Vec<(Weight, Weight)>>();
-        let pot_backward_weights = backward_cch_weights
-            .iter()
-            .map(|weights| (weights[0], weights[1]))
+
+        let pot_backward_weights = (0..backward_cch_graph.num_arcs())
+            .into_iter()
+            .map(|edge_id| (backward_cch_weights[edge_id], backward_cch_weights[backward_cch_graph.num_arcs() + edge_id]))
             .collect::<Vec<(Weight, Weight)>>();
 
         let interval_query_server = CorridorEliminationTreeServer::new(
@@ -149,12 +151,12 @@ impl<'a> TDPotential for CCHMultiLevelBucketPotential<'a> {
                             // careful: use correct indices, distance array only contains the relevant metrics!
                             for distance_idx in 0..self.context.current_metrics.len() {
                                 let metric_idx = self.context.current_metrics[distance_idx];
-                                let weight = self.context.backward_distances[node as usize][distance_idx] + self.backward_cch_weights[edge][metric_idx];
 
-                                // updates are only relevant if the new weight is smaller than the upper bound distance to the target
-                                if weight < self.context.backward_distances[next_node][distance_idx] && weight <= upper_arrival_dist {
-                                    self.context.backward_distances[next_node][distance_idx] = weight;
-                                }
+                                let weight = self.context.backward_distances[node as usize][distance_idx]
+                                    + *unsafe { self.backward_cch_weights.get_unchecked(metric_idx * self.backward_cch_graph.num_arcs() + edge) };
+
+                                self.context.backward_distances[next_node][distance_idx] =
+                                    min(self.context.backward_distances[next_node][distance_idx], weight);
                             }
                         }
                     }
@@ -189,8 +191,6 @@ impl<'a> TDPotential for CCHMultiLevelBucketPotential<'a> {
                 // 2. propagate the result back to the original start node
                 while let Some(current_node) = self.context.stack.pop() {
                     for (NodeIdT(next_node), EdgeIdT(edge)) in LinkIterable::<(NodeIdT, EdgeIdT)>::link_iter(&self.forward_cch_graph, current_node) {
-                        let edge_forward_weights = &self.forward_cch_weights[edge as usize];
-
                         /*distances
                         .iter_mut()
                         .zip(self.current_metrics.iter())
@@ -199,11 +199,14 @@ impl<'a> TDPotential for CCHMultiLevelBucketPotential<'a> {
 
                         for idx in 0..self.context.current_metrics.len() {
                             let metric_idx = self.context.current_metrics[idx];
-                            let weight = edge_forward_weights[metric_idx] + self.context.backward_distances[next_node as usize][idx];
+                            let weight = self.context.backward_distances[next_node as usize][idx]
+                                + *unsafe {
+                                    self.forward_cch_weights
+                                        .get_unchecked(metric_idx * self.forward_cch_graph.num_arcs() + edge as usize)
+                                };
 
-                            if weight < self.context.backward_distances[current_node as usize][idx] && weight <= latest_arrival_dist {
-                                self.context.backward_distances[current_node as usize][idx] = weight;
-                            }
+                            self.context.backward_distances[current_node as usize][idx] =
+                                min(self.context.backward_distances[current_node as usize][idx], weight);
                         }
                     }
 

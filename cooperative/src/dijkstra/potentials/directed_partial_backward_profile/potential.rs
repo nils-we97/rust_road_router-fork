@@ -18,7 +18,7 @@ use rust_road_router::report::measure;
 /// Basic implementation of a potential obtained by a backward profile search
 /// this version is not to be used, but provides a good starting point for further optimizations
 pub struct TDDirectedPartialBackwardProfilePotential<'a> {
-    forward_cch: CorridorEliminationTreeServer<'a, DirectedCCH>,
+    forward_cch: CorridorEliminationTreeServer<'a, DirectedCCH, &'a Vec<(Weight, Weight)>>,
     forward_lower_bound_potential:
         CCHPotential<'a, FirstOutGraph<&'a [EdgeId], &'a [NodeId], &'a [Weight]>, FirstOutGraph<&'a [EdgeId], &'a [NodeId], &'a [Weight]>>, // for directed backward profile search
     backward_graph: ReversedGraphWithEdgeIds,
@@ -46,9 +46,9 @@ impl<'a> TDDirectedPartialBackwardProfilePotential<'a> {
         let forward_cch = CorridorEliminationTreeServer::new(
             &customized_upper_lower.cch,
             forward_graph.clone(),
-            forward_weights.clone(),
+            forward_weights,
             backward_graph.clone(),
-            backward_weights.clone(),
+            backward_weights,
         );
         let forward_lower_bound_potential = cch_pot_data.forward_potential();
 

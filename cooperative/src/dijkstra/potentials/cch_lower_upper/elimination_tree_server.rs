@@ -5,23 +5,23 @@ use rust_road_router::util::in_range_option::InRangeOption;
 use std::borrow::Borrow;
 use std::cmp::min;
 
-pub struct CorridorEliminationTreeServer<'a, CCH> {
+pub struct CorridorEliminationTreeServer<'a, CCH, W> {
     cch: &'a CCH,
     forward_graph: UnweightedFirstOutGraph<&'a [EdgeId], &'a [NodeId]>,
-    forward_weights: Vec<(Weight, Weight)>,
+    forward_weights: W,
     backward_graph: UnweightedFirstOutGraph<&'a [EdgeId], &'a [NodeId]>,
-    backward_weights: Vec<(Weight, Weight)>,
+    backward_weights: W,
     fw_distances: TimestampedVector<(Weight, Weight)>,
     bw_distances: TimestampedVector<(Weight, Weight)>,
 }
 
-impl<'a, CCH: CCHT> CorridorEliminationTreeServer<'a, CCH> {
+impl<'a, CCH: CCHT, W: AsRef<Vec<(Weight, Weight)>>> CorridorEliminationTreeServer<'a, CCH, W> {
     pub fn new(
         cch: &'a CCH,
         forward_graph: UnweightedFirstOutGraph<&'a [EdgeId], &'a [NodeId]>,
-        forward_weights: Vec<(Weight, Weight)>,
+        forward_weights: W,
         backward_graph: UnweightedFirstOutGraph<&'a [EdgeId], &'a [NodeId]>,
-        backward_weights: Vec<(Weight, Weight)>,
+        backward_weights: W,
     ) -> Self {
         let num_nodes = cch.forward_first_out().len() - 1;
         Self {
@@ -54,7 +54,7 @@ impl<'a, CCH: CCHT> CorridorEliminationTreeServer<'a, CCH> {
         // initialize forward elimination tree walk
         let mut fw_walk = CorridorEliminationTreeWalk::init(
             &self.forward_graph,
-            &self.forward_weights,
+            self.forward_weights.as_ref(),
             self.cch.borrow().elimination_tree(),
             &mut self.fw_distances,
             from,
@@ -63,7 +63,7 @@ impl<'a, CCH: CCHT> CorridorEliminationTreeServer<'a, CCH> {
         // initialize backward elimination tree walk
         let mut bw_walk = CorridorEliminationTreeWalk::init(
             &self.backward_graph,
-            &self.backward_weights,
+            self.backward_weights.as_ref(),
             self.cch.borrow().elimination_tree(),
             &mut self.bw_distances,
             to,

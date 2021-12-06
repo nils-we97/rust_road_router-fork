@@ -38,7 +38,7 @@ impl<'a, CCH: CCHT> CorridorLowerboundPotential<'a, CCH> {
         let (backward_cch_graph, backward_cch_weights, backward_cch_bounds) = customized.backward_graph();
         let n = forward_cch_graph.num_nodes();
 
-        let forward_potential = BoundedLowerUpperPotential::new(&customized.cch, forward_cch_bounds.clone(), backward_cch_bounds.clone());
+        let forward_potential = BoundedLowerUpperPotential::new(&customized.cch, forward_cch_bounds, backward_cch_bounds);
         let interval_length = MAX_BUCKETS / customized.num_intervals;
 
         let context = CorridorLowerboundPotentialContext {

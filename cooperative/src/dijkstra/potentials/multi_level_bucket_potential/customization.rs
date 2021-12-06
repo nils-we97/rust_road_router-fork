@@ -19,9 +19,10 @@ const UPPERBOUND_METRIC: usize = 1;
 
 pub struct CustomizedMultiLevels<'a> {
     pub cch: &'a CCH,
-    pub upward: Vec<Vec<Weight>>,
-    pub downward: Vec<Vec<Weight>>,
+    pub upward: Vec<Weight>,
+    pub downward: Vec<Weight>,
     pub bucket_tree: MultiLevelBucketTree,
+    pub num_metrics: usize,
 }
 
 impl<'a> CustomizedMultiLevels<'a> {
@@ -51,7 +52,9 @@ impl<'a> CustomizedMultiLevels<'a> {
         // 3. reduce the number of metrics by applying some simple heuristics
         //let reduce_threshold = departures.len() as u64 * 20000;
         bucket_tree.reduce(reduction_threshold, &mut metrics);
-        println!("Reduced similar metrics - remaining: {}", metrics[0].len());
+        let num_metrics = metrics[0].len();
+        debug_assert!(metrics.iter().all(|v| v.len() == num_metrics));
+        println!("Reduced similar metrics - remaining: {}", num_metrics);
         //dbg!(&bucket_tree);
 
         // these will contain our customized shortcuts
@@ -64,22 +67,27 @@ impl<'a> CustomizedMultiLevels<'a> {
         // 5. run basic customization
         customize_basic(cch, &mut upward_weights, &mut downward_weights);
 
+        // 6. reorder weights
+        let upward_weights = reorder_weights(&upward_weights, num_metrics);
+        let downward_weights = reorder_weights(&downward_weights, num_metrics);
+
         Self {
             cch,
             upward: upward_weights,
             downward: downward_weights,
             bucket_tree,
+            num_metrics,
         }
     }
 
-    pub fn forward_graph(&self) -> (UnweightedFirstOutGraph<&[EdgeId], &[NodeId]>, &Vec<Vec<Weight>>) {
+    pub fn forward_graph(&self) -> (UnweightedFirstOutGraph<&[EdgeId], &[NodeId]>, &Vec<Weight>) {
         (
             UnweightedFirstOutGraph::new(self.cch.forward_first_out(), self.cch.forward_head()),
             &self.upward,
         )
     }
 
-    pub fn backward_graph(&self) -> (UnweightedFirstOutGraph<&[EdgeId], &[NodeId]>, &Vec<Vec<Weight>>) {
+    pub fn backward_graph(&self) -> (UnweightedFirstOutGraph<&[EdgeId], &[NodeId]>, &Vec<Weight>) {
         (
             UnweightedFirstOutGraph::new(self.cch.backward_first_out(), self.cch.backward_head()),
             &self.downward,
@@ -133,6 +141,20 @@ fn extract_metrics(departures: &Vec<Vec<Timestamp>>, travel_times: &Vec<Vec<Weig
     });
 
     metrics
+}
+
+/// reorder weights, flatten the 2-dimensional vector into a single dimension
+/// data by metric and edge_id is found at index `metric * num_edges + edge_id`
+fn reorder_weights(weights: &Vec<Vec<Weight>>, num_metrics: usize) -> Vec<Weight> {
+    let mut ret = vec![0; weights.len() * num_metrics];
+
+    weights.iter().enumerate().for_each(|(edge_id, edge_weights)| {
+        edge_weights.iter().enumerate().for_each(|(metric_id, &val)| {
+            ret[metric_id * weights.len() + edge_id] = val;
+        });
+    });
+
+    ret
 }
 
 fn prepare_weights(cch: &CCH, upward_weights: &mut Vec<Vec<Weight>>, downward_weights: &mut Vec<Vec<Weight>>, metric: &Vec<Vec<Weight>>) {
