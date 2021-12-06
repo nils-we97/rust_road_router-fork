@@ -27,7 +27,7 @@ use std::path::Path;
 ///
 /// Results will be written to directory <path_to_graph>/queries/<timestamp>/
 fn main() -> Result<(), Box<dyn Error>> {
-    let (path, num_queries, query_type, mut remaining_args) = parse_required_args()?;
+    let (path, num_queries, query_type, output_directory, mut remaining_args) = parse_required_args()?;
     let graph_directory = Path::new(&path);
     let graph = load_capacity_graph(graph_directory, 1, bpr_speed_function)?;
 
@@ -88,9 +88,12 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
 
     // add new subfolder in `queries`
-    let subfolder = format!("{}_{}", num_queries, time::get_time().sec);
-    let output_dir = graph_directory.join("queries").join(subfolder);
-    std::fs::create_dir(&output_dir)?;
+    let output_dir = graph_directory.join("queries").join(output_directory);
+    if output_dir.exists() {
+        panic!("This output directory exists already!");
+    } else {
+        std::fs::create_dir(&output_dir)?;
+    }
 
     store_queries(&queries, &output_dir)?;
 
@@ -99,12 +102,13 @@ fn main() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn parse_required_args() -> Result<(String, u32, QueryType, impl Iterator<Item = String>), Box<dyn Error>> {
+fn parse_required_args() -> Result<(String, u32, QueryType, String, impl Iterator<Item = String>), Box<dyn Error>> {
     let mut args = env::args().skip(1);
 
     let graph_directory: String = parse_arg_required(&mut args, "Graph Directory")?;
     let num_queries: u32 = parse_arg_required(&mut args, "number of queries")?;
     let query_type = parse_arg_required(&mut args, "query type")?;
+    let output_directory: String = parse_arg_required(&mut args, "Query Output Directory")?;
 
-    Ok((graph_directory, num_queries, query_type, args))
+    Ok((graph_directory, num_queries, query_type, output_directory, args))
 }
