@@ -1,6 +1,5 @@
 use crate::dijkstra::potentials::cch_lower_upper::elimination_tree_server::CorridorEliminationTreeServer;
 use crate::dijkstra::potentials::multi_level_bucket_potential::customization::CustomizedMultiLevels;
-use crate::dijkstra::potentials::multi_level_bucket_potential::label::MultiLevelBucketLabel;
 use crate::dijkstra::potentials::TDPotential;
 use crate::graph::MAX_BUCKETS;
 use rust_road_router::algo::ch_potentials::{BorrowedCCHPot, CCHPotData};
@@ -19,12 +18,13 @@ pub struct CCHMultiLevelBucketPotential<'a> {
     interval_query_server: CorridorEliminationTreeServer<'a, CCH, Vec<(Weight, Weight)>>,
     fallback_potential: BorrowedCCHPot<'a>,
     context: MultiLevelBucketPotentialContext,
+    num_max_levels: usize,
 }
 
 struct MultiLevelBucketPotentialContext {
     stack: Vec<NodeId>,
     potentials: TimestampedVector<bool>,
-    backward_distances: TimestampedVector<MultiLevelBucketLabel>,
+    backward_distances: TimestampedVector<Weight>,
     current_metrics: Vec<usize>,
     current_intervals: Vec<Timestamp>,
     latest_arrival_dist: Option<Weight>,
@@ -63,7 +63,7 @@ impl<'a> CCHMultiLevelBucketPotential<'a> {
         let context = MultiLevelBucketPotentialContext {
             stack: Vec::new(),
             potentials: TimestampedVector::new(n),
-            backward_distances: TimestampedVector::new_with_default(n, MultiLevelBucketLabel::new(num_levels + 1)),
+            backward_distances: TimestampedVector::new(n * (num_levels + 1)),
             current_metrics: Vec::new(),
             current_intervals: Vec::new(),
             latest_arrival_dist: None,
@@ -81,6 +81,7 @@ impl<'a> CCHMultiLevelBucketPotential<'a> {
             interval_query_server,
             context,
             fallback_potential,
+            num_max_levels: num_levels + 1,
         }
     }
 
@@ -133,7 +134,11 @@ impl<'a> TDPotential for CCHMultiLevelBucketPotential<'a> {
                 let query_backward_distances = self.interval_query_server.backward_distances();
                 self.context.potentials.reset();
                 self.context.backward_distances.reset();
-                self.context.backward_distances[target as usize].set_all(0);
+
+                for level in 0..self.num_max_levels {
+                    self.context.backward_distances[level * self.forward_cch_graph.num_nodes() + target as usize] = 0;
+                }
+                //self.context.backward_distances[target as usize].set_all(0);
 
                 let mut current_node = Some(target);
                 while let Some(node) = current_node {
@@ -152,11 +157,13 @@ impl<'a> TDPotential for CCHMultiLevelBucketPotential<'a> {
                             for distance_idx in 0..self.context.current_metrics.len() {
                                 let metric_idx = self.context.current_metrics[distance_idx];
 
-                                let weight = self.context.backward_distances[node as usize][distance_idx]
+                                let weight = self.context.backward_distances[distance_idx * self.backward_cch_graph.num_nodes() + node as usize]
                                     + *unsafe { self.backward_cch_weights.get_unchecked(metric_idx * self.backward_cch_graph.num_arcs() + edge) };
 
-                                self.context.backward_distances[next_node][distance_idx] =
-                                    min(self.context.backward_distances[next_node][distance_idx], weight);
+                                self.context.backward_distances[distance_idx * self.backward_cch_graph.num_nodes() + next_node] = min(
+                                    self.context.backward_distances[distance_idx * self.backward_cch_graph.num_nodes() + next_node],
+                                    weight,
+                                );
                             }
                         }
                     }
@@ -199,14 +206,16 @@ impl<'a> TDPotential for CCHMultiLevelBucketPotential<'a> {
 
                         for idx in 0..self.context.current_metrics.len() {
                             let metric_idx = self.context.current_metrics[idx];
-                            let weight = self.context.backward_distances[next_node as usize][idx]
+                            let weight = self.context.backward_distances[idx * self.backward_cch_graph.num_nodes() + next_node as usize]
                                 + *unsafe {
                                     self.forward_cch_weights
                                         .get_unchecked(metric_idx * self.forward_cch_graph.num_arcs() + edge as usize)
                                 };
 
-                            self.context.backward_distances[current_node as usize][idx] =
-                                min(self.context.backward_distances[current_node as usize][idx], weight);
+                            self.context.backward_distances[idx * self.backward_cch_graph.num_nodes() + current_node as usize] = min(
+                                self.context.backward_distances[idx * self.backward_cch_graph.num_nodes() + current_node as usize],
+                                weight,
+                            );
                         }
                     }
 
@@ -230,7 +239,8 @@ impl<'a> TDPotential for CCHMultiLevelBucketPotential<'a> {
                     val
                 };
 
-                Some(self.context.backward_distances[node as usize][pot_metric_idx]).filter(|&pot| pot <= latest_arrival_dist)
+                Some(self.context.backward_distances[pot_metric_idx * self.backward_cch_graph.num_nodes() + node as usize])
+                    .filter(|&pot| pot <= latest_arrival_dist)
             }
         } else {
             None
