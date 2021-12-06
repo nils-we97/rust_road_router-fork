@@ -55,6 +55,8 @@ pub fn generate_dijkstra_rank_queries<G: LinkIterable<Link>, D: DepartureDistrib
                     if next_rank == max_rank {
                         result = Some(rank_nodes);
                         break;
+                    } else {
+                        next_rank *= 2;
                     }
                 }
             }
