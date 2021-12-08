@@ -258,7 +258,7 @@ impl MultiLevelBucketTree {
 }
 
 // helper functions
-fn evaluate_metric_differences(metrics: &Vec<Vec<Weight>>, metric1: usize, metric2: usize) -> u64 {
+pub fn evaluate_metric_differences(metrics: &Vec<Vec<Weight>>, metric1: usize, metric2: usize) -> u64 {
     let mut square_sum = 0;
 
     metrics.iter().for_each(|edge_metrics| {
@@ -274,7 +274,7 @@ fn evaluate_metric_differences(metrics: &Vec<Vec<Weight>>, metric1: usize, metri
 }
 
 /// merge metric `metric_idx` with `other_metric_idx`, i.e. take the minimum and store it on `metric_idx`
-fn merge_metrics(metrics: &mut Vec<Vec<Weight>>, metric_idx: usize, other_metric_idx: usize) {
+pub fn merge_metrics(metrics: &mut Vec<Vec<Weight>>, metric_idx: usize, other_metric_idx: usize) {
     metrics
         .iter_mut()
         .for_each(|edge_metrics| edge_metrics[metric_idx] = min(edge_metrics[metric_idx], edge_metrics[other_metric_idx]));

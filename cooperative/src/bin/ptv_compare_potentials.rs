@@ -82,8 +82,15 @@ fn main() -> Result<(), Box<dyn Error>> {
     drop(customized_multi_levels);
     drop(cch_pot_data);
 
+    /*
+
+    fn ts_from(hour: u32, minute: u32) -> Timestamp {
+        hour * 3_600_000 + minute * 60_000
+    }
+         */
+
     // ----------------------------------------------------------------------------- //
-    // 3rd potential: Corridor-Lowerbound Potential
+    // 4th potential: Corridor-Lowerbound Potential
     //let td_graph = convert_to_td_graph(&graph);
     let (customized_corridor_lowerbound, time) = measure(|| load_interval_minima(&path.join("customized").join("customized_96")).unwrap());
     println!("Loaded customized data in {} ms", time.to_std().unwrap().as_nanos() as f64 / 1_000_000.0);

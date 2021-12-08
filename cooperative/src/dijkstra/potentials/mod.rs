@@ -9,6 +9,7 @@ pub mod corridor_lowerbound_potential;
 pub mod directed_partial_backward_profile;
 pub mod init_cch_potential;
 pub mod multi_level_bucket_potential;
+pub mod multi_metric_potential;
 pub mod partial_backward_profile;
 
 pub trait TDPotential {
