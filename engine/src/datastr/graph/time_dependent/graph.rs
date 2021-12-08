@@ -210,6 +210,21 @@ impl LinkIterable<(NodeIdT, EdgeIdT)> for Graph {
     }
 }
 
+impl LinkIterable<Link> for Graph {
+    type Iter<'a> = impl Iterator<Item = Link> + 'a;
+
+    fn link_iter(&self, node: NodeId) -> Self::Iter<'_> {
+        self.neighbor_edge_indices_usize(node).into_iter().map(move |edge_id| Link {
+            node: self.head[edge_id],
+            weight: self.ipp_travel_time[self.first_ipp_of_arc[edge_id] as usize..self.first_ipp_of_arc[edge_id + 1] as usize]
+                .iter()
+                .min()
+                .cloned()
+                .unwrap_or(0),
+        })
+    }
+}
+
 impl BuildPermutated<Graph> for Graph {
     fn permutated_filtered(graph: &Graph, order: &NodeOrder, mut predicate: Box<dyn FnMut(NodeId, NodeId) -> bool>) -> Self {
         let mut first_out: Vec<EdgeId> = Vec::with_capacity(graph.num_nodes() + 1);
