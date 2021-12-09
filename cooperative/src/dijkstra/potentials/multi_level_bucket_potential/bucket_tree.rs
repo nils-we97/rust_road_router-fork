@@ -267,7 +267,7 @@ pub fn evaluate_metric_differences(metrics: &Vec<Vec<Weight>>, metric1: usize, m
         } else {
             edge_metrics[metric1] - edge_metrics[metric2]
         } as u64;
-        square_sum += abs_diff.pow(2);
+        square_sum += abs_diff;
     });
 
     square_sum

@@ -1,6 +1,9 @@
 use cooperative::dijkstra::potentials::corridor_lowerbound_potential::CorridorLowerboundPotential;
 use cooperative::dijkstra::potentials::multi_level_bucket_potential::customization::CustomizedMultiLevels;
 use cooperative::dijkstra::potentials::multi_level_bucket_potential::CCHMultiLevelBucketPotential;
+use cooperative::dijkstra::potentials::multi_metric_potential::customization::CustomizedMultiMetrics;
+use cooperative::dijkstra::potentials::multi_metric_potential::interval_patterns::balanced_interval_pattern;
+use cooperative::dijkstra::potentials::multi_metric_potential::potential::MultiMetricPotential;
 use cooperative::dijkstra::potentials::TDPotential;
 use cooperative::dijkstra::ptv_server::PTVQueryServer;
 use cooperative::graph::MAX_BUCKETS;
@@ -82,13 +85,17 @@ fn main() -> Result<(), Box<dyn Error>> {
     drop(customized_multi_levels);
     drop(cch_pot_data);
 
-    /*
+    // ----------------------------------------------------------------------------- //
+    // 3rd potential: Multi-Metric Potential
+    let (customized_multi_metric, time) = measure(|| CustomizedMultiMetrics::new(&cch, &departure, &travel_time, &balanced_interval_pattern(), 20));
+    println!("Customized graph in {} ms", time.to_std().unwrap().as_nanos() as f64 / 1_000_000.0);
+    let multi_metric_pot = MultiMetricPotential::new(&customized_multi_metric);
+    let mut server = PTVQueryServer::new_with_potential(graph, multi_metric_pot);
+    execute_queries(&mut server, &queries, "Multi Metric Pot");
+    let (graph, pot) = server.decompose();
 
-    fn ts_from(hour: u32, minute: u32) -> Timestamp {
-        hour * 3_600_000 + minute * 60_000
-    }
-         */
-
+    drop(pot);
+    drop(customized_multi_metric);
     // ----------------------------------------------------------------------------- //
     // 4th potential: Corridor-Lowerbound Potential
     //let td_graph = convert_to_td_graph(&graph);

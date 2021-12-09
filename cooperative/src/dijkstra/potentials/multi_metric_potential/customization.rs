@@ -49,7 +49,7 @@ impl<'a> CustomizedMultiMetrics<'a> {
         let (num_metrics, time) = measure(|| reduce_metrics(&mut metrics, &mut metric_entries, num_max_metrics));
         println!(
             "Reducing to {} metrics took {} ms",
-            metric_entries.len() + 1,
+            num_metrics,
             time.to_std().unwrap().as_nanos() as f64 / 1_000_000.0
         );
 
