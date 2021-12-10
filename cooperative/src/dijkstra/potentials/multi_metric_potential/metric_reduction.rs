@@ -1,5 +1,6 @@
 use std::cmp::Ordering;
 
+use rayon::prelude::*;
 use rust_road_router::datastr::graph::time_dependent::Timestamp;
 use rust_road_router::datastr::graph::Weight;
 
@@ -107,14 +108,23 @@ pub fn reduce_metrics(data: &mut Vec<Vec<Weight>>, entries: &mut Vec<MetricEntry
     let num_metrics = data[0].len();
     let mut queue = IndexdMinHeap::new(num_metrics * num_metrics);
 
-    for i in 0..entries.len() {
-        for j in (i + 1)..entries.len() {
-            let diff = evaluate_metric_differences(data, entries[i].metric_id, entries[j].metric_id);
-            let id = entries[i].metric_id * num_metrics + entries[j].metric_id;
-            queue.push(MetricItem::new(id, diff));
-        }
-    }
+    let queue_items = (0..entries.len())
+        .into_par_iter()
+        .map(|i| {
+            ((i + 1)..entries.len())
+                .into_iter()
+                .map(|j| {
+                    let diff = evaluate_metric_differences(data, entries[i].metric_id, entries[j].metric_id);
+                    let id = entries[i].metric_id * num_metrics + entries[j].metric_id;
+                    MetricItem::new(id, diff)
+                })
+                .collect::<Vec<MetricItem>>()
+        })
+        .collect::<Vec<Vec<MetricItem>>>();
     println!("Initialized all metric comparisons!");
+
+    queue_items.iter().for_each(|items| items.iter().for_each(|item| queue.push(item.clone())));
+    println!("Pushed all items into priority queue!");
 
     // remember all deleted metric ids
     let mut metric_deactivated = vec![false; data[0].len()];
@@ -197,7 +207,7 @@ pub fn reduce_metrics(data: &mut Vec<Vec<Weight>>, entries: &mut Vec<MetricEntry
     // lower and upper bound must not be deactivated!
     debug_assert!(!metric_deactivated[0] && !metric_deactivated[1]);
 
-    data.iter_mut().for_each(|edge_metrics| {
+    data.par_iter_mut().for_each(|edge_metrics| {
         *edge_metrics = edge_metrics
             .iter()
             .enumerate()
