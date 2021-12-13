@@ -1,4 +1,5 @@
 use crate::graph::MAX_BUCKETS;
+use rayon::prelude::*;
 use rust_road_router::datastr::graph::time_dependent::Timestamp;
 use rust_road_router::datastr::graph::Weight;
 use std::cmp::min;
@@ -118,7 +119,7 @@ impl MultiLevelBucketTree {
                     // retrieve the correct metric ids and evaluate their differences
                     let base_metric_idx = self.elements[compare_base_idx].metric_id;
                     let compare_metric_idx = self.elements[compare_next_idx].metric_id;
-                    let diff = evaluate_metric_differences(metrics, base_metric_idx, compare_metric_idx);
+                    let diff = evaluate_metric_differences(metrics, base_metric_idx, compare_metric_idx, false);
                     /*println!(
                         "Diff between metric {} and {}: {} ({} per edge)",
                         base_metric_idx,
@@ -258,19 +259,34 @@ impl MultiLevelBucketTree {
 }
 
 // helper functions
-pub fn evaluate_metric_differences(metrics: &Vec<Vec<Weight>>, metric1: usize, metric2: usize) -> u64 {
-    let mut square_sum = 0;
+pub fn evaluate_metric_differences(metrics: &Vec<Vec<Weight>>, metric1: usize, metric2: usize, use_parallel_iter: bool) -> u64 {
+    if use_parallel_iter {
+        metrics
+            .par_iter()
+            .map(|edge_metrics: &Vec<u32>| {
+                let abs_diff = if edge_metrics[metric1] < edge_metrics[metric2] {
+                    edge_metrics[metric2] - edge_metrics[metric1]
+                } else {
+                    edge_metrics[metric1] - edge_metrics[metric2]
+                };
 
-    metrics.iter().for_each(|edge_metrics| {
-        let abs_diff = if edge_metrics[metric1] < edge_metrics[metric2] {
-            edge_metrics[metric2] - edge_metrics[metric1]
-        } else {
-            edge_metrics[metric1] - edge_metrics[metric2]
-        } as u64;
-        square_sum += abs_diff;
-    });
+                (abs_diff as u64 / 500).pow(2)
+            })
+            .sum()
+    } else {
+        metrics
+            .iter()
+            .map(|edge_metrics| {
+                let abs_diff = if edge_metrics[metric1] < edge_metrics[metric2] {
+                    edge_metrics[metric2] - edge_metrics[metric1]
+                } else {
+                    edge_metrics[metric1] - edge_metrics[metric2]
+                };
 
-    square_sum
+                (abs_diff as u64 / 500).pow(2)
+            })
+            .sum()
+    }
 }
 
 /// merge metric `metric_idx` with `other_metric_idx`, i.e. take the minimum and store it on `metric_idx`

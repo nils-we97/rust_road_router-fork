@@ -120,9 +120,9 @@ fn extract_metrics(departures: &Vec<Vec<Timestamp>>, travel_times: &Vec<Vec<Weig
     let mut metrics = vec![vec![INFINITY; entries.len() + 2]; departures.len()];
 
     // collect the metrics edge by edge; this layout is also needed by the customization step
-    (0..departures.len()).into_iter().for_each(|edge_id| {
+    metrics.par_iter_mut().enumerate().for_each(|(edge_id, edge_metrics): (usize, &mut Vec<u32>)| {
         // collect upper bound weights (lowerbound is part of the entry structure and done below!)
-        metrics[edge_id][UPPERBOUND_METRIC] = *travel_times[edge_id].iter().max().unwrap();
+        edge_metrics[UPPERBOUND_METRIC] = *travel_times[edge_id].iter().max().unwrap();
 
         // for the other metrics, we also need the departure timestamps
         departures[edge_id]
@@ -132,7 +132,7 @@ fn extract_metrics(departures: &Vec<Vec<Timestamp>>, travel_times: &Vec<Vec<Weig
                 // update the minimum value for all relevant intervals, i.e. those who include the current departure timestamp
                 entries.iter().for_each(|entry| {
                     if entry.start <= departure && entry.end >= departure {
-                        metrics[edge_id][entry.metric_id] = min(metrics[edge_id][entry.metric_id], travel_time);
+                        edge_metrics[entry.metric_id] = min(edge_metrics[entry.metric_id], travel_time);
                     }
                 });
             });
@@ -145,7 +145,7 @@ fn extract_metrics(departures: &Vec<Vec<Timestamp>>, travel_times: &Vec<Vec<Weig
             let plf_at_begin = plf.eval(entry.start);
             let plf_at_end = plf.eval(entry.end);
 
-            metrics[edge_id][entry.metric_id] = min(metrics[edge_id][entry.metric_id], min(plf_at_begin, plf_at_end));
+            edge_metrics[entry.metric_id] = min(edge_metrics[entry.metric_id], min(plf_at_begin, plf_at_end));
         });
     });
 

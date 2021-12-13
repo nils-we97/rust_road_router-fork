@@ -108,13 +108,14 @@ pub fn reduce_metrics(data: &mut Vec<Vec<Weight>>, entries: &mut Vec<MetricEntry
     let num_metrics = data[0].len();
     let mut queue = IndexdMinHeap::new(num_metrics * num_metrics);
 
-    let queue_items = (0..entries.len())
+    let queue_items: Vec<Vec<MetricItem>> = (0..entries.len())
         .into_par_iter()
-        .map(|i| {
+        .map(|i: usize| {
             ((i + 1)..entries.len())
                 .into_iter()
                 .map(|j| {
-                    let diff = evaluate_metric_differences(data, entries[i].metric_id, entries[j].metric_id);
+                    // avoid another parallel construct - calculation is already parallelized
+                    let diff = evaluate_metric_differences(data, entries[i].metric_id, entries[j].metric_id, false);
                     let id = entries[i].metric_id * num_metrics + entries[j].metric_id;
                     MetricItem::new(id, diff)
                 })
@@ -141,6 +142,8 @@ pub fn reduce_metrics(data: &mut Vec<Vec<Weight>>, entries: &mut Vec<MetricEntry
                 continue;
             }
 
+            println!("Merged metrics {} - {} (diff: {})", first_id, second_id, next.difference);
+
             // merge the metrics together: after merging, `next.first_id` provides a lowerbound for both time ranges
             merge_metrics(data, first_id, second_id);
 
@@ -157,45 +160,23 @@ pub fn reduce_metrics(data: &mut Vec<Vec<Weight>>, entries: &mut Vec<MetricEntry
             });
 
             // re-calculate the distance from `next.first_id` to all other metrics who haven't been deactivated yet!
-            // start with lowerbound distance
-            if first_id != 0 {
-                let diff = evaluate_metric_differences(data, 0, first_id);
-                let id = first_id;
-                let item = MetricItem::new(id, diff);
+            let mut temp_metrics_solved = vec![false; num_metrics];
+            entries.iter().for_each(|entry| {
+                if first_id != entry.metric_id && !metric_deactivated[entry.metric_id] && !temp_metrics_solved[entry.metric_id] {
+                    temp_metrics_solved[entry.metric_id] = true;
 
-                if queue.contains_index(id) {
+                    let diff = evaluate_metric_differences(data, entry.metric_id, first_id, true);
+                    let id = if first_id < entry.metric_id {
+                        first_id * num_metrics + entry.metric_id
+                    } else {
+                        entry.metric_id * num_metrics + first_id
+                    };
+                    let item = MetricItem::new(id, diff);
+
+                    debug_assert!(queue.contains_index(id));
                     queue.update_key(item);
-                } else {
-                    queue.push(item);
                 }
-            }
-            // skip upper bound at position 1, continue with index 2
-            for i in 2..first_id {
-                if !metric_deactivated[i] {
-                    let diff = evaluate_metric_differences(data, i, first_id);
-                    let id = i * num_metrics + first_id;
-                    let item = MetricItem::new(id, diff);
-
-                    if queue.contains_index(id) {
-                        queue.update_key(item);
-                    } else {
-                        queue.push(item);
-                    }
-                }
-            }
-            for i in (first_id + 1)..metric_deactivated.len() {
-                if !metric_deactivated[i] {
-                    let diff = evaluate_metric_differences(data, first_id, i);
-                    let id = first_id * num_metrics + i;
-                    let item = MetricItem::new(id, diff);
-
-                    if queue.contains_index(id) {
-                        queue.update_key(item);
-                    } else {
-                        queue.push(item);
-                    }
-                }
-            }
+            });
         } else {
             println!("Invalid state reached!");
             break;
