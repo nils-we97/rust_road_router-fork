@@ -2,22 +2,26 @@ use rust_road_router::datastr::graph::time_dependent::Timestamp;
 
 /// balanced pattern: 8 hours, 4 hours, 2 hours, 1 hour
 pub fn balanced_interval_pattern() -> Vec<(Timestamp, Timestamp)> {
-    let mut a = (0..5)
+    // 8 hours: ignore 0-8 and 16-24
+    let mut a = (1..4)
         .into_iter()
         .map(|i| (ts_from(i * 4, 0), ts_from(i * 4 + 8, 0)))
         .collect::<Vec<(Timestamp, Timestamp)>>();
 
-    let b = (0..11)
+    // 4 hours: ignore 0-4, 2-6, 4-8 and 18-22, 20-24
+    let b = (3..9)
         .into_iter()
         .map(|i| (ts_from(i * 2, 0), ts_from(i * 2 + 4, 0)))
         .collect::<Vec<(Timestamp, Timestamp)>>();
 
-    let c = (0..23)
+    // 2 hours: ignore 0-2, 1-3, 2-4, 3-5, 4-6 and 20-22, 21-23, 22-24
+    let c = (5..20)
         .into_iter()
         .map(|i| (ts_from(i, 0), ts_from(i + 2, 0)))
         .collect::<Vec<(Timestamp, Timestamp)>>();
 
-    let d = (0..47)
+    // 1 hour: ignore 0-1, .., 4.30-5.30, 20-21, .., 23-24
+    let d = (10..40)
         .into_iter()
         .map(|i| (ts_from(0, i * 30), ts_from(0, (i + 1) * 30)))
         .collect::<Vec<(Timestamp, Timestamp)>>();

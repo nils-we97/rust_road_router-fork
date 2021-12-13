@@ -108,7 +108,8 @@ pub fn reduce_metrics(data: &mut Vec<Vec<Weight>>, entries: &mut Vec<MetricEntry
     let num_metrics = data[0].len();
     let mut queue = IndexdMinHeap::new(num_metrics * num_metrics);
 
-    let queue_items: Vec<Vec<MetricItem>> = (0..entries.len())
+    let start = time::now();
+    let queue_items: Vec<Vec<MetricItem>> = (0..entries.len() - 1)
         .into_par_iter()
         .map(|i: usize| {
             ((i + 1)..entries.len())
@@ -122,14 +123,50 @@ pub fn reduce_metrics(data: &mut Vec<Vec<Weight>>, entries: &mut Vec<MetricEntry
                 .collect::<Vec<MetricItem>>()
         })
         .collect::<Vec<Vec<MetricItem>>>();
-    println!("Initialized all metric comparisons!");
-
-    queue_items.iter().for_each(|items| items.iter().for_each(|item| queue.push(item.clone())));
-    println!("Pushed all items into priority queue!");
+    let time = time::now() - start;
+    println!(
+        "Initialized all metric comparisons in {}s",
+        time.to_std().unwrap().as_nanos() as f64 / 1_000_000_000.0
+    );
 
     // remember all deleted metric ids
     let mut metric_deactivated = vec![false; data[0].len()];
     let mut num_active_metrics = entries.len();
+
+    // reduce pairs with a difference of 0 right away, only insert non-zero values in the queue
+    // exploit the order (a, b) where a < b: if b is merged right away, it will be known before b's entries are inspected
+    queue_items.iter().for_each(|items| {
+        debug_assert!(!items.is_empty());
+        let first_id = items[0].id / num_metrics;
+        debug_assert!(items.iter().all(|entry| entry.id / num_metrics == first_id));
+
+        if !metric_deactivated[first_id] {
+            items.iter().for_each(|item| {
+                let first_id = item.id / num_metrics;
+                let second_id = item.id % num_metrics;
+
+                if !metric_deactivated[first_id] && !metric_deactivated[second_id] {
+                    if item.difference == 0 {
+                        // merge metric
+                        println!("Pre-Merge of metric {} and {}", first_id, second_id);
+                        metric_deactivated[second_id] = true;
+                        num_active_metrics -= 1;
+
+                        entries.iter_mut().for_each(|entry| {
+                            if entry.metric_id == second_id {
+                                entry.metric_id = first_id;
+                            }
+                        });
+                    } else {
+                        // push entry into queue
+                        queue.push(item.clone());
+                    }
+                }
+            });
+        }
+    });
+
+    println!("Pushed all items into priority queue!");
 
     while num_active_metrics > num_allowed_metrics {
         if let Some(next) = queue.pop() {
