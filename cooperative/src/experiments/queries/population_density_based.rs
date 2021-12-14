@@ -104,49 +104,43 @@ pub fn generate_geometric_population_density_based_queries<D: DepartureDistribut
 
     let mut queries = (0..num_queries)
         .into_iter()
-        .map(|_| {
+        .map(|i| {
+            if (i + 1) % 100 == 0 {
+                println!("Finished {} queries", (i + 1));
+            }
+
             // run a query to determine the target cell
-            let mut result = None;
+            let mut possible_target_cells = HashSet::new();
+            let mut from = 0;
 
             // double check that we have a valid result
-            while result.is_none() {
+            while possible_target_cells.is_empty() {
+                possible_target_cells.clear();
+
                 // draw random start cell according to population density, pick a random node inside
                 let start_cell_id = find_interval(&grid_population_intervals, rng.gen_range(0..population_counter));
                 let start_cell_vertex_pos = rng.gen_range(0..vertex_grid[start_cell_id].len());
-                let from = vertex_grid[start_cell_id][start_cell_vertex_pos];
+                from = vertex_grid[start_cell_id][start_cell_vertex_pos];
 
-                // draw distance according to geometric distribution, allow corridor of +- 5km
+                // draw distance according to geometric distribution
                 let distance = distribution.sample(&mut rng) as u32;
+                // allow a slight deviation to discover more cells in the closer neighborhood
+                let lower_threshold = (distance * 9) / 10;
+                let upper_threshold = (distance * 11) / 10;
 
                 let query = TDQuery::new(from, 0, 0);
                 let mut ops = DefaultOps::default();
                 let mut dijkstra = DijkstraRun::query(graph, &mut data, &mut ops, DijkstraInit::from_query(&query));
 
                 while let Some(node) = dijkstra.next() {
-                    // cancel as soon as the tentative distance exceeds the threshold
-                    if *dijkstra.tentative_distance(node) > distance {
-                        result = Some((from, node));
+                    if *dijkstra.tentative_distance(node) > upper_threshold {
+                        // cancel as soon as the tentative distance exceeds the threshold
                         break;
+                    } else if *dijkstra.tentative_distance(node) >= lower_threshold {
+                        // otherwise, everything within [lower, upper] threshold is relevant
+                        let grid_search = PopulationGridEntry::from_coords(longitude[node as usize], latitude[node as usize]);
+                        possible_target_cells.insert(grid_tree.nearest_search(&grid_search).id);
                     }
-                }
-            }
-
-            // get the cell of the current node
-            let (from, node) = result.unwrap();
-            let node_cell = grid_tree.nearest_search(&PopulationGridEntry::from_coords(longitude[node as usize], latitude[node as usize]));
-
-            // look in a distance of 1000 x 1000m around that node, insert all cells
-            let mut possible_target_cells = HashSet::new();
-            for width in -5..5 {
-                for height in -5..5 {
-                    let point = PopulationGridEntry {
-                        id: 0,
-                        coords: [
-                            node_cell.coords[0] + width as f64 * (100.0 / 111_111.0),
-                            node_cell.coords[1] + height as f64 * (100.0 / 111_111.0),
-                        ],
-                    };
-                    possible_target_cells.insert(grid_tree.nearest_search(&point).id);
                 }
             }
 
