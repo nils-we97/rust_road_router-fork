@@ -1,4 +1,5 @@
 use cooperative::experiments::queries::departure_distributions::{ConstantDeparture, DepartureDistribution, RushHourDeparture, UniformDeparture};
+use cooperative::experiments::queries::dijkstra_rank::generate_dijkstra_rank_queries;
 use cooperative::experiments::queries::population_density_based::{
     generate_geometric_population_density_based_queries, generate_uniform_population_density_based_queries,
 };
@@ -18,12 +19,13 @@ use std::path::Path;
 
 /// Generate random queries and store them in a given directory
 ///
-/// First parameters: <path_to_graph> <num_queries> <query_type>
+/// First parameters: <path_to_graph> <num_queries> <query_type> <output_directory>
 /// Additional parameters, depending on `query_type`:
 /// uniform/geometric: ---
 /// population-grid-based: <path_to_population_grid_file>
+/// dijkstra-rank: <num_queries_per_rank> <max_rank_pow>
 ///
-/// Results will be written to directory <path_to_graph>/queries/<timestamp>/
+/// Results will be written to directory <path_to_graph>/queries/<output_directory>/
 fn main() -> Result<(), Box<dyn Error>> {
     let (path, num_queries, query_type, output_directory, mut remaining_args) = parse_required_args()?;
     let graph_directory = Path::new(&path);
@@ -38,10 +40,20 @@ fn main() -> Result<(), Box<dyn Error>> {
             let lower_bound_graph = FirstOutGraph::new(graph.first_out(), graph.head(), &lower_bound[..]);
 
             match query_type {
-                QueryType::Geometric => generate_random_geometric_queries(&lower_bound_graph, num_queries, UniformDeparture::new()),
-                QueryType::GeometricRushHourDep => generate_random_geometric_queries(&lower_bound_graph, num_queries, RushHourDeparture::new()),
+                QueryType::Geometric => generate_random_geometric_queries(&lower_bound_graph, false, num_queries, UniformDeparture::new()),
+                QueryType::GeometricRushHourDep => generate_random_geometric_queries(&lower_bound_graph, false, num_queries, RushHourDeparture::new()),
                 _ => unimplemented!(),
             }
+        }
+        QueryType::DijkstraRank => {
+            let num_queries_per_rank: u32 = parse_arg_required(&mut remaining_args, "number of queries per rank")?;
+            let max_rank_pow: u32 = parse_arg_required(&mut remaining_args, "power of last rank (2^x)")?;
+            let queries = generate_dijkstra_rank_queries(&graph, num_queries_per_rank, max_rank_pow, UniformDeparture::new());
+
+            (
+                queries,
+                Some(vec![("num_queries", vec![num_queries_per_rank]), ("max_rank", vec![max_rank_pow])]),
+            )
         }
         _ => {
             // for population queries, we have to use some additional data

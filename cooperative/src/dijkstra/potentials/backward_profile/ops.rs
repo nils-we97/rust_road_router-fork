@@ -4,12 +4,12 @@ use rust_road_router::datastr::graph::{NodeId, NodeIdT, Reversed, ReversedGraphW
 
 pub struct TDBackwardProfilePotentialOps<'a> {
     data: &'a Vec<Vec<TTFPoint>>,
-    approximation_threshold: usize,
+    //approximation_threshold: usize,
 }
 
 impl<'a> TDBackwardProfilePotentialOps<'a> {
-    pub fn new(data: &'a Vec<Vec<TTFPoint>>, approximation_threshold: usize) -> Self {
-        Self { data, approximation_threshold }
+    pub fn new(data: &'a Vec<Vec<TTFPoint>>, _approximation_threshold: usize) -> Self {
+        Self { data }
     }
 }
 

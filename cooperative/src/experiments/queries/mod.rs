@@ -3,12 +3,13 @@ use std::str::FromStr;
 use rust_road_router::algo::TDQuery;
 use rust_road_router::cli::CliErr;
 use rust_road_router::datastr::graph::time_dependent::Timestamp;
-use rust_road_router::datastr::graph::{Link, LinkIterable};
+use rust_road_router::datastr::graph::{FirstOutGraph, Graph, Link, LinkIterable};
 
 use crate::experiments::queries::departure_distributions::{ConstantDeparture, DepartureDistribution, NormalDeparture, UniformDeparture};
 use crate::experiments::queries::population_density_based::generate_uniform_population_density_based_queries;
 use crate::experiments::queries::random_geometric::generate_random_geometric_queries;
 use crate::experiments::queries::random_uniform::generate_random_uniform_queries;
+use crate::graph::capacity_graph::CapacityGraph;
 use crate::io::io_population_grid::PopulationGridEntry;
 use kdtree::kdtree::Kdtree;
 
@@ -18,7 +19,7 @@ pub mod population_density_based;
 pub mod random_geometric;
 pub mod random_uniform;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub enum QueryType {
     Uniform,
     UniformRushHourDep,
@@ -52,11 +53,32 @@ impl FromStr for QueryType {
     }
 }
 
-pub fn generate_queries<G: LinkIterable<Link>>(graph: &G, query_type: QueryType, num_queries: u32) -> Vec<TDQuery<Timestamp>> {
+#[derive(Debug, Clone)]
+pub enum GraphType {
+    PTV,
+    CAPACITY,
+}
+
+impl FromStr for GraphType {
+    type Err = CliErr;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_uppercase().as_str() {
+            "PTV" => Ok(Self::PTV),
+            "CAPACITY" => Ok(Self::CAPACITY),
+            _ => Err(CliErr("Invalid Graph Type [PTV/CAPACITY]")),
+        }
+    }
+}
+
+pub fn generate_queries(graph: &CapacityGraph, query_type: QueryType, num_queries: u32) -> Vec<TDQuery<Timestamp>> {
     match query_type {
         QueryType::Uniform => generate_random_uniform_queries(graph.num_nodes() as u32, num_queries, UniformDeparture::new()),
         QueryType::UniformNormalDep => generate_random_uniform_queries(graph.num_nodes() as u32, num_queries, NormalDeparture::new()),
-        QueryType::Geometric => generate_random_geometric_queries(graph, num_queries, UniformDeparture::new()),
+        QueryType::Geometric => {
+            let distance_graph = FirstOutGraph::new(graph.first_out(), graph.head(), graph.distance());
+            generate_random_geometric_queries(&distance_graph, true, num_queries, UniformDeparture::new())
+        }
         _ => unimplemented!(),
     }
 }

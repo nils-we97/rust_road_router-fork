@@ -46,7 +46,7 @@ pub struct TDDirectedPartialBackwardProfilePotentialOps<Profiles> {
     pub approximate_threshold: usize,
 }
 
-impl<Profiles: AsRef<Vec<Vec<TTFPoint>>>> TDDirectedPartialBackwardProfilePotentialOps<Profiles> {
+/*impl<Profiles: AsRef<Vec<Vec<TTFPoint>>>> TDDirectedPartialBackwardProfilePotentialOps<Profiles> {
     pub fn new(query_start: Timestamp, corridor_max: Timestamp, profiles: Profiles, approximate_threshold: usize) -> Self {
         Self {
             query_start,
@@ -65,7 +65,7 @@ impl<Profiles: AsRef<Vec<Vec<TTFPoint>>>> TDDirectedPartialBackwardProfilePotent
             label.min_dist = label.ttf.iter().map(|p| p.val).min().unwrap();
         }
     }
-}
+}*/
 
 impl<Profiles: AsRef<Vec<Vec<TTFPoint>>>> DijkstraOps<ReversedGraphWithEdgeIds> for TDDirectedPartialBackwardProfilePotentialOps<Profiles> {
     type Label = DirectedPartialBackwardProfileLabel;

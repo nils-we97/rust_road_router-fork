@@ -28,24 +28,22 @@ pub fn generate_dijkstra_rank_queries<G: LinkIterable<Link>, D: DepartureDistrib
     // init context
     let mut rng = thread_rng();
     let mut data = DijkstraData::new(graph.num_nodes());
-    let mut queries = vec![TDQuery::new(0, 0, 0); (num_queries_per_rank * max_rank_pow) as usize];
+    let mut queries = vec![TDQuery::new(0, 0, 0); (num_queries_per_rank * (max_rank_pow - 7)) as usize];
 
     for query_idx in 0..num_queries_per_rank as usize {
         let mut result: Option<Vec<NodeId>> = None;
         let mut source = 0;
-        let mut departure = 0;
 
         while result.is_none() {
             let mut rank_nodes = Vec::with_capacity(max_rank_pow as usize);
 
             // pick a random start node
             source = rng.gen_range(0..graph.num_nodes()) as NodeId;
-            departure = departure_distribution.rand(&mut rng);
 
             let mut ops = DefaultOps::default();
             let mut dijkstra = DijkstraRun::query(graph, &mut data, &mut ops, DijkstraInit::from(source));
             let mut counter = 0u32;
-            let mut next_rank = 2; // 2^1
+            let mut next_rank = 256; // 2^8, direct neighbors make no sense!
 
             while let Some(node) = dijkstra.next() {
                 counter += 1;
@@ -66,7 +64,8 @@ pub fn generate_dijkstra_rank_queries<G: LinkIterable<Link>, D: DepartureDistrib
             let query = &mut queries[rank_idx * num_queries_per_rank as usize + query_idx];
             query.from = source;
             query.to = target;
-            query.departure = departure;
+            // pick a random departure in each query!
+            query.departure = departure_distribution.rand(&mut rng);
         });
     }
 
