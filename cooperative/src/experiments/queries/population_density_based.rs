@@ -22,26 +22,8 @@ pub fn generate_uniform_population_density_based_queries<D: DepartureDistributio
     num_queries: u32,
     mut departure_distribution: D,
 ) -> Vec<TDQuery<Timestamp>> {
-    // distribute population into buckets
-    let mut vertex_grid = vec![Vec::new(); grid_population.len()];
-
-    (0..longitude.len()).into_iter().for_each(|node_id| {
-        let nearest_cell = grid_tree.nearest_search(&PopulationGridEntry::from_coords(longitude[node_id], latitude[node_id]));
-        vertex_grid[nearest_cell.id].push(node_id as NodeId);
-    });
-
-    // build prefix sum upon population entries
-    // consider a cell's population if there is at least one corresponding node
-    let mut grid_population_intervals = Vec::new();
-    let mut population_counter = 0;
-
-    for i in 0..grid_population.len() {
-        if !vertex_grid[i].is_empty() {
-            grid_population_intervals.push((population_counter, i));
-            population_counter += grid_population[i];
-        }
-    }
-    grid_population_intervals.push((population_counter, grid_population.len())); // sentinel element
+    // init population grid
+    let (vertex_grid, grid_population_intervals, population_counter) = build_population_grid(longitude, latitude, grid_tree, grid_population);
 
     // generate queries based on population inside each grid
     let mut rng = thread_rng();
@@ -49,11 +31,11 @@ pub fn generate_uniform_population_density_based_queries<D: DepartureDistributio
         .into_iter()
         .map(|_| {
             // draw random start cell according to population density, pick a random node inside
-            let start_cell_id = find_interval(&grid_population_intervals, rng.gen_range(0..population_counter));
+            let start_cell_id = find_population_interval(&grid_population_intervals, rng.gen_range(0..population_counter));
             let start_cell_vertex_pos = rng.gen_range(0..vertex_grid[start_cell_id].len());
             let from = vertex_grid[start_cell_id][start_cell_vertex_pos];
 
-            let target_cell_id = find_interval(&grid_population_intervals, rng.gen_range(0..population_counter));
+            let target_cell_id = find_population_interval(&grid_population_intervals, rng.gen_range(0..population_counter));
             let target_cell_vertex_pos = rng.gen_range(0..vertex_grid[target_cell_id].len());
             let to = vertex_grid[target_cell_id][target_cell_vertex_pos];
 
@@ -76,26 +58,8 @@ pub fn generate_geometric_population_density_based_queries<D: DepartureDistribut
     num_queries: u32,
     mut departure_distribution: D,
 ) -> Vec<TDQuery<Timestamp>> {
-    // distribute population into buckets
-    let mut vertex_grid = vec![Vec::new(); grid_population.len()];
-
-    (0..longitude.len()).into_iter().for_each(|node_id| {
-        let nearest_cell = grid_tree.nearest_search(&PopulationGridEntry::from_coords(longitude[node_id], latitude[node_id]));
-        vertex_grid[nearest_cell.id].push(node_id as NodeId);
-    });
-
-    // build prefix sum upon population entries
-    // consider a cell's population if there is at least one corresponding node
-    let mut grid_population_intervals = Vec::new();
-    let mut population_counter = 0;
-
-    for i in 0..grid_population.len() {
-        if !vertex_grid[i].is_empty() {
-            grid_population_intervals.push((population_counter, i));
-            population_counter += grid_population[i];
-        }
-    }
-    grid_population_intervals.push((population_counter, grid_population.len())); // sentinel element
+    // init population grid
+    let (vertex_grid, grid_population_intervals, population_counter) = build_population_grid(longitude, latitude, grid_tree, grid_population);
 
     // generate queries based on population inside each grid
     let mut rng = thread_rng();
@@ -118,7 +82,7 @@ pub fn generate_geometric_population_density_based_queries<D: DepartureDistribut
                 possible_target_cells.clear();
 
                 // draw random start cell according to population density, pick a random node inside
-                let start_cell_id = find_interval(&grid_population_intervals, rng.gen_range(0..population_counter));
+                let start_cell_id = find_population_interval(&grid_population_intervals, rng.gen_range(0..population_counter));
                 let start_cell_vertex_pos = rng.gen_range(0..vertex_grid[start_cell_id].len());
                 from = vertex_grid[start_cell_id][start_cell_vertex_pos];
 
@@ -178,7 +142,7 @@ pub fn generate_geometric_population_density_based_queries<D: DepartureDistribut
     queries
 }
 
-fn find_interval(vec: &Vec<(u32, usize)>, val: u32) -> usize {
+pub fn find_population_interval(vec: &Vec<(u32, usize)>, val: u32) -> usize {
     let idx = vec.binary_search_by_key(&val, |&(prefix_sum, _)| prefix_sum);
 
     if idx.is_ok() {
@@ -187,4 +151,36 @@ fn find_interval(vec: &Vec<(u32, usize)>, val: u32) -> usize {
         debug_assert!(idx.unwrap_err() >= 1 && idx.unwrap_err() < vec.len(), "Missing sentinel elements!");
         vec[idx.unwrap_err() - 1].1
     }
+}
+
+pub fn build_population_grid(
+    longitude: &Vec<f32>,
+    latitude: &Vec<f32>,
+    grid_tree: &Kdtree<PopulationGridEntry>,
+    grid_population: &Vec<u32>,
+) -> (Vec<Vec<u32>>, Vec<(u32, usize)>, u32) {
+    // distribute population into buckets
+    let mut vertex_grid = vec![Vec::new(); grid_population.len()];
+
+    (0..longitude.len()).into_iter().for_each(|node_id| {
+        let nearest_cell = grid_tree.nearest_search(&PopulationGridEntry::from_coords(longitude[node_id], latitude[node_id]));
+        vertex_grid[nearest_cell.id].push(node_id as NodeId);
+    });
+
+    // build prefix sum upon population entries
+    // consider a cell's population if there is at least one corresponding node
+    let mut grid_population_intervals = Vec::new();
+    let mut population_counter = 0;
+
+    for i in 0..grid_population.len() {
+        if !vertex_grid[i].is_empty() {
+            grid_population_intervals.push((population_counter, i));
+            population_counter += grid_population[i];
+        }
+    }
+
+    // sentinel element
+    grid_population_intervals.push((population_counter, grid_population.len()));
+
+    (vertex_grid, grid_population_intervals, population_counter)
 }

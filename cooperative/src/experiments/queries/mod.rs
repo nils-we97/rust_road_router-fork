@@ -31,6 +31,9 @@ pub enum QueryType {
     PopulationGeometric,
     PopulationGeometricConstantDep,
     DijkstraRank,
+    DijkstraRankRushHourDep,
+    PopulationDijkstraRank,
+    PopulationDijkstraRankRushHourDep,
 }
 
 impl FromStr for QueryType {
@@ -48,6 +51,9 @@ impl FromStr for QueryType {
             "POPULATION_GEOMETRIC" => Ok(QueryType::PopulationGeometric),
             "POPULATION_GEOMETRIC_CONSTANT_DEPARTURE" => Ok(QueryType::PopulationGeometricConstantDep),
             "DIJKSTRA_RANK" => Ok(QueryType::DijkstraRank),
+            "DIJKSTRA_RANK_RUSH_HOUR" => Ok(QueryType::DijkstraRankRushHourDep),
+            "POPULATION_DIJKSTRA_RANK" => Ok(QueryType::PopulationDijkstraRank),
+            "POPULATION_DIJKSTRA_RANK_RUSH_HOUR" => Ok(QueryType::PopulationDijkstraRankRushHourDep),
             _ => Err(CliErr("Unknown Query Type!")),
         }
     }

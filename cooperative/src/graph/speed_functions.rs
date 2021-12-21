@@ -7,7 +7,7 @@ use crate::graph::{Capacity, Velocity};
 
 /// Bureau of public roads function, modification from travel time -> travel speed
 pub fn bpr_speed_function(freeflow_velocity: Velocity, max_capacity: Capacity, used_capacity: Capacity) -> Weight {
-    let congestion = (used_capacity as f64 / max_capacity as f64).powi(2);
+    let congestion = 0.15 * (used_capacity as f64 / max_capacity as f64).powi(4);
     let result = freeflow_velocity as f64 / (1.0 + congestion);
 
     convert_to_weight(result)

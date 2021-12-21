@@ -195,7 +195,7 @@ impl<Pot: TDPotential> CapacityServerOps for CapacityServer<Pot> {
         println!(
             "Query times: Potential: {}, Query: {}",
             time_potential.to_std().unwrap().as_nanos() as f64 / 1_000_000.0,
-            time_dijkstra.to_std().unwrap().as_nanos() as f64 / 1_000_000.0
+            time_query.to_std().unwrap().as_nanos() as f64 / 1_000_000.0
         );*/
         debug_assert!(
             result.unwrap_or(INFINITY) + 1 >= pot.potential(from, init).unwrap_or(INFINITY),

@@ -1,7 +1,7 @@
 use cooperative::experiments::queries::departure_distributions::{
     ConstantDeparture, DepartureDistribution, NormalDeparture, RushHourDeparture, UniformDeparture,
 };
-use cooperative::experiments::queries::dijkstra_rank::generate_dijkstra_rank_queries;
+use cooperative::experiments::queries::dijkstra_rank::{generate_dijkstra_rank_queries, generate_population_dijkstra_rank_queries};
 use cooperative::experiments::queries::population_density_based::{
     generate_geometric_population_density_based_queries, generate_uniform_population_density_based_queries,
 };
@@ -28,6 +28,7 @@ use std::path::Path;
 /// uniform/geometric: ---
 /// population-grid-based: <path_to_population_grid_file>
 /// dijkstra-rank: <max_rank_pow> (for each rank power 7 <= i <= max_rank_power), `num_queries` are generated
+/// population-grid & dijkstra-rank: <path_to_population_grid_file> <max_rank_pow>
 ///
 /// Results will be written to directory <path_to_graph>/queries/<output_directory>/
 fn main() -> Result<(), Box<dyn Error>> {
@@ -37,6 +38,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let graph = match graph_type {
         GraphType::PTV => {
             let graph = TDGraph::reconstruct_from(&graph_directory).unwrap();
+            println!("Number of constant edges: {} of {}", graph.num_constant(), graph.num_arcs());
             let lower_bound = Vec::<u32>::load_from(&graph_directory.join("lower_bound")).unwrap();
             OwnedGraph::new(graph.first_out().to_vec(), graph.head().to_vec(), lower_bound)
         }
@@ -84,9 +86,49 @@ fn main() -> Result<(), Box<dyn Error>> {
 
             (queries, None)
         }
-        QueryType::DijkstraRank => {
+        QueryType::DijkstraRank | QueryType::DijkstraRankRushHourDep => {
             let max_rank_pow: u32 = parse_arg_required(&mut remaining_args, "power of last rank (2^x)")?;
-            let queries = generate_dijkstra_rank_queries(&graph, num_queries, max_rank_pow, UniformDeparture::new());
+            let queries = if query_type == QueryType::DijkstraRank {
+                generate_dijkstra_rank_queries(&graph, num_queries, max_rank_pow, UniformDeparture::new())
+            } else {
+                generate_dijkstra_rank_queries(&graph, num_queries, max_rank_pow, RushHourDeparture::new())
+            };
+
+            (queries, Some(vec![("num_queries", vec![num_queries]), ("max_rank", vec![max_rank_pow])]))
+        }
+        QueryType::PopulationDijkstraRank | QueryType::PopulationDijkstraRankRushHourDep => {
+            // load population data
+            let population_path: String = parse_arg_required(&mut remaining_args, "population grid directory")?;
+            let population_directory = Path::new(&population_path);
+            let (longitude, latitude) = load_coords(graph_directory)?;
+            let (grid_tree, grid_population) = load_population_grid(population_directory)?;
+
+            // retrieve dijkstra-rank data
+            let max_rank_pow: u32 = parse_arg_required(&mut remaining_args, "power of last rank (2^x)")?;
+
+            let queries = if query_type == QueryType::PopulationDijkstraRank {
+                generate_population_dijkstra_rank_queries(
+                    &longitude,
+                    &latitude,
+                    &grid_tree,
+                    &grid_population,
+                    &graph,
+                    num_queries,
+                    max_rank_pow,
+                    UniformDeparture::new(),
+                )
+            } else {
+                generate_population_dijkstra_rank_queries(
+                    &longitude,
+                    &latitude,
+                    &grid_tree,
+                    &grid_population,
+                    &graph,
+                    num_queries,
+                    max_rank_pow,
+                    RushHourDeparture::new(),
+                )
+            };
 
             (queries, Some(vec![("num_queries", vec![num_queries]), ("max_rank", vec![max_rank_pow])]))
         }

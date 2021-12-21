@@ -10,6 +10,8 @@ use cooperative::io::io_graph::load_capacity_graph;
 use cooperative::io::io_node_order::load_node_order;
 use cooperative::io::io_queries::load_queries;
 use cooperative::util::cli_args::parse_arg_required;
+use rayon::prelude::*;
+use rust_road_router::algo::ch_potentials::BorrowedCCHPot;
 use rust_road_router::algo::TDQuery;
 use rust_road_router::datastr::graph::time_dependent::Timestamp;
 use std::path::Path;
@@ -30,31 +32,52 @@ fn main() -> Result<(), Box<dyn Error>> {
     let query_path = path.join("queries").join(query_directory);
     let queries = load_queries(&query_path)?;
 
-    let graph = load_capacity_graph(&path, 1, bpr_speed_function).unwrap();
+    let graph = load_capacity_graph(&path, 600, bpr_speed_function).unwrap();
 
     // init cch potential
     let order = load_node_order(&path)?;
     let cch_pot_data = init_cch_potential(&graph, order);
 
-    let mut path_results = Vec::new();
     let bucket_sizes = [1, 100, 200, 300, 400, 600];
 
-    // separate treatment for first round
+    // parallel retrieving of paths, one server for each core
+    let path_results: Vec<(Option<CapacityServer<BorrowedCCHPot>>, Vec<PathResult>)> = bucket_sizes
+        .par_iter()
+        .map(|&num_buckets| {
+            let td_graph = load_capacity_graph(&path, num_buckets, bpr_speed_function).unwrap();
+            let mut server = CapacityServer::new_with_potential(td_graph, cch_pot_data.forward_potential());
+            let results = get_query_paths(&mut server, &queries, num_buckets);
+
+            if num_buckets == 600 {
+                (Some(server), results)
+            } else {
+                (None, results)
+            }
+        })
+        .collect();
+
+    /*// separate treatment for first round
+    let path_results = Vec::new();
     let mut server = CapacityServer::new_with_potential(graph, cch_pot_data.forward_potential());
-    path_results.push(get_query_paths(&mut server, &queries));
+    path_results.push(get_query_paths(&mut server, &queries, 1));
 
     // determine paths for all remaining bucket settings
     for &num_buckets in &bucket_sizes[1..] {
         let graph = load_capacity_graph(&path, num_buckets, bpr_speed_function).unwrap();
         server = CapacityServer::new_with_potential(graph, cch_pot_data.forward_potential());
-        path_results.push(get_query_paths(&mut server, &queries));
-    }
+        path_results.push(get_query_paths(&mut server, &queries, num_buckets));
+    }*/
 
     // evaluation based on struct with highest number of buckets
     debug_assert_eq!(bucket_sizes.iter().max(), bucket_sizes.last());
+    let server = path_results
+        .iter()
+        .find(|&(server, _)| server.is_some())
+        .map(|(server, _)| server.as_ref().unwrap())
+        .unwrap();
 
-    path_results.iter().enumerate().for_each(|(idx, paths)| {
-        let path_dist_sum = sum_path_lengths(paths, &server);
+    path_results.iter().enumerate().for_each(|(idx, (_, paths))| {
+        let path_dist_sum = sum_path_lengths(paths, server);
         println!(
             "Sum of path lengths for {} buckets: {} ({} valid paths)",
             bucket_sizes[idx],
@@ -66,10 +89,27 @@ fn main() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn get_query_paths<Pot: TDPotential>(server: &mut CapacityServer<Pot>, queries: &Vec<TDQuery<Timestamp>>) -> Vec<PathResult> {
+fn get_query_paths<Pot: TDPotential>(server: &mut CapacityServer<Pot>, queries: &Vec<TDQuery<Timestamp>>, num_buckets: u32) -> Vec<PathResult> {
+    println!("Starting to calculate results for {} buckets..", num_buckets);
+    let mut last_start = time::now();
     queries
         .iter()
-        .filter_map(|query| server.query(*query, true).map(|result| result.path))
+        .enumerate()
+        .filter_map(|(idx, query)| {
+            if (idx + 1) % 1000 == 0 {
+                let time = time::now() - last_start;
+                println!(
+                    "{} - Finished {} of {} queries, last step took {} ms",
+                    num_buckets,
+                    idx + 1,
+                    queries.len(),
+                    time.to_std().unwrap().as_nanos() as f64 / 1_000_000.0
+                );
+                last_start = time::now();
+            }
+
+            server.query(*query, true).map(|result| result.path)
+        })
         .collect::<Vec<PathResult>>()
 }
 

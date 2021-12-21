@@ -33,9 +33,11 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     // init queries
     let query_path = path.join("queries").join(&query_directory);
+
     let queries = load_queries(&query_path)?;
     let num_queries_per_rank = *Vec::<u32>::load_from(&query_path.join("num_queries")).unwrap().first().unwrap();
     let max_rank = *Vec::<u32>::load_from(&query_path.join("max_rank")).unwrap().first().unwrap();
+
     let first_rank = max_rank + 1 - (queries.len() as u32 / num_queries_per_rank);
     let mut query_results = Vec::with_capacity(queries.len() * 3);
     debug_assert_eq!(first_rank, 8u32);

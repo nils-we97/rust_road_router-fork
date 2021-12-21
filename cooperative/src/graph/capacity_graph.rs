@@ -58,7 +58,7 @@ impl CapacityGraph {
         let used_capacity = vec![CapacityBuckets::Unused; max_capacity.len()];
 
         // adjust capacity of each edge -> more buckets do not allow more traffic flow
-        let capacity_adjustment_factor = (num_buckets as f64) / 24.0;
+        let capacity_adjustment_factor = 24.0 / (num_buckets as f64);
         let max_capacity = max_capacity
             .iter()
             .map(|&capacity| (capacity as f64 * capacity_adjustment_factor) as Capacity)
