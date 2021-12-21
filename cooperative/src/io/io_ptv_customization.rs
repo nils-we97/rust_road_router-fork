@@ -1,5 +1,8 @@
 use crate::dijkstra::potentials::corridor_lowerbound_potential::customization::CustomizedApproximatedPeriodicTTF;
-use rust_road_router::algo::customizable_contraction_hierarchy::DirectedCCH;
+use crate::dijkstra::potentials::multi_metric_potential::customization::CustomizedMultiMetrics;
+use crate::dijkstra::potentials::multi_metric_potential::metric_reduction::MetricEntry;
+use rust_road_router::algo::customizable_contraction_hierarchy::{DirectedCCH, CCH};
+use rust_road_router::datastr::graph::Graph;
 use rust_road_router::io::{Deconstruct, Load, Reconstruct, Store};
 use rust_road_router::report::measure;
 use std::error::Error;
@@ -73,6 +76,55 @@ pub fn store_interval_minima(directory: &Path, customized: &CustomizedApproximat
     downward_upper.write_to(&directory.join("downward_upper"))?;
 
     vec![customized.num_intervals].write_to(&directory.join("num_intervals"))?;
+
+    Ok(())
+}
+
+/* ----------------------------------------------------------------------------------------*/
+
+pub fn load_multiple_metrics<'a>(directory: &Path, cch: &'a CCH) -> Result<CustomizedMultiMetrics<'a>, Box<dyn Error>> {
+    let upward = Vec::<u32>::load_from(&directory.join("upward_weights"))?;
+    let downward = Vec::<u32>::load_from(&directory.join("downward_weights"))?;
+
+    let num_metrics = upward.len() / cch.num_arcs();
+
+    assert_eq!(downward.len(), upward.len());
+    assert_eq!(upward.len() % cch.num_arcs(), 0);
+
+    let metric_start = Vec::<u32>::load_from(&directory.join("metric_start"))?;
+    let metric_end = Vec::<u32>::load_from(&directory.join("metric_end"))?;
+    let metric_ids = Vec::<u32>::load_from(&directory.join("metric_ids"))?;
+
+    assert_eq!(metric_start.len(), metric_end.len());
+    assert_eq!(metric_start.len(), metric_ids.len());
+
+    let metric_entries = metric_start
+        .iter()
+        .zip(metric_end.iter())
+        .zip(metric_ids.iter())
+        .map(|((&start, &end), &id)| MetricEntry::new(start, end, id as usize))
+        .collect::<Vec<MetricEntry>>();
+
+    Ok(CustomizedMultiMetrics {
+        cch,
+        upward,
+        downward,
+        metric_entries,
+        num_metrics,
+    })
+}
+
+pub fn store_multiple_metrics(directory: &Path, customized: &CustomizedMultiMetrics) -> Result<(), Box<dyn Error>> {
+    let metric_start = customized.metric_entries.iter().map(|m| m.start).collect::<Vec<u32>>();
+    let metric_end = customized.metric_entries.iter().map(|m| m.end).collect::<Vec<u32>>();
+    let metric_ids = customized.metric_entries.iter().map(|m| m.metric_id as u32).collect::<Vec<u32>>();
+
+    metric_start.write_to(&directory.join("metric_start"))?;
+    metric_end.write_to(&directory.join("metric_end"))?;
+    metric_ids.write_to(&directory.join("metric_ids"))?;
+
+    customized.upward.write_to(&directory.join("upward_weights"))?;
+    customized.downward.write_to(&directory.join("downward_weights"))?;
 
     Ok(())
 }

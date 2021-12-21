@@ -7,7 +7,7 @@ use cooperative::dijkstra::potentials::multi_metric_potential::potential::MultiM
 use cooperative::dijkstra::potentials::TDPotential;
 use cooperative::dijkstra::ptv_server::PTVQueryServer;
 use cooperative::graph::MAX_BUCKETS;
-use cooperative::io::io_interval_minima_customization::load_interval_minima;
+use cooperative::io::io_ptv_customization::load_interval_minima;
 use cooperative::io::io_queries::load_queries;
 use cooperative::util::cli_args::parse_arg_required;
 use rust_road_router::algo::ch_potentials::CCHPotData;

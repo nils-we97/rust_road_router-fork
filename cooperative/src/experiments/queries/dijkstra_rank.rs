@@ -34,6 +34,8 @@ pub fn generate_dijkstra_rank_queries<G: LinkIterable<Link>, D: DepartureDistrib
         let mut result: Option<Vec<NodeId>> = None;
         let mut source = 0;
 
+        println!("Started query {} of {}", (query_idx + 1), num_queries_per_rank);
+
         while result.is_none() {
             let mut rank_nodes = Vec::with_capacity(max_rank_pow as usize);
 
