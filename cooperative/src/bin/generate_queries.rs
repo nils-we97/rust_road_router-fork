@@ -38,7 +38,6 @@ fn main() -> Result<(), Box<dyn Error>> {
     let graph = match graph_type {
         GraphType::PTV => {
             let graph = TDGraph::reconstruct_from(&graph_directory).unwrap();
-            println!("Number of constant edges: {} of {}", graph.num_constant(), graph.num_arcs());
             let lower_bound = Vec::<u32>::load_from(&graph_directory.join("lower_bound")).unwrap();
             OwnedGraph::new(graph.first_out().to_vec(), graph.head().to_vec(), lower_bound)
         }
