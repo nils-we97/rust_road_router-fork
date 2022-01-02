@@ -83,6 +83,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                     &grid_population,
                     num_queries,
                     RushHourDeparture::new(),
+                    false,
                 ),
                 /*QueryType::PopulationGeometric => {}
                 QueryType::PopulationGeometricConstantDep => {}*/

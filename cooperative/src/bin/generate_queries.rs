@@ -152,16 +152,21 @@ fn main() -> Result<(), Box<dyn Error>> {
                     num_queries,
                     ConstantDeparture::new(),
                 ),
-                QueryType::PopulationGeometric => generate_geometric_population_density_based_queries(
-                    &graph,
-                    &longitude,
-                    &latitude,
-                    &grid_tree,
-                    &grid_population,
-                    num_queries,
-                    RushHourDeparture::new(),
-                ),
-                _ => unimplemented!(),
+                QueryType::PopulationGeometric => {
+                    let use_distance_metric = graph_type == GraphType::CAPACITY;
+
+                    generate_geometric_population_density_based_queries(
+                        &graph,
+                        &longitude,
+                        &latitude,
+                        &grid_tree,
+                        &grid_population,
+                        num_queries,
+                        RushHourDeparture::new(),
+                        use_distance_metric,
+                    )
+                }
+                _ => unimplemented!(), // won't happen
             };
 
             (queries, None)

@@ -12,7 +12,8 @@ use rust_road_router::algo::dijkstra::{DefaultOps, DijkstraData, DijkstraInit, D
 use rust_road_router::datastr::graph::time_dependent::Timestamp;
 use std::collections::HashSet;
 
-const INV_AVERAGE_TRIP_LENGTH: f64 = 1.0 / 3_600_000.0; // avg trip length: 1 hour
+const INV_AVERAGE_TRIP_LENGTH: f64 = 0.000025; // avg trip length is ~40 km
+const INV_AVERAGE_TRIP_DURATION: f64 = 1.0 / (2_700_000.0); // avg trip duration: 45 minutes
 
 pub fn generate_uniform_population_density_based_queries<D: DepartureDistribution>(
     longitude: &Vec<f32>,
@@ -57,6 +58,7 @@ pub fn generate_geometric_population_density_based_queries<D: DepartureDistribut
     grid_population: &Vec<u32>,
     num_queries: u32,
     mut departure_distribution: D,
+    use_distance_metric: bool,
 ) -> Vec<TDQuery<Timestamp>> {
     // init population grid
     let (vertex_grid, grid_population_intervals, population_counter) = build_population_grid(longitude, latitude, grid_tree, grid_population);
@@ -64,7 +66,13 @@ pub fn generate_geometric_population_density_based_queries<D: DepartureDistribut
     // generate queries based on population inside each grid
     let mut rng = thread_rng();
     let mut data = DijkstraData::new(graph.num_nodes());
-    let distribution = Geometric::new(INV_AVERAGE_TRIP_LENGTH).unwrap();
+
+    let probability = if use_distance_metric {
+        INV_AVERAGE_TRIP_LENGTH
+    } else {
+        INV_AVERAGE_TRIP_DURATION
+    };
+    let distribution = Geometric::new(probability).unwrap();
 
     let mut queries = (0..num_queries)
         .into_iter()

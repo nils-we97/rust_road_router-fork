@@ -59,7 +59,7 @@ impl FromStr for QueryType {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub enum GraphType {
     PTV,
     CAPACITY,

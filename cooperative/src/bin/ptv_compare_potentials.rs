@@ -69,7 +69,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     // ----------------------------------------------------------------------------- //
     // 2nd potential: Multi-Level-Bucket Potential
-    let customized_multi_levels = CustomizedMultiLevels::new(
+    /*let customized_multi_levels = CustomizedMultiLevels::new(
         &cch,
         &departure,
         &travel_time,
@@ -82,7 +82,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let (graph, pot) = server.decompose();
 
     drop(pot);
-    drop(customized_multi_levels);
+    drop(customized_multi_levels);*/
     drop(cch_pot_data);
 
     // ----------------------------------------------------------------------------- //

@@ -145,6 +145,26 @@ impl CCH {
         &self.head
     }
 
+    pub fn mem_size(&self) -> usize {
+        // node data: first_out, node_order (2 x 4 Bytes), elimination tree (4 Bytes)
+        let node_size = std::mem::size_of_val(&*self.first_out) + self.num_nodes() * 12;
+
+        // edge data: head, tail
+        let edge_size = std::mem::size_of_val(&*self.head) + std::mem::size_of_val(&*self.tail);
+
+        // shortcuts
+        let shortcut_size = self
+            .cch_edge_to_orig_arc
+            .iter()
+            .map(|(a, b)| std::mem::size_of_val(&*a) + std::mem::size_of_val(&*b))
+            .sum::<usize>();
+
+        // reverse graph: first_out, head, edge_ref
+        let rev_graph_size = (self.num_nodes() + 1) * 4 + self.num_arcs() * 8;
+
+        node_size + edge_size + shortcut_size + rev_graph_size
+    }
+
     #[inline]
     pub fn neighbor_edge_indices(&self, node: NodeId) -> Range<EdgeId> {
         (self.first_out[node as usize])..(self.first_out[(node + 1) as usize])
@@ -432,6 +452,24 @@ impl DirectedCCH {
 
     fn backward(&self) -> Slcs<EdgeId, NodeId> {
         Slcs(&self.forward_first_out, &self.forward_head)
+    }
+
+    pub fn mem_size(&self) -> usize {
+        // node data: first_out (forward/backward), node_order (2 x 4 Bytes), elimination tree (4 Bytes)
+        let node_size = std::mem::size_of_val(&*self.forward_first_out) + std::mem::size_of_val(&*self.backward_first_out) + self.num_nodes() * 12;
+
+        // edge data: head, tail
+        let edge_size = std::mem::size_of_val(&*self.forward_head) + std::mem::size_of_val(&*self.backward_head);
+
+        // shortcuts
+        let forward_shortcut_size = self.forward_cch_edge_to_orig_arc.iter().map(|a| std::mem::size_of_val(&*a)).sum::<usize>();
+        let backward_shortcut_size = self.backward_cch_edge_to_orig_arc.iter().map(|a| std::mem::size_of_val(&*a)).sum::<usize>();
+
+        // reverse graph: first_out, head, edge_ref
+        let forward_rev_graph_size = (self.num_nodes() + 1) * 4 + self.forward_head.len() * 8;
+        let backward_rev_graph_size = (self.num_nodes() + 1) * 4 + self.backward_head.len() * 8;
+
+        node_size + edge_size + forward_shortcut_size + backward_shortcut_size + forward_rev_graph_size + backward_rev_graph_size
     }
 
     /// Reconstruct the separators of the nested dissection order.
