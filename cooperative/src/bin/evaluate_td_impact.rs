@@ -56,18 +56,6 @@ fn main() -> Result<(), Box<dyn Error>> {
         })
         .collect();
 
-    /*// separate treatment for first round
-    let path_results = Vec::new();
-    let mut server = CapacityServer::new_with_potential(graph, cch_pot_data.forward_potential());
-    path_results.push(get_query_paths(&mut server, &queries, 1));
-
-    // determine paths for all remaining bucket settings
-    for &num_buckets in &bucket_sizes[1..] {
-        let graph = load_capacity_graph(&path, num_buckets, bpr_speed_function).unwrap();
-        server = CapacityServer::new_with_potential(graph, cch_pot_data.forward_potential());
-        path_results.push(get_query_paths(&mut server, &queries, num_buckets));
-    }*/
-
     // evaluation based on struct with highest number of buckets
     debug_assert_eq!(bucket_sizes.iter().max(), bucket_sizes.last());
     let server = path_results

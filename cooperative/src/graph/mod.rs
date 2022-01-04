@@ -5,6 +5,7 @@ pub mod capacity_graph;
 pub mod capacity_graph_traits;
 pub mod edge_buckets;
 pub mod speed_functions;
+pub mod travel_time_function;
 
 pub type Capacity = u32;
 pub type Velocity = u32;
