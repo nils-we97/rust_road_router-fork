@@ -22,8 +22,6 @@ pub struct CorridorLowerboundPotential<'a, CCH> {
 
 // container for all variables which change after each query
 struct CorridorLowerboundPotentialContext {
-    pub corridor_len: u64,
-    pub num_corridor_requests: u64,
     num_pot_computations: usize,
     query_start: Timestamp,
     target_dist_bounds: Option<(Weight, Weight)>,
@@ -42,8 +40,6 @@ impl<'a, CCH: CCHT> CorridorLowerboundPotential<'a, CCH> {
         let interval_length = MAX_BUCKETS / customized.num_intervals;
 
         let context = CorridorLowerboundPotentialContext {
-            corridor_len: 0,
-            num_corridor_requests: 0,
             num_pot_computations: 0,
             query_start: 0,
             target_dist_bounds: None,
@@ -66,14 +62,6 @@ impl<'a, CCH: CCHT> CorridorLowerboundPotential<'a, CCH> {
 
     pub fn num_pot_computations(&self) -> usize {
         self.context.num_pot_computations
-    }
-
-    pub fn average_corridor_length(&self) -> f64 {
-        if self.context.num_corridor_requests == 0 {
-            0.0
-        } else {
-            self.context.corridor_len as f64 / self.context.num_corridor_requests as f64
-        }
     }
 }
 
@@ -106,9 +94,6 @@ impl<'a, CCH: CCHT> TDPotential for CorridorLowerboundPotential<'a, CCH> {
 
                     if let Some((node_lower, node_upper)) = self.forward_potential.potential_bounds(next_node) {
                         debug_assert!(target_dist_upper >= node_lower);
-
-                        self.context.corridor_len += (node_upper - node_lower) as u64;
-                        self.context.num_corridor_requests += 1;
 
                         let start_idx = (((timestamp + node_lower) % MAX_BUCKETS) / self.interval_length) as usize;
                         let end_idx = (((timestamp + node_upper) % MAX_BUCKETS) / self.interval_length) as usize;
@@ -180,21 +165,6 @@ impl<'a, CCH: CCHT> TDPotential for CorridorLowerboundPotential<'a, CCH> {
                                 });
                             }
 
-                            self.context.corridor_len += (node_upper - node_lower) as u64;
-                            self.context.num_corridor_requests += 1;
-
-                            /*let edge_interval_min = if start_interval <= end_interval {
-                                self.forward_cch_weights[edge as usize][start_interval..=end_interval]
-                                    .iter()
-                                    .min()
-                                    .cloned()
-                                    .unwrap()
-                            } else {
-                                min(
-                                    self.forward_cch_weights[edge as usize][start_interval..].iter().min().cloned().unwrap(),
-                                    self.forward_cch_weights[edge as usize][..=end_interval].iter().min().cloned().unwrap(),
-                                )
-                            };*/
                             self.context.backward_distances[current_node as usize] =
                                 min(self.context.backward_distances[current_node as usize], edge_weight + next_potential);
                         }

@@ -2,7 +2,6 @@ use cooperative::dijkstra::potentials::corridor_lowerbound_potential::CorridorLo
 use cooperative::dijkstra::potentials::multi_metric_potential::potential::MultiMetricPotential;
 use cooperative::dijkstra::potentials::TDPotential;
 use cooperative::dijkstra::ptv_server::PTVQueryServer;
-use cooperative::graph::MAX_BUCKETS;
 use cooperative::io::io_ptv_customization::{load_interval_minima, load_multiple_metrics};
 use cooperative::io::io_queries::load_queries;
 use cooperative::util::cli_args::parse_arg_required;
@@ -11,8 +10,8 @@ use rust_road_router::algo::a_star::ZeroPotential;
 use rust_road_router::algo::ch_potentials::CCHPotData;
 use rust_road_router::algo::customizable_contraction_hierarchy::CCH;
 use rust_road_router::algo::TDQuery;
-use rust_road_router::datastr::graph::time_dependent::{TDGraph, Timestamp};
-use rust_road_router::datastr::graph::{EdgeId, FirstOutGraph, Weight};
+use rust_road_router::datastr::graph::time_dependent::TDGraph;
+use rust_road_router::datastr::graph::FirstOutGraph;
 use rust_road_router::datastr::node_order::NodeOrder;
 use rust_road_router::io::{Load, Reconstruct};
 use rust_road_router::report::measure;
@@ -97,9 +96,6 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut server = PTVQueryServer::new_with_potential(graph, corridor_lowerbound_pot);
 
     execute_queries(&mut server, &queries, "Corridor Lowerbound Potential");
-    let (_, pot) = server.decompose();
-    println!("Average corridor length: {}s", pot.average_corridor_length() / 1000.0);
-
     Ok(())
 }
 

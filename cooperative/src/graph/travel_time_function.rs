@@ -15,6 +15,18 @@ pub fn build_ttf(timestamps: &Vec<Timestamp>, weights: &mut Vec<Weight>) {
 
     // 2. update period boundaries
     weights[0] = *weights.last().unwrap();
+
+    // 3. fix remaining violations beyond midnight
+    // it suffices to continue until fifo is restored -> rest is already covered by first run!
+    let mut current_idx = 0;
+    while is_fifo_violated(
+        timestamps[current_idx],
+        timestamps[current_idx + 1],
+        weights[current_idx],
+        weights[current_idx + 1],
+    ) {
+        weights[current_idx + 1] = weights[current_idx] - (timestamps[current_idx + 1] - timestamps[current_idx]);
+    }
 }
 
 /// updates the travel time function on a single entry
