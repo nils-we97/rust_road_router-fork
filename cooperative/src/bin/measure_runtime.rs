@@ -8,7 +8,7 @@ use cooperative::dijkstra::potentials::multi_level_bucket_potential::customizati
 use cooperative::dijkstra::potentials::multi_level_bucket_potential::CCHMultiLevelBucketPotential;
 use cooperative::dijkstra::potentials::TDPotential;
 use cooperative::dijkstra::server::{CapacityServer, CapacityServerOps};
-use cooperative::graph::speed_functions::bpr_speed_function;
+use cooperative::graph::traffic_functions::bpr_traffic_function;
 use cooperative::io::io_graph::load_used_capacity_graph;
 use cooperative::io::io_node_order::load_node_order;
 use cooperative::io::io_queries::load_queries;
@@ -30,7 +30,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let graph_directory = Path::new(&path);
 
     // load graph
-    let (graph, time) = measure(|| load_used_capacity_graph(graph_directory, num_buckets, bpr_speed_function, &capacity_directory).unwrap());
+    let (graph, time) = measure(|| load_used_capacity_graph(graph_directory, num_buckets, bpr_traffic_function, &capacity_directory).unwrap());
     println!("Graph loaded in {} ms", time.to_std().unwrap().as_nanos() as f64 / 1_000_000.0);
 
     // load queries

@@ -5,7 +5,7 @@ use cooperative::dijkstra::potentials::multi_level_bucket_potential::CCHMultiLev
 use cooperative::dijkstra::potentials::TDPotential;
 use cooperative::dijkstra::server::{CapacityServer, CapacityServerOps};
 use cooperative::experiments::queries::{generate_queries, QueryType};
-use cooperative::graph::speed_functions::bpr_speed_function;
+use cooperative::graph::traffic_functions::bpr_traffic_function;
 use cooperative::io::io_graph::{load_used_capacity_graph, store_capacity_buckets};
 use cooperative::io::io_node_order::load_node_order;
 use cooperative::util::cli_args::{parse_arg_optional, parse_arg_required};
@@ -41,7 +41,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     // load graph
     //let (graph, time) = measure(|| load_capacity_graph(graph_directory, num_buckets, bpr_speed_function).unwrap());
-    let (graph, time) = measure(|| load_used_capacity_graph(graph_directory, num_buckets, bpr_speed_function, "300_1635950540").unwrap());
+    let (graph, time) = measure(|| load_used_capacity_graph(graph_directory, num_buckets, bpr_traffic_function, "300_1635950540").unwrap());
 
     println!("Graph loaded in {} ms", time.to_std().unwrap().as_nanos() as f64 / 1_000_000.0);
 

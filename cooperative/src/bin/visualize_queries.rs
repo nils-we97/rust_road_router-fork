@@ -4,7 +4,7 @@ use std::path::Path;
 
 use cooperative::dijkstra::potentials::init_cch_potential::init_cch_potential;
 use cooperative::dijkstra::server::{CapacityServer, CapacityServerOps};
-use cooperative::graph::speed_functions::bpr_speed_function;
+use cooperative::graph::traffic_functions::bpr_traffic_function;
 use cooperative::io::io_coordinates::load_coords;
 use cooperative::io::io_graph::load_capacity_graph;
 use cooperative::io::io_node_order::load_node_order;
@@ -22,7 +22,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let graph_directory = Path::new(&path);
 
     // load graph
-    let (graph, time) = measure(|| load_capacity_graph(graph_directory, num_buckets, bpr_speed_function).unwrap());
+    let (graph, time) = measure(|| load_capacity_graph(graph_directory, num_buckets, bpr_traffic_function).unwrap());
     println!("Graph loaded in {} ms", time.to_std().unwrap().as_nanos() as f64 / 1_000_000.0);
 
     // load coords

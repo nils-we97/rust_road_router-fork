@@ -4,7 +4,7 @@ use std::path::Path;
 
 use cooperative::dijkstra::potentials::init_cch_potential::init_cch_potential;
 use cooperative::dijkstra::server::{CapacityServer, CapacityServerOps};
-use cooperative::graph::speed_functions::bpr_speed_function;
+use cooperative::graph::traffic_functions::bpr_traffic_function;
 use cooperative::io::io_graph::{load_capacity_graph, store_capacity_buckets};
 use cooperative::io::io_node_order::load_node_order;
 use cooperative::io::io_queries::load_queries;
@@ -22,7 +22,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         .unwrap_or(format!("{}_{}", num_buckets, time::get_time().sec));
 
     // load graph
-    let graph = load_capacity_graph(graph_directory, num_buckets, bpr_speed_function)?;
+    let graph = load_capacity_graph(graph_directory, num_buckets, bpr_traffic_function)?;
 
     // load queries
     let queries = load_queries(&graph_directory.join("queries").join(query_directory))?;

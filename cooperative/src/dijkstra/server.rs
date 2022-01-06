@@ -8,7 +8,7 @@ use rust_road_router::report;
 use rust_road_router::report::*;
 
 use crate::dijkstra::capacity_dijkstra_ops::CapacityDijkstraOps;
-use crate::dijkstra::model::{CapacityQueryResult, DistanceMeasure, MeasuredCapacityQueryResult, PathResult, UpdateMeasure};
+use crate::dijkstra::model::{CapacityQueryResult, DistanceMeasure, MeasuredCapacityQueryResult, PathResult};
 use crate::dijkstra::potentials::TDPotential;
 use crate::graph::capacity_graph::CapacityGraph;
 use crate::graph::ModifiableWeight;
@@ -52,7 +52,7 @@ impl<Pot: TDPotential> CapacityServer<Pot> {
 pub trait CapacityServerOps {
     fn query(&mut self, query: TDQuery<Timestamp>, update: bool) -> Option<CapacityQueryResult>;
     fn query_measured(&mut self, query: TDQuery<Timestamp>, update: bool) -> MeasuredCapacityQueryResult;
-    fn update(&mut self, path: &PathResult) -> UpdateMeasure;
+    fn update(&mut self, path: &PathResult);
     fn distance(&mut self, query: TDQuery<Timestamp>) -> DistanceMeasure;
     fn path(&self, query: TDQuery<Timestamp>) -> PathResult;
     fn path_distance(&self, path: &PathResult) -> Weight;
@@ -81,38 +81,31 @@ impl<Pot: TDPotential> CapacityServerOps for CapacityServer<Pot> {
             let path = self.path(query);
 
             if update {
-                let update_result = self.update(&path);
+                let (_, update_time) = measure(|| self.update(&path));
 
                 MeasuredCapacityQueryResult {
                     query_result: Some(CapacityQueryResult::new(distance, path)),
                     distance_result: dist,
-                    update_result,
+                    update_time,
                 }
             } else {
                 MeasuredCapacityQueryResult {
                     query_result: Some(CapacityQueryResult::new(distance, path)),
                     distance_result: dist,
-                    update_result: UpdateMeasure {
-                        time_bucket_updates: time::Duration::zero(),
-                        time_ttf: time::Duration::zero(),
-                    },
+                    update_time: time::Duration::zero(),
                 }
             }
         } else {
             MeasuredCapacityQueryResult {
                 query_result: None,
                 distance_result: dist,
-                update_result: UpdateMeasure {
-                    time_bucket_updates: time::Duration::zero(),
-                    time_ttf: time::Duration::zero(),
-                },
+                update_time: time::Duration::zero(),
             }
         }
     }
 
-    fn update(&mut self, path: &PathResult) -> UpdateMeasure {
-        let (time_bucket_updates, time_ttf) = self.graph.increase_weights(&path.edge_path, &path.departure);
-        UpdateMeasure { time_bucket_updates, time_ttf }
+    fn update(&mut self, path: &PathResult) {
+        self.graph.increase_weights(&path.edge_path, &path.departure);
     }
 
     fn distance(&mut self, query: TDQuery<Timestamp>) -> DistanceMeasure {
@@ -199,9 +192,10 @@ impl<Pot: TDPotential> CapacityServerOps for CapacityServer<Pot> {
         );*/
         debug_assert!(
             result.unwrap_or(INFINITY) + 1 >= pot.potential(from, init).unwrap_or(INFINITY),
-            "{:#?} {:#?}",
+            "{:#?} {:#?} {:#?}",
             &result,
-            &pot.potential(from, init)
+            &pot.potential(from, init),
+            (from, to, init)
         );
 
         DistanceMeasure {

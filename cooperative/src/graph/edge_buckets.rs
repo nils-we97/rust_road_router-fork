@@ -83,18 +83,22 @@ impl CapacityBuckets {
     }
 
     /// increment the capacity at `ts` by one
-    pub fn increment(&mut self, ts: Timestamp) {
+    /// returns true if the bucket was not used before
+    pub fn increment(&mut self, ts: Timestamp) -> (bool, usize) {
         let idx = self.get_index(ts);
 
         if self.is_used() {
             let buckets = self.inner();
             if idx.is_ok() {
                 buckets[idx.unwrap()].1 += 1;
+                (false, idx.unwrap())
             } else {
                 buckets.insert(idx.unwrap_err(), (ts, 1));
+                (true, idx.unwrap_err())
             }
         } else {
             *self = CapacityBuckets::Used(vec![(ts, 1)]);
+            (true, 0)
         }
     }
 }

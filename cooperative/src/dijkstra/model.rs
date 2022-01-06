@@ -17,7 +17,7 @@ impl CapacityQueryResult {
 pub struct MeasuredCapacityQueryResult {
     pub query_result: Option<CapacityQueryResult>,
     pub distance_result: DistanceMeasure,
-    pub update_result: UpdateMeasure,
+    pub update_time: time::Duration,
 }
 
 #[derive(Clone, Debug)]

@@ -1,5 +1,5 @@
 use crate::graph::capacity_graph::CapacityGraph;
-use rust_road_router::datastr::graph::{EdgeIdGraph, EdgeIdT, EdgeRandomAccessGraph, Graph, Link, LinkIterable, NodeId, NodeIdT, INFINITY};
+use rust_road_router::datastr::graph::{EdgeIdGraph, EdgeIdT, EdgeRandomAccessGraph, Graph, Link, LinkIterable, NodeId, NodeIdT};
 use std::ops::Range;
 
 impl Graph for CapacityGraph {
@@ -49,7 +49,7 @@ impl EdgeRandomAccessGraph<Link> for CapacityGraph {
         let edge_id = edge_id as usize;
         Link {
             node: self.head()[edge_id],
-            weight: self.travel_time()[edge_id].iter().min().cloned().unwrap_or(INFINITY),
+            weight: self.free_flow_time()[edge_id],
         }
     }
 }
@@ -87,7 +87,7 @@ impl LinkIterable<Link> for CapacityGraph {
     fn link_iter(&self, node: u32) -> Self::Iter<'_> {
         self.neighbor_edge_indices_usize(node).into_iter().map(move |idx| Link {
             node: self.head()[idx],
-            weight: self.freeflow_time()[idx],
+            weight: self.free_flow_time()[idx],
         })
     }
 }
