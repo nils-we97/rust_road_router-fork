@@ -72,7 +72,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 }
                 GraphType::CAPACITY => {
                     // capacity graph has its own distance metric => rebuild graph before
-                    let distance = Vec::<u32>::load_from(graph_directory.join("distance"))?;
+                    let distance = Vec::<u32>::load_from(graph_directory.join("geo_distance"))?;
                     let distance_graph = FirstOutGraph::new(graph.first_out(), graph.head(), distance);
 
                     if query_type == QueryType::Geometric {
@@ -152,18 +152,34 @@ fn main() -> Result<(), Box<dyn Error>> {
                     ConstantDeparture::new(),
                 ),
                 QueryType::PopulationGeometric => {
-                    let use_distance_metric = graph_type == GraphType::CAPACITY;
+                    match graph_type {
+                        GraphType::CAPACITY => {
+                            // capacity graph has its own distance metric => rebuild graph before
+                            let distance = Vec::<u32>::load_from(graph_directory.join("geo_distance"))?;
+                            let distance_graph = FirstOutGraph::new(graph.first_out(), graph.head(), distance);
 
-                    generate_geometric_population_density_based_queries(
-                        &graph,
-                        &longitude,
-                        &latitude,
-                        &grid_tree,
-                        &grid_population,
-                        num_queries,
-                        RushHourDeparture::new(),
-                        use_distance_metric,
-                    )
+                            generate_geometric_population_density_based_queries(
+                                &distance_graph,
+                                &longitude,
+                                &latitude,
+                                &grid_tree,
+                                &grid_population,
+                                num_queries,
+                                RushHourDeparture::new(),
+                                true,
+                            )
+                        }
+                        GraphType::PTV => generate_geometric_population_density_based_queries(
+                            &graph,
+                            &longitude,
+                            &latitude,
+                            &grid_tree,
+                            &grid_population,
+                            num_queries,
+                            RushHourDeparture::new(),
+                            false,
+                        ),
+                    }
                 }
                 _ => unimplemented!(), // won't happen
             };

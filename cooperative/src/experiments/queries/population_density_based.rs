@@ -12,7 +12,7 @@ use rust_road_router::algo::dijkstra::{DefaultOps, DijkstraData, DijkstraInit, D
 use rust_road_router::datastr::graph::time_dependent::Timestamp;
 use std::collections::HashSet;
 
-const INV_AVERAGE_TRIP_LENGTH: f64 = 0.000025; // avg trip length is ~40 km
+const INV_AVERAGE_TRIP_LENGTH: f64 = 1.0 / 40_000.0; // avg trip length is ~40 km
 const INV_AVERAGE_TRIP_DURATION: f64 = 1.0 / (2_700_000.0); // avg trip duration: 45 minutes
 
 pub fn generate_uniform_population_density_based_queries<D: DepartureDistribution>(

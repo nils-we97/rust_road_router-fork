@@ -8,7 +8,7 @@ use rust_road_router::datastr::graph::{Link, LinkIterable, NodeId};
 
 use crate::experiments::queries::departure_distributions::DepartureDistribution;
 
-const INV_AVERAGE_TRIP_LENGTH: f64 = 0.000025; // avg trip length is ~40 km
+const INV_AVERAGE_TRIP_LENGTH: f64 = 1.0 / 40_000.0; // avg trip length is ~40 km
 const INV_AVERAGE_TRIP_DURATION: f64 = 1.0 / (2_700_000.0); // avg trip duration: 45 minutes
 
 pub fn generate_random_geometric_queries<G: LinkIterable<Link>, D: DepartureDistribution>(
