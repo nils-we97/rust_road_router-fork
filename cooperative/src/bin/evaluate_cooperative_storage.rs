@@ -9,10 +9,11 @@ use rayon::prelude::*;
 use rust_road_router::algo::ch_potentials::CCHPotData;
 use rust_road_router::algo::customizable_contraction_hierarchy::CCH;
 use rust_road_router::datastr::graph::{Graph, OwnedGraph};
-use rust_road_router::io::Load;
+use rust_road_router::io::{Load, Store};
 use std::env;
 use std::error::Error;
 use std::path::Path;
+use std::process::exit;
 use std::str::FromStr;
 
 /// Evaluates the memory consumption of a cooperative routing approach.
@@ -24,6 +25,29 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let graph_path = Path::new(&graph_directory);
     let query_path = graph_path.join("queries").join(&query_directory);
+
+    // read statistic results
+    if query_path.join("perf_stats_num_buckets").exists() {
+        let s_num_buckets = Vec::<u32>::load_from(&query_path.join("stats_num_buckets"))?;
+        let s_num_queries = Vec::<u32>::load_from(&query_path.join("stats_num_queries"))?;
+        let s_bucket_usage = Vec::<f64>::load_from(&query_path.join("stats_bucket_usage"))?;
+        let s_bucket_usage_abs = Vec::<u64>::load_from(&query_path.join("stats_bucket_usage_abs"))?;
+        let s_memory_usage = Vec::<u64>::load_from(&query_path.join("stats_memory_usage"))?;
+
+        println!("Experiment has already been conducted, see results below!");
+        for i in 0..s_num_buckets.len() {
+            println!("---------------------------------");
+            println!("Statistics for {} buckets, after {} queries:", s_num_buckets[i], s_num_queries[i]);
+            println!(
+                "Memory consumption: {} bytes, bucket usage: {}% (absolute: {})",
+                s_memory_usage[i],
+                s_bucket_usage[i] * 100.0,
+                s_bucket_usage_abs[i]
+            );
+        }
+        println!("--------------------------------------");
+        exit(0);
+    }
 
     // init queries
     let mut queries = load_queries(&query_path)?;
@@ -79,6 +103,32 @@ fn main() -> Result<(), Box<dyn Error>> {
             statistics
         })
         .collect::<Vec<(u32, u32, f64, usize, usize)>>();
+
+    usage_statistics
+        .iter()
+        .map(|x| x.0)
+        .collect::<Vec<u32>>()
+        .write_to(&query_path.join("stats_num_buckets"))?;
+    usage_statistics
+        .iter()
+        .map(|x| x.1)
+        .collect::<Vec<u32>>()
+        .write_to(&query_path.join("stats_num_queries"))?;
+    usage_statistics
+        .iter()
+        .map(|x| x.2)
+        .collect::<Vec<f64>>()
+        .write_to(&query_path.join("stats_bucket_usage"))?;
+    usage_statistics
+        .iter()
+        .map(|x| x.3 as u64)
+        .collect::<Vec<u64>>()
+        .write_to(&query_path.join("stats_bucket_usage_abs"))?;
+    usage_statistics
+        .iter()
+        .map(|x| x.4 as u64)
+        .collect::<Vec<u64>>()
+        .write_to(&query_path.join("stats_memory_usage"))?;
 
     for (num_buckets, num_queries, bucket_usage, bucket_usage_abs, memory_usage) in usage_statistics {
         println!("---------------------------------");

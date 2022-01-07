@@ -10,10 +10,11 @@ use rayon::prelude::*;
 use rust_road_router::algo::ch_potentials::{BorrowedCCHPot, CCHPotData};
 use rust_road_router::algo::customizable_contraction_hierarchy::CCH;
 use rust_road_router::datastr::graph::OwnedGraph;
-use rust_road_router::io::Load;
+use rust_road_router::io::{Load, Store};
 use std::env;
 use std::error::Error;
 use std::path::Path;
+use std::process::exit;
 use std::str::FromStr;
 
 /// Evaluate the difference between static (no updates) and cooperative routing.
@@ -29,6 +30,29 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let graph_path = Path::new(&graph_directory);
     let query_path = graph_path.join("queries").join(&query_directory);
+
+    // read statistic results
+    if query_path.join("perf_stats_num_buckets").exists() {
+        let s_num_buckets = Vec::<u32>::load_from(&query_path.join("perf_stats_num_buckets"))?;
+        let s_num_queries = Vec::<u32>::load_from(&query_path.join("perf_stats_num_queries"))?;
+        let s_cooperative = Vec::<u32>::load_from(&query_path.join("perf_stats_cooperative"))?;
+        let s_sum_distance = Vec::<u64>::load_from(&query_path.join("perf_stats_sum_distance"))?;
+        let s_avg_distance = Vec::<u64>::load_from(&query_path.join("perf_stats_avg_distance"))?;
+
+        println!("Experiment has already been conducted, see results below!");
+        for i in 0..s_sum_distance.len() {
+            println!("--------------------------------------");
+            println!(
+                "Statistics for {} buckets (cooperative {}) after {} queries:",
+                s_num_buckets[i],
+                s_cooperative[i] > 0,
+                s_num_queries[i]
+            );
+            println!("Distance sum: {} (avg: {})", s_sum_distance[i], s_avg_distance[i]);
+        }
+        println!("--------------------------------------");
+        exit(0);
+    }
 
     // init queries
     let mut queries = load_queries(&query_path)?;
@@ -71,6 +95,8 @@ fn main() -> Result<(), Box<dyn Error>> {
         .collect::<Vec<CapacityServer<BorrowedCCHPot>>>();
     println!("Initialized all Capacity Servers, starting queries..");
 
+    let mut perf_statistics = Vec::new();
+
     for i in query_breakpoints.windows(2) {
         // perform queries on all server, store paths
         servers
@@ -96,7 +122,6 @@ fn main() -> Result<(), Box<dyn Error>> {
 
         // validate that each server produced valid results at the same time (or failed all)
         path_results.windows(2).for_each(|a| debug_assert_eq!(a[0].len(), a[1].len()));
-        let num_paths = path_results[0].len();
 
         // evaluate all routes on the last server (which has the most buckets)
         let evaluation_server = servers.last().unwrap();
@@ -106,17 +131,48 @@ fn main() -> Result<(), Box<dyn Error>> {
             .zip(path_results.par_iter())
             .map(|(&(num_buckets, updates), paths)| {
                 let sum_dist = paths.iter().map(|path| evaluation_server.path_distance(path) as u64).sum::<u64>();
-                (num_buckets, updates, sum_dist)
+                (num_buckets, i[1], updates, sum_dist, sum_dist / paths.len() as u64)
             })
-            .collect::<Vec<(u32, bool, u64)>>();
+            .collect::<Vec<(u32, u32, bool, u64, u64)>>();
 
-        for (num_buckets, cooperative, sum_distance) in results {
+        perf_statistics.extend_from_slice(&results);
+
+        for (num_buckets, num_queries, cooperative, sum_distance, avg_distance) in results {
             println!("--------------------------------------");
-            println!("Statistics for {} buckets (cooperative {}) after {} queries:", num_buckets, cooperative, i[1]);
-            println!("Distance sum: {} (avg: {})", sum_distance, sum_distance / num_paths as u64);
+            println!(
+                "Statistics for {} buckets (cooperative {}) after {} queries:",
+                num_buckets, cooperative, num_queries
+            );
+            println!("Distance sum: {} (avg: {})", sum_distance, avg_distance);
         }
         println!("--------------------------------------");
     }
+
+    perf_statistics
+        .iter()
+        .map(|x| x.0)
+        .collect::<Vec<u32>>()
+        .write_to(&query_path.join("perf_stats_num_buckets"))?;
+    perf_statistics
+        .iter()
+        .map(|x| x.1)
+        .collect::<Vec<u32>>()
+        .write_to(&query_path.join("perf_stats_num_queries"))?;
+    perf_statistics
+        .iter()
+        .map(|x| x.2 as u32)
+        .collect::<Vec<u32>>()
+        .write_to(&query_path.join("perf_stats_cooperative"))?;
+    perf_statistics
+        .iter()
+        .map(|x| x.3)
+        .collect::<Vec<u64>>()
+        .write_to(&query_path.join("perf_stats_sum_distance"))?;
+    perf_statistics
+        .iter()
+        .map(|x| x.4)
+        .collect::<Vec<u64>>()
+        .write_to(&query_path.join("perf_stats_avg_distance"))?;
 
     Ok(())
 }
