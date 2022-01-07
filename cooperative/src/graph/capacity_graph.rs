@@ -17,7 +17,7 @@ pub struct CapacityGraph {
 
     // dynamic values, subject to change on updates
     used_capacity: Vec<CapacityBuckets>,
-    departure: Vec<Vec<Timestamp>>, //TODO combine departure and travel_time as PLF
+    departure: Vec<Vec<Timestamp>>,
     travel_time: Vec<Vec<Weight>>,
 
     // static values
@@ -56,7 +56,14 @@ impl CapacityGraph {
         let capacity_adjustment_factor = 24.0 / (num_buckets as f64);
         let max_capacity = max_capacity
             .iter()
-            .map(|&capacity| (capacity as f64 * capacity_adjustment_factor) as Capacity)
+            .map(|&capacity| {
+                // avoid unnecessary edges
+                if capacity >= 10 {
+                    (capacity as f64 * capacity_adjustment_factor) as Capacity
+                } else {
+                    0
+                }
+            })
             .collect::<Vec<Capacity>>();
 
         // adjust initial freeflow time (assuming it is given in seconds and needed in milliseconds!)
@@ -116,7 +123,12 @@ impl CapacityGraph {
         &self.distance
     }
 
-    /// Borrow a slice of `freeflow_time`: useful as lowerbound time for potentials
+    /// Borrow a slice of `max_capacity`
+    pub fn max_capacity(&self) -> &Vec<Weight> {
+        &self.max_capacity
+    }
+
+    /// Borrow a slice of `free_flow_time`: useful as lower bound time for potentials
     pub fn free_flow_time(&self) -> &Vec<Weight> {
         &self.free_flow_travel_time
     }
@@ -126,6 +138,49 @@ impl CapacityGraph {
     pub fn travel_time_function(&self, edge_id: EdgeId) -> PiecewiseLinearFunction {
         let edge_id = edge_id as usize;
         PiecewiseLinearFunction::new(&self.departure[edge_id], &self.travel_time[edge_id])
+    }
+
+    /// get memory consumption
+    pub fn get_mem_size(&self) -> usize {
+        // static graph data: first_out, head, distance, max-capacity and freeflow time
+        let static_graph_size = std::mem::size_of_val(&*self.first_out)
+            + std::mem::size_of_val(&*self.head)
+            + std::mem::size_of_val(&*self.distance)
+            + std::mem::size_of_val(&*self.max_capacity)
+            + std::mem::size_of_val(&*self.free_flow_travel_time);
+
+        let capacity_bucket_size = self
+            .used_capacity
+            .iter()
+            .map(|buckets| match buckets {
+                CapacityBuckets::Unused => std::mem::size_of_val(&CapacityBuckets::Unused),
+                CapacityBuckets::Used(data) => std::mem::size_of_val(&*buckets) + std::mem::size_of_val(&*data),
+            })
+            .sum::<usize>();
+
+        let ttf_size = self
+            .departure
+            .iter()
+            .zip(self.travel_time.iter())
+            .map(|(dep, tt)| std::mem::size_of_val(&*dep) + std::mem::size_of_val(&*tt))
+            .sum::<usize>();
+
+        static_graph_size + capacity_bucket_size + ttf_size
+    }
+
+    /// get the number of used buckets
+    pub fn get_bucket_usage(&self) -> usize {
+        self.used_capacity
+            .iter()
+            .map(|buckets| match buckets {
+                CapacityBuckets::Unused => 0,
+                CapacityBuckets::Used(data) => data.len(),
+            })
+            .sum()
+    }
+
+    pub fn num_buckets(&self) -> u32 {
+        self.num_buckets
     }
 
     /// round timestamp to nearest bucket interval

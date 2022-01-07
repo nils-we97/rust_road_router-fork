@@ -1,4 +1,3 @@
-use cooperative::dijkstra::model::PathResult;
 use cooperative::dijkstra::server::{CapacityServer, CapacityServerOps};
 use cooperative::experiments::queries::permutate_queries;
 use cooperative::graph::traffic_functions::bpr_traffic_function;
@@ -7,25 +6,21 @@ use cooperative::io::io_node_order::load_node_order;
 use cooperative::io::io_queries::load_queries;
 use cooperative::util::cli_args::{parse_arg_optional, parse_arg_required};
 use rayon::prelude::*;
-use rust_road_router::algo::ch_potentials::{BorrowedCCHPot, CCHPotData};
+use rust_road_router::algo::ch_potentials::CCHPotData;
 use rust_road_router::algo::customizable_contraction_hierarchy::CCH;
-use rust_road_router::datastr::graph::OwnedGraph;
+use rust_road_router::datastr::graph::{Graph, OwnedGraph};
 use rust_road_router::io::Load;
 use std::env;
 use std::error::Error;
 use std::path::Path;
 use std::str::FromStr;
 
-/// Evaluate the difference between static (no updates) and cooperative routing.
-/// In the static setting, no updates take place after calculating the routes.
-/// The evaluation takes place on the frequently updated graph.
+/// Evaluates the memory consumption of a cooperative routing approach.
+/// After a given number of queries, the current memory consumption is evaluated, before further processing occurs.
 ///
-/// Expected result: with a rising number of queries, the cooperative queries should perform
-/// significantly better (in terms of travel time).
-///
-/// Additional parameters: <path_to_graph> <path_to_queries> <query_breakpoints, comma-separated> <query_buckets=50,200,600>
+/// Additional parameters: <path_to_graph> <path_to_queries> <query_breakpoints, comma-separated> <buckets = 50,200,600>
 fn main() -> Result<(), Box<dyn Error>> {
-    let (graph_directory, query_directory, query_breakpoints, graph_num_buckets) = parse_args()?;
+    let (graph_directory, query_directory, query_breakpoints, graph_bucket_counts) = parse_args()?;
 
     let graph_path = Path::new(&graph_directory);
     let query_path = graph_path.join("queries").join(&query_directory);
@@ -53,31 +48,17 @@ fn main() -> Result<(), Box<dyn Error>> {
     let cch = CCH::fix_order_and_build(&lower_bound, order);
     let cch_pot_data = CCHPotData::new(&cch, &lower_bound);
 
-    // initialize graphs and store paths
-    let graph_attributes = [(1, false)]
-        .iter()
-        .chain(graph_num_buckets.iter().map(|&v| (v, true)).collect::<Vec<(u32, bool)>>().iter())
-        .cloned()
-        .collect::<Vec<(u32, bool)>>();
+    // initialize graphs and evaluate memory consumption
+    let usage_statistics = graph_bucket_counts
+        .par_iter()
+        .flat_map(|&num_buckets| {
+            let mut statistics = Vec::with_capacity(query_breakpoints.len() - 1);
 
-    let mut path_results = vec![Vec::<PathResult>::with_capacity(queries.len()); graph_attributes.len()];
-
-    let mut servers = graph_attributes
-        .iter()
-        .map(|&(num_buckets, _)| {
             let graph = load_capacity_graph(graph_path, num_buckets, bpr_traffic_function).unwrap();
-            CapacityServer::new_with_potential(graph, cch_pot_data.forward_potential())
-        })
-        .collect::<Vec<CapacityServer<BorrowedCCHPot>>>();
-    println!("Initialized all Capacity Servers, starting queries..");
+            let mut server = CapacityServer::new_with_potential(graph, cch_pot_data.forward_potential());
+            println!("{} buckets - starting queries!", num_buckets);
 
-    for i in query_breakpoints.windows(2) {
-        // perform queries on all server, store paths
-        servers
-            .par_iter_mut()
-            .zip(graph_attributes.par_iter())
-            .zip(path_results.par_iter_mut())
-            .for_each(|((server, &(num_buckets, updates)), paths)| {
+            for i in query_breakpoints.windows(2) {
                 (i[0] as usize..i[1] as usize)
                     .into_iter()
                     .zip(queries[i[0] as usize..i[1] as usize].iter())
@@ -86,36 +67,28 @@ fn main() -> Result<(), Box<dyn Error>> {
                             println!("{} buckets - finished {} of {} queries", num_buckets, idx + 1, queries.len());
                         }
 
-                        if let Some(result) = server.query(*query, updates) {
-                            paths.push(result.path);
-                        }
+                        server.query(*query, true);
                     });
-            });
 
-        println!("Validating results after {} queries...", i[1]);
+                let bucket_usage =
+                    server.borrow_graph().get_bucket_usage() as f64 / (server.borrow_graph().num_buckets() * server.borrow_graph().num_arcs() as u32) as f64;
+                let memory_usage = server.borrow_graph().get_mem_size();
 
-        // validate that each server produced valid results at the same time (or failed all)
-        path_results.windows(2).for_each(|a| debug_assert_eq!(a[0].len(), a[1].len()));
-        let num_paths = path_results[0].len();
+                statistics.push((num_buckets, i[1], bucket_usage, server.borrow_graph().get_bucket_usage(), memory_usage));
+            }
+            statistics
+        })
+        .collect::<Vec<(u32, u32, f64, usize, usize)>>();
 
-        // evaluate all routes on the last server (which has the most buckets)
-        let evaluation_server = servers.last().unwrap();
-
-        let results = graph_attributes
-            .par_iter()
-            .zip(path_results.par_iter())
-            .map(|(&(num_buckets, updates), paths)| {
-                let sum_dist = paths.iter().map(|path| evaluation_server.path_distance(path) as u64).sum::<u64>();
-                (num_buckets, updates, sum_dist)
-            })
-            .collect::<Vec<(u32, bool, u64)>>();
-
-        for (num_buckets, cooperative, sum_distance) in results {
-            println!("--------------------------------------");
-            println!("Statistics for {} buckets (cooperative {}) after {} queries:", num_buckets, cooperative, i[1]);
-            println!("Distance sum: {} (avg: {})", sum_distance, sum_distance / num_paths as u64);
-        }
-        println!("--------------------------------------");
+    for (num_buckets, num_queries, bucket_usage, bucket_usage_abs, memory_usage) in usage_statistics {
+        println!("---------------------------------");
+        println!("Statistics for {} buckets, after {} queries:", num_buckets, num_queries);
+        println!(
+            "Memory consumption: {} bytes, bucket usage: {}% (absolute: {})",
+            memory_usage,
+            bucket_usage * 100.0,
+            bucket_usage_abs
+        );
     }
 
     Ok(())
@@ -124,7 +97,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 fn parse_args() -> Result<(String, String, Vec<u32>, Vec<u32>), Box<dyn Error>> {
     let mut args = env::args().skip(1);
 
-    let graph_directory: String = parse_arg_required(&mut args, "Graph Directory")?;
+    let graph_directory = parse_arg_required(&mut args, "Graph Directory")?;
     let query_directory = parse_arg_required(&mut args, "Query Directory")?;
     let breakpoints: String = parse_arg_required(&mut args, "Query breakpoints")?;
     let graph_buckets = parse_arg_optional(&mut args, "50,200,600".to_string());
