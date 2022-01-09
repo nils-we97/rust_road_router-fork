@@ -28,7 +28,7 @@ pub struct Shortcut {
     pub cache: Option<ATTFContainer<Box<[TTFPoint]>>>,
     pub lower_bound: FlWeight,
     pub upper_bound: FlWeight,
-    constant: bool,
+    pub constant: bool,
     /// Is this edge actually necessary in a CH? Set to `false` to mark for removal in perfect customization.
     pub required: bool,
 }

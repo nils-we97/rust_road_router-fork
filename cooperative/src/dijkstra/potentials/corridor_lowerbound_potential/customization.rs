@@ -1,4 +1,5 @@
 use crate::dijkstra::potentials::corridor_lowerbound_potential::customization_catchup::customize_ptv_graph;
+use crate::graph::capacity_graph::CapacityGraph;
 use crate::graph::MAX_BUCKETS;
 use rust_road_router::algo::customizable_contraction_hierarchy::{DirectedCCH, CCH, CCHT};
 use rust_road_router::datastr::graph::floating_time_dependent::{TDGraph, TTFPoint};
@@ -72,6 +73,24 @@ pub struct CustomizedApproximatedPeriodicTTF<CCH> {
 }*/
 
 impl CustomizedApproximatedPeriodicTTF<DirectedCCH> {
+    pub fn new_from_capacity(cch: &CCH, graph: &CapacityGraph, num_intervals: u32) -> Self {
+        // basic workaround: convert to TD-Graph, then run PTV customization
+        // TODO is pseudo-perfect customization required?
+
+        let mut first_ipp_of_arc = vec![0];
+        graph
+            .departure()
+            .iter()
+            .for_each(|d| first_ipp_of_arc.push(*first_ipp_of_arc.last().unwrap() + d.len() as u32));
+
+        let departure = graph.departure().iter().flatten().cloned().collect::<Vec<u32>>();
+        let travel_time = graph.travel_time().iter().flatten().cloned().collect::<Vec<u32>>();
+
+        let td_graph = TDGraph::new(graph.first_out().to_vec(), graph.head().to_vec(), first_ipp_of_arc, departure, travel_time);
+
+        Self::new_from_ptv(cch, &td_graph, num_intervals)
+    }
+
     pub fn new_from_ptv(cch: &CCH, graph: &TDGraph, num_intervals: u32) -> Self {
         debug_assert!(MAX_BUCKETS % num_intervals == 0);
 

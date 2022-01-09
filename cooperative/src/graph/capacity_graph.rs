@@ -2,7 +2,7 @@ use rust_road_router::datastr::graph::time_dependent::{PiecewiseLinearFunction, 
 use rust_road_router::datastr::graph::{EdgeId, Graph, NodeId, Weight, INFINITY};
 
 use crate::graph::edge_buckets::CapacityBuckets;
-use crate::graph::travel_time_function::build_ttf;
+use crate::graph::travel_time_function::{build_ttf, update_ttf};
 use crate::graph::{Capacity, ExportableCapacity, ModifiableWeight, MAX_BUCKETS};
 
 /// Structure of a time-dependent graph with capacity buckets for each edge
@@ -302,8 +302,8 @@ impl ModifiableWeight for CapacityGraph {
                     }
 
                     // preserve fifo property, TODO fix bug on ttf update?
-                    build_ttf(&self.departure[edge_id], &mut self.travel_time[edge_id]);
-                    //update_ttf(&self.departure[edge_id], &mut self.travel_time[edge_id], pos, MAX_BUCKETS);
+                    //build_ttf(&self.departure[edge_id], &mut self.travel_time[edge_id]);
+                    update_ttf(&self.departure[edge_id], &mut self.travel_time[edge_id], tt_pos, MAX_BUCKETS);
                 }
             }
         });
