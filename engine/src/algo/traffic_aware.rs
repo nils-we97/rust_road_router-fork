@@ -11,6 +11,21 @@ use crate::{
     report::*,
 };
 
+/// Maximum time (ms) per query
+#[cfg(not(override_traffic_max_query_time))]
+pub const TRAFFIC_MAX_QUERY_TIME: Option<u128> = Some(10000);
+#[cfg(override_traffic_max_query_time)]
+pub const TRAFFIC_MAX_QUERY_TIME: Option<u128> = parse_max_traffic_query_time(include!(concat!(env!("OUT_DIR"), "/TRAFFIC_MAX_QUERY_TIME")));
+
+#[cfg(override_traffic_max_query_time)]
+const fn parse_max_traffic_query_time(input: u128) -> Option<u128> {
+    if input == 0 {
+        None
+    } else {
+        Some(input)
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum ActiveForbittenPaths {
     One(u128),
@@ -110,7 +125,7 @@ impl BlockedPathsDijkstra {
                                 if head == *path.last().unwrap() {
                                     panic!("path already forbidden: {:#?}", path);
                                 } else {
-                                    dbg!("subpath already forbidden");
+                                    // dbg!("subpath already forbidden");
                                     return;
                                 }
                             } else {
@@ -342,20 +357,22 @@ impl<'a> TrafficAwareServer<'a> {
     }
 
     pub fn query(&mut self, query: Query, epsilon: f64) -> Option<()> {
+        let timer = Timer::new();
+        report!("algo", "iterative_path_blocking");
         self.dijkstra_ops.reset(&self.live_graph);
 
         self.live_pot.init(query.to);
         let base_live_dist = self.live_pot.potential(query.from)?;
         let mut final_live_dist = base_live_dist;
 
-        let mut explore_time = time::Duration::zero();
-        let mut ubs_time = time::Duration::zero();
+        let mut explore_time = std::time::Duration::ZERO;
+        let mut ubs_time = std::time::Duration::ZERO;
 
         let mut i = 0;
         let mut total_queue_pops = 0usize;
         let mut iterations_ctxt = push_collection_context("iterations".to_string());
         let result = loop {
-            if i > 250 {
+            if TRAFFIC_MAX_QUERY_TIME.map(|m| timer.get_passed_ms() > m).unwrap_or(false) {
                 break None;
             }
 
@@ -386,8 +403,8 @@ impl<'a> TrafficAwareServer<'a> {
             });
 
             report!("num_queue_pops", num_queue_pops);
-            report!("exploration_time_ms", time.to_std().unwrap().as_nanos() as f64 / 1_000_000.0);
-            explore_time = explore_time + time;
+            report!("exploration_time_ms", time.as_secs_f64() * 1000.0);
+            explore_time += time;
 
             if self.dijkstra_data.distances[query.to as usize].popped().is_empty() {
                 break None;
@@ -426,8 +443,8 @@ impl<'a> TrafficAwareServer<'a> {
             report!("num_nodes_on_path", path.len());
 
             let (violating, time) = measure(|| self.ubs_checker.find_ubs_violating_subpaths(&path, epsilon));
-            report!("ubs_time_ms", time.to_std().unwrap().as_nanos() as f64 / 1_000_000.0);
-            ubs_time = ubs_time + time;
+            report!("ubs_time_ms", time.as_secs_f64() * 1000.0);
+            ubs_time += time;
 
             if violating.is_empty() {
                 break Some(());
@@ -448,8 +465,8 @@ impl<'a> TrafficAwareServer<'a> {
             "length_increase_percent",
             (final_live_dist - base_live_dist) as f64 / base_live_dist as f64 * 100.0
         );
-        report!("total_exploration_time_ms", explore_time.to_std().unwrap().as_nanos() as f64 / 1_000_000.0);
-        report!("total_ubs_time_ms", ubs_time.to_std().unwrap().as_nanos() as f64 / 1_000_000.0);
+        report!("total_exploration_time_ms", explore_time.as_secs_f64() * 1000.0);
+        report!("total_ubs_time_ms", ubs_time.as_secs_f64() * 1000.0);
         result
     }
 }
@@ -476,18 +493,20 @@ impl<'a> HeuristicTrafficAwareServer<'a> {
     }
 
     pub fn query(&mut self, query: Query, epsilon: f64, mut path_cb: impl FnMut(&[NodeId])) -> Option<()> {
+        let timer = Timer::new();
+        report!("algo", "iterative_detour_blocking");
         self.shortest_path.ops().reset();
 
         let mut base_live_dist = None;
         let mut final_live_dist = INFINITY;
 
-        let mut explore_time = time::Duration::zero();
-        let mut ubs_time = time::Duration::zero();
+        let mut explore_time = std::time::Duration::ZERO;
+        let mut ubs_time = std::time::Duration::ZERO;
 
         let mut i = 0;
         let mut iterations_ctxt = push_collection_context("iterations".to_string());
         let result = loop {
-            if i > 250 {
+            if TRAFFIC_MAX_QUERY_TIME.map(|m| timer.get_passed_ms() > m).unwrap_or(false) {
                 break None;
             }
 
@@ -497,8 +516,8 @@ impl<'a> HeuristicTrafficAwareServer<'a> {
 
             let (res, time) = measure(|| self.shortest_path.query(query));
 
-            report!("exploration_time_ms", time.to_std().unwrap().as_nanos() as f64 / 1_000_000.0);
-            explore_time = explore_time + time;
+            report!("exploration_time_ms", time.as_secs_f64() * 1000.0);
+            explore_time += time;
 
             let mut res = if let Some(res) = res.found() {
                 res
@@ -514,8 +533,8 @@ impl<'a> HeuristicTrafficAwareServer<'a> {
             report!("num_nodes_on_path", path.len());
 
             let (violating, time) = measure(|| self.ubs_checker.find_ubs_violating_subpaths(&path, epsilon));
-            report!("ubs_time_ms", time.to_std().unwrap().as_nanos() as f64 / 1_000_000.0);
-            ubs_time = ubs_time + time;
+            report!("ubs_time_ms", time.as_secs_f64() * 1000.0);
+            ubs_time += time;
 
             path_cb(&path);
 
@@ -540,9 +559,62 @@ impl<'a> HeuristicTrafficAwareServer<'a> {
                 (final_live_dist - base_live_dist) as f64 / base_live_dist as f64 * 100.0
             );
         }
-        report!("total_exploration_time_ms", explore_time.to_std().unwrap().as_nanos() as f64 / 1_000_000.0);
-        report!("total_ubs_time_ms", ubs_time.to_std().unwrap().as_nanos() as f64 / 1_000_000.0);
+        report!("total_exploration_time_ms", explore_time.as_secs_f64() * 1000.0);
+        report!("total_ubs_time_ms", ubs_time.as_secs_f64() * 1000.0);
         result
+    }
+}
+
+pub struct IterativePathFixing<'a> {
+    ubs_checker: MinimalNonShortestSubPaths<'a>,
+    shortest_path: TopoDijkServer<OwnedGraph, DefaultOps, BorrowedCCHPot<'a>, true, true, true>,
+    live_graph: BorrowedGraph<'a>,
+}
+
+impl<'a> IterativePathFixing<'a> {
+    pub fn new(smooth_graph: BorrowedGraph<'a>, live_graph: BorrowedGraph<'a>, smooth_cch_pot: &'a CCHPotData, live_cch_pot: &'a CCHPotData) -> Self {
+        let _blocked = block_reporting();
+        Self {
+            ubs_checker: MinimalNonShortestSubPaths::new(smooth_cch_pot, smooth_graph),
+            shortest_path: TopoDijkServer::new(&live_graph, live_cch_pot.forward_potential(), DefaultOps()),
+            live_graph,
+        }
+    }
+
+    pub fn query(&mut self, query: Query, epsilon: f64) -> Option<()> {
+        report!("algo", "iterative_path_fixing");
+
+        let (res, time) = measure(|| {
+            let _expl_ctxt = push_context("exploration".to_string());
+            self.shortest_path.query(query)
+        });
+        report!("exploration_time_ms", time.as_secs_f64() * 1000.0);
+
+        let mut res = res.found()?;
+
+        let base_live_dist = Some(res.distance());
+        let path = res.node_path();
+        report!("num_nodes_on_path", path.len());
+
+        let (fixed, time) = measure(|| self.ubs_checker.fix_violating_subpaths(&path, epsilon));
+        report!("total_ubs_time_ms", time.as_secs_f64() * 1000.0);
+
+        let final_path = match &fixed {
+            Ok(None) => &path,
+            Ok(Some(fixed)) => fixed,
+            Err(fixed) => fixed,
+        };
+
+        let final_live_dist = path_dist_iter(final_path, &self.live_graph).last().unwrap();
+
+        report!("failed", fixed.is_err());
+        if let Some(base_live_dist) = base_live_dist {
+            report!(
+                "length_increase_percent",
+                (final_live_dist - base_live_dist) as f64 / base_live_dist as f64 * 100.0
+            );
+        }
+        Some(())
     }
 }
 

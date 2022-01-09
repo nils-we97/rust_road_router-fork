@@ -1,18 +1,13 @@
-use crate::dijkstra::potentials::cch_parallelization_util::SeparatorBasedParallelCustomization;
 use crate::dijkstra::potentials::corridor_lowerbound_potential::customization_catchup::customize_ptv_graph;
-use crate::dijkstra::potentials::{convert_timestamp_f64_to_u32, convert_timestamp_u32_to_f64};
 use crate::graph::MAX_BUCKETS;
-use rayon::prelude::*;
 use rust_road_router::algo::customizable_contraction_hierarchy::{DirectedCCH, CCH, CCHT};
-use rust_road_router::datastr::graph::floating_time_dependent::{FlWeight, PeriodicPiecewiseLinearFunction, TDGraph, TTFPoint, Timestamp, PLF};
+use rust_road_router::datastr::graph::floating_time_dependent::{TDGraph, TTFPoint};
 use rust_road_router::datastr::graph::{
-    BuildReversed, EdgeId, EdgeIdT, Graph, LinkIterable, NodeId, NodeIdT, Reversed, ReversedGraphWithEdgeIds, UnweightedFirstOutGraph, INFINITY,
+    BuildReversed, EdgeId, EdgeIdT, Graph, LinkIterable, NodeId, NodeIdT, ReversedGraphWithEdgeIds, UnweightedFirstOutGraph, INFINITY,
 };
-use rust_road_router::report::{measure, report_time, report_time_with_key};
+use rust_road_router::report::measure;
 use scoped_tls::scoped_thread_local;
 use std::cell::RefCell;
-use std::cmp::{max, min};
-use std::ops::Range;
 
 // One mapping of node id to weight for each thread during the scope of the customization.
 scoped_thread_local!(static UPWARD_WORKSPACE: RefCell<Vec<Vec<TTFPoint>>>);
@@ -27,7 +22,7 @@ pub struct CustomizedApproximatedPeriodicTTF<CCH> {
     pub num_intervals: u32,
 }
 
-impl<'a> CustomizedApproximatedPeriodicTTF<&'a CCH> {
+/*impl<'a> CustomizedApproximatedPeriodicTTF<&'a CCH> {
     pub fn new(cch: &'a CCH, departures: &Vec<Vec<u32>>, travel_times: &Vec<Vec<u32>>, approximation_threshold: usize, num_intervals: u32) -> Self {
         debug_assert!(MAX_BUCKETS % num_intervals == 0);
         let m = cch.num_arcs();
@@ -74,17 +69,14 @@ impl<'a> CustomizedApproximatedPeriodicTTF<&'a CCH> {
             num_intervals,
         }
     }
-}
+}*/
 
 impl CustomizedApproximatedPeriodicTTF<DirectedCCH> {
     pub fn new_from_ptv(cch: &CCH, graph: &TDGraph, num_intervals: u32) -> Self {
         debug_assert!(MAX_BUCKETS % num_intervals == 0);
 
         let ((mut upward_weights, mut downward_weights), time) = measure(|| customize_ptv_graph(cch, graph, num_intervals));
-        println!(
-            "Interval Minima Customization took {} ms",
-            time.to_std().unwrap().as_nanos() as f64 / 1_000_000.0
-        );
+        println!("Interval Minima Customization took {} ms", time.as_secs_f64() * 1000.0);
 
         // extract relevant data
         let mut num_removed_edges = 0;
@@ -140,7 +132,7 @@ impl CustomizedApproximatedPeriodicTTF<DirectedCCH> {
                 num_intervals,
             )
         });
-        println!("Re-Building new CCH graph took {} ms", time.to_std().unwrap().as_nanos() as f64 / 1_000_000.0);
+        println!("Re-Building new CCH graph took {} ms", time.as_secs_f64() * 1000.0);
 
         Self {
             cch,
@@ -171,7 +163,7 @@ impl<CCH: CCHT> CustomizedApproximatedPeriodicTTF<CCH> {
     }
 }
 
-fn prepare_weights(
+/*fn prepare_weights(
     cch: &CCH,
     upward_weights: &mut Vec<Vec<TTFPoint>>,
     downward_weights: &mut Vec<Vec<TTFPoint>>,
@@ -325,9 +317,9 @@ fn customize_basic(cch: &CCH, upward_weights: &mut Vec<Vec<TTFPoint>>, downward_
             // everything will be dropped here
         });
     });
-}
+}*/
 
-fn extract_interval_minima(weights: &Vec<Vec<TTFPoint>>, num_intervals: u32) -> Vec<u32> {
+/*fn extract_interval_minima(weights: &Vec<Vec<TTFPoint>>, num_intervals: u32) -> Vec<u32> {
     let interval_length = MAX_BUCKETS / num_intervals;
 
     weights
@@ -404,7 +396,7 @@ fn extract_bounds(weights: &Vec<Vec<TTFPoint>>) -> Vec<(u32, u32)> {
             (min(min_val, INFINITY), min(max_val, INFINITY))
         })
         .collect::<Vec<(u32, u32)>>()
-}
+}*/
 
 fn build_customized_graph(
     cch: &CCH,
@@ -448,10 +440,9 @@ fn build_customized_graph(
 
     for node in 0..n as NodeId {
         let edge_ids = cch.neighbor_edge_indices_usize(node);
-        let orig_arcs = &cch.cch_edge_to_orig_arc[edge_ids.clone()];
 
-        for ((((NodeIdT(next_node), _), (forward_orig_arcs, _)), intervals), bounds) in LinkIterable::<(NodeIdT, EdgeIdT)>::link_iter(&forward, node)
-            .zip(orig_arcs.iter())
+        for ((((NodeIdT(next_node), _), forward_orig_arcs), intervals), bounds) in LinkIterable::<(NodeIdT, EdgeIdT)>::link_iter(&forward, node)
+            .zip(edge_ids.clone().into_iter().map(|e| &cch.forward_cch_edge_to_orig_arc[e]))
             .zip(&mut upward_intervals[edge_ids.clone()])
             .zip(&upward_bounds[edge_ids.clone()])
         {
@@ -462,7 +453,7 @@ fn build_customized_graph(
                     forward_weights[interval_idx * upward_count + forward_edge_counter as usize] = intervals[interval_idx];
                 }
                 forward_bounds.push(*bounds);
-                forward_cch_edge_to_orig_arc.push(forward_orig_arcs.clone());
+                forward_cch_edge_to_orig_arc.push(forward_orig_arcs.to_vec());
                 forward_edge_counter += 1;
 
                 // reduce memory consumption by removing unnecessary content
@@ -470,8 +461,9 @@ fn build_customized_graph(
                 intervals.shrink_to(0);
             }
         }
-        for ((((NodeIdT(next_node), _), (_, backward_orig_arcs)), intervals), bounds) in LinkIterable::<(NodeIdT, EdgeIdT)>::link_iter(&backward, node)
-            .zip(orig_arcs.iter())
+
+        for ((((NodeIdT(next_node), _), backward_orig_arcs), intervals), bounds) in LinkIterable::<(NodeIdT, EdgeIdT)>::link_iter(&backward, node)
+            .zip(edge_ids.clone().into_iter().map(|e| &cch.backward_cch_edge_to_orig_arc[e]))
             .zip(&mut downward_intervals[edge_ids.clone()])
             .zip(&downward_bounds[edge_ids.clone()])
         {
@@ -482,7 +474,7 @@ fn build_customized_graph(
                     backward_weights[interval_idx * downward_count + backward_edge_counter as usize] = intervals[interval_idx];
                 }
                 backward_bounds.push(*bounds);
-                backward_cch_edge_to_orig_arc.push(backward_orig_arcs.clone());
+                backward_cch_edge_to_orig_arc.push(backward_orig_arcs.to_vec());
                 backward_edge_counter += 1;
 
                 // reduce memory consumption by removing unnecessary content
@@ -515,7 +507,7 @@ fn build_customized_graph(
     (cch, forward_weights, backward_weights, forward_bounds, backward_bounds)
 }
 
-fn empty_ttf() -> Vec<TTFPoint> {
+/*fn empty_ttf() -> Vec<TTFPoint> {
     vec![
         TTFPoint {
             at: Timestamp::ZERO,
@@ -526,7 +518,7 @@ fn empty_ttf() -> Vec<TTFPoint> {
             val: FlWeight::INFINITY,
         },
     ]
-}
+}*/
 
 /*pub fn reorder_edge_intervals(intervals: &Vec<u32>, num_edges: usize, num_intervals: u32) -> Vec<u32> {
     let mut ret = vec![0; intervals.len()];
@@ -538,39 +530,3 @@ fn empty_ttf() -> Vec<TTFPoint> {
     }
     ret
 }*/
-
-#[test]
-fn test_interval_minima() {
-    let weights = vec![vec![
-        TTFPoint {
-            at: Timestamp(0.0),
-            val: FlWeight(100.0),
-        },
-        TTFPoint {
-            at: Timestamp(43200.0 - 100.0),
-            val: FlWeight(100.0),
-        },
-        TTFPoint {
-            at: Timestamp(43200.0),
-            val: FlWeight(200.0),
-        },
-        TTFPoint {
-            at: Timestamp(61000.0 - 50.0),
-            val: FlWeight(200.0),
-        },
-        TTFPoint {
-            at: Timestamp(61000.0),
-            val: FlWeight(250.0),
-        },
-        TTFPoint {
-            at: Timestamp(86400.0 - 150.0),
-            val: FlWeight(250.0),
-        },
-        TTFPoint {
-            at: Timestamp(86400.0),
-            val: FlWeight(100.0),
-        },
-    ]];
-    let result = extract_interval_minima(&weights, 4);
-    dbg!(&result);
-}

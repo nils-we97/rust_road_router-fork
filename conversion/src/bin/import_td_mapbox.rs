@@ -8,8 +8,8 @@ use rust_road_router::{
 };
 use std::{convert::TryFrom, env, error::Error, fs::File, path::Path};
 
-use csv::ReaderBuilder;
 use conversion::speed_profile_to_tt_profile;
+use csv::ReaderBuilder;
 
 fn main() -> Result<(), Box<dyn Error>> {
     let mut args = env::args().skip(1);

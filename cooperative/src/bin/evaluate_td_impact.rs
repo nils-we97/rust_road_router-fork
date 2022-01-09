@@ -15,6 +15,7 @@ use rust_road_router::algo::ch_potentials::BorrowedCCHPot;
 use rust_road_router::algo::TDQuery;
 use rust_road_router::datastr::graph::time_dependent::Timestamp;
 use std::path::Path;
+use std::time::Instant;
 
 /// Evaluates the impact of time-dependence on a given set of queries.
 /// Comparison is provided by a more static setting with only 1 bucket per edge.
@@ -79,21 +80,21 @@ fn main() -> Result<(), Box<dyn Error>> {
 
 fn get_query_paths<Pot: TDPotential>(server: &mut CapacityServer<Pot>, queries: &Vec<TDQuery<Timestamp>>, num_buckets: u32) -> Vec<PathResult> {
     println!("Starting to calculate results for {} buckets..", num_buckets);
-    let mut last_start = time::now();
+    let mut last_start = Instant::now();
     queries
         .iter()
         .enumerate()
         .filter_map(|(idx, query)| {
             if (idx + 1) % 1000 == 0 {
-                let time = time::now() - last_start;
+                let time = last_start.elapsed();
                 println!(
                     "{} - Finished {} of {} queries, last step took {} ms",
                     num_buckets,
                     idx + 1,
                     queries.len(),
-                    time.to_std().unwrap().as_nanos() as f64 / 1_000_000.0
+                    time.as_secs_f64() * 1000.0
                 );
-                last_start = time::now();
+                last_start = Instant::now();
             }
 
             server.query(*query, true).map(|result| result.path)

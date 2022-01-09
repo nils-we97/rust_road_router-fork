@@ -33,7 +33,7 @@ fn approximated_interval_link() {
 
     let (result, time) = measure(|| ops.link_in_bounds(&label, Reversed(EdgeIdT(0)), (13 * hour - 100, 16 * hour)));
     dbg!(&result);
-    println!("Linking took {} ms", time.to_std().unwrap().as_nanos() as f64 / 1_000_000.0);
+    println!("Linking took {} ms", time.as_secs_f64() * 1000.0);
 }
 
 #[test]

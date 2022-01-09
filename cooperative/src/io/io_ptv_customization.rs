@@ -18,10 +18,7 @@ pub fn load_interval_minima(directory: &Path) -> Result<CustomizedApproximatedPe
             Vec::<u32>::load_from(&directory.join("upward_intervals")).unwrap(),
         )
     });
-    println!(
-        "Loaded upward/downward intervals in {} ms",
-        time.to_std().unwrap().as_nanos() as f64 / 1_000_000.0
-    );
+    println!("Loaded upward/downward intervals in {} ms", time.as_secs_f64() * 1000.0);
 
     let ((upward_bounds, downward_bounds), time) = measure(|| {
         let upward_lower = Vec::<u32>::load_from(&directory.join("upward_lower")).unwrap();
@@ -38,10 +35,10 @@ pub fn load_interval_minima(directory: &Path) -> Result<CustomizedApproximatedPe
 
         (upward_bounds, downward_bounds)
     });
-    println!("Loaded upward/downward bounds in {} ms", time.to_std().unwrap().as_nanos() as f64 / 1_000_000.0);
+    println!("Loaded upward/downward bounds in {} ms", time.as_secs_f64() * 1000.0);
 
     let (cch, time) = measure(|| DirectedCCH::reconstruct_from(&directory.join("cch")).unwrap());
-    println!("Reconstructed directed CCH in {} ms", time.to_std().unwrap().as_nanos() as f64 / 1_000_000.0);
+    println!("Reconstructed directed CCH in {} ms", time.as_secs_f64() * 1000.0);
 
     Ok(CustomizedApproximatedPeriodicTTF {
         cch,

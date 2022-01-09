@@ -29,7 +29,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     // load graph
     let (graph, time) = measure(|| TDGraph::reconstruct_from(&path).unwrap());
-    println!("Loaded graph in {} ms", time.to_std().unwrap().as_nanos() as f64 / 1_000_000.0);
+    println!("Loaded graph in {} ms", time.as_secs_f64() * 1000.0);
 
     // init queries
     let query_path = path.join("queries").join(&query_directory);
@@ -71,7 +71,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     // 2nd potential: Multi-Metric Potential
     let customized_path = path.join("customized").join(&customized_mm);
     let (customized_multi_metric, time) = measure(|| load_multiple_metrics(&customized_path, &cch).unwrap());
-    println!("Loaded customized data in {} ms", time.to_std().unwrap().as_nanos() as f64 / 1_000_000.0);
+    println!("Loaded customized data in {} ms", time.as_secs_f64() * 1000.0);
 
     let multi_metric_pot = MultiMetricPotential::new(&customized_multi_metric);
     let mut server = PTVQueryServer::new_with_potential(graph, multi_metric_pot);
@@ -92,7 +92,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     // 3rd potential: Corridor-Lowerbound Potential
     let customized_path = path.join("customized").join(&customized_cl);
     let (customized_corridor_lowerbound, time) = measure(|| load_interval_minima(&customized_path).unwrap());
-    println!("Loaded customized data in {} ms", time.to_std().unwrap().as_nanos() as f64 / 1_000_000.0);
+    println!("Loaded customized data in {} ms", time.as_secs_f64() * 1000.0);
 
     let corridor_lowerbound_pot = CorridorLowerboundPotential::new(&customized_corridor_lowerbound);
     let mut server = PTVQueryServer::new_with_potential(graph, corridor_lowerbound_pot);
@@ -125,7 +125,7 @@ fn execute_queries<Pot: TDPotential>(
     queries.iter().enumerate().for_each(|(idx, &query)| {
         let (result, time) = measure(|| server.query(query));
 
-        let time = time.to_std().unwrap().as_nanos() as f64 / 1_000_000.0;
+        let time = time.as_secs_f64() * 1000.0;
         let rank = first_rank + idx as u32 / num_queries_per_rank;
 
         results.push((pot_name.clone(), rank, time, result.num_queue_pops));

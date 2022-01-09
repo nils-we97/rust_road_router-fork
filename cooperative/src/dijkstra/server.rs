@@ -6,6 +6,7 @@ use rust_road_router::datastr::graph::{Arc, EdgeIdT, Graph, LinkIterable, NodeId
 use rust_road_router::datastr::index_heap::Indexing;
 use rust_road_router::report;
 use rust_road_router::report::*;
+use std::time::{Duration, Instant};
 
 use crate::dijkstra::capacity_dijkstra_ops::CapacityDijkstraOps;
 use crate::dijkstra::model::{CapacityQueryResult, DistanceMeasure, MeasuredCapacityQueryResult, PathResult};
@@ -92,14 +93,14 @@ impl<Pot: TDPotential> CapacityServerOps for CapacityServer<Pot> {
                 MeasuredCapacityQueryResult {
                     query_result: Some(CapacityQueryResult::new(distance, path)),
                     distance_result: dist,
-                    update_time: time::Duration::zero(),
+                    update_time: Duration::ZERO,
                 }
             }
         } else {
             MeasuredCapacityQueryResult {
                 query_result: None,
                 distance_result: dist,
-                update_time: time::Duration::zero(),
+                update_time: Duration::ZERO,
             }
         }
     }
@@ -127,7 +128,7 @@ impl<Pot: TDPotential> CapacityServerOps for CapacityServer<Pot> {
         let (_, time_potential) = measure(|| self.potential.init(from, to, query.departure));
         let pot = &mut self.potential;
 
-        let start = time::now();
+        let start = Instant::now();
         let mut ops = CapacityDijkstraOps::default();
 
         // 1. reset data
@@ -178,7 +179,7 @@ impl<Pot: TDPotential> CapacityServerOps for CapacityServer<Pot> {
             }
         }
 
-        let time_query = time::now() - start;
+        let time_query = start.elapsed();
 
         /*println!(
             "Query results: {}, potential: {}",

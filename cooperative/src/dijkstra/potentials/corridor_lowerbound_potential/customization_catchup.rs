@@ -44,14 +44,19 @@ pub fn customize_ptv_graph(cch: &CCH, metric: &TDGraph, num_intervals: u32) -> (
     report_time("TD-CCH apply weights", || {
         upward
             .par_iter_mut()
-            .zip(downward.par_iter_mut())
-            .zip(cch.cch_edge_to_orig_arc.par_iter())
-            .for_each(|((up_weight, down_weight), (up_arcs, down_arcs))| {
+            .zip(cch.forward_cch_edge_to_orig_arc.par_iter())
+            .for_each(|(up_weight, up_arcs)| {
                 assert!(up_arcs.len() <= 1);
-                assert!(down_arcs.len() <= 1);
                 for &EdgeIdT(up_arc) in up_arcs {
                     *up_weight = ShortcutWrapper::empty(Shortcut::new(Some(up_arc), metric));
                 }
+            });
+
+        downward
+            .par_iter_mut()
+            .zip(cch.backward_cch_edge_to_orig_arc.par_iter())
+            .for_each(|(down_weight, down_arcs)| {
+                assert!(down_arcs.len() <= 1);
                 for &EdgeIdT(down_arc) in down_arcs {
                     *down_weight = ShortcutWrapper::empty(Shortcut::new(Some(down_arc), metric));
                 }
@@ -224,7 +229,7 @@ pub fn customize_ptv_graph(cch: &CCH, metric: &TDGraph, num_intervals: u32) -> (
     report_time("TD-CCH Pre-Customization", || {
         static_customization.customize(&mut upward, &mut downward, |cb| {
             UPWARD_WORKSPACE.set(&RefCell::new(vec![(FlWeight::INFINITY, FlWeight::INFINITY); n as usize]), || {
-                DOWNWARD_WORKSPACE.set(&RefCell::new(vec![(FlWeight::INFINITY, FlWeight::INFINITY); n as usize]), || cb());
+                DOWNWARD_WORKSPACE.set(&RefCell::new(vec![(FlWeight::INFINITY, FlWeight::INFINITY); n as usize]), cb);
             });
         });
 
@@ -232,7 +237,7 @@ pub fn customize_ptv_graph(cch: &CCH, metric: &TDGraph, num_intervals: u32) -> (
         let downward_preliminary_bounds: Vec<_> = downward.iter().map(|s| s.shortcut.lower_bound).collect();
 
         static_perfect_customization.customize(&mut upward, &mut downward, |cb| {
-            PERFECT_WORKSPACE.set(&RefCell::new(vec![InRangeOption::NONE; n as usize]), || cb());
+            PERFECT_WORKSPACE.set(&RefCell::new(vec![InRangeOption::NONE; n as usize]), cb);
         });
 
         upward.par_iter_mut().zip(upward_preliminary_bounds.par_iter()).for_each(disable_dominated);

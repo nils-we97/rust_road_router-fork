@@ -30,7 +30,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     // load graph
     let (graph, time) = measure(|| TDGraph::reconstruct_from(&graph_directory).unwrap());
-    println!("Loaded graph in {} ms", time.to_std().unwrap().as_nanos() as f64 / 1_000_000.0);
+    println!("Loaded graph in {} ms", time.as_secs_f64() * 1000.0);
 
     // init cch
     let order = Vec::load_from(graph_directory.join("cch_perm")).map(NodeOrder::from_node_order)?;
@@ -46,7 +46,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 let lower_bound_graph = FirstOutGraph::new(graph.first_out(), graph.head(), &lower_bound[..]);
                 CCHPotData::new(&cch, &lower_bound_graph)
             });
-            println!("Complete customization took {} ms", time.to_std().unwrap().as_nanos() as f64 / 1_000_000.0);
+            println!("Complete customization took {} ms", time.as_secs_f64() * 1000.0);
 
             let customized = pot_data.customized();
             let mem_usage = customized.cch().mem_size()
@@ -63,7 +63,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
             let graph = convert_to_td_graph(&graph);
             let (customized, time) = measure(|| CustomizedApproximatedPeriodicTTF::new_from_ptv(&cch, &graph, num_intervals));
-            println!("Complete customization took {} ms", time.to_std().unwrap().as_nanos() as f64 / 1_000_000.0);
+            println!("Complete customization took {} ms", time.as_secs_f64() * 1000.0);
 
             let mem_usage = customized.cch.mem_size()
                 + std::mem::size_of_val(&*customized.downward_intervals)
@@ -87,7 +87,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             let (departure, travel_time) = retrieve_departure_and_travel_time(&graph);
             let (customized_multi_metric, time) =
                 measure(|| CustomizedMultiMetrics::new(&cch, &departure, &travel_time, &balanced_interval_pattern(), num_metrics));
-            println!("Complete customization took {} ms", time.to_std().unwrap().as_nanos() as f64 / 1_000_000.0);
+            println!("Complete customization took {} ms", time.as_secs_f64() * 1000.0);
 
             let memory_usage = std::mem::size_of_val(&*customized_multi_metric.upward)
                 + std::mem::size_of_val(&*customized_multi_metric.downward)

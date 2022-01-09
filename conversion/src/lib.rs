@@ -4,14 +4,14 @@ use rust_road_router::datastr::graph::{time_dependent::*, *};
 use std::convert::TryFrom;
 
 pub fn speed_profile_to_tt_profile(speeds: &[(Timestamp, u32)], edge_len: u32) -> Vec<(Timestamp, Weight)> {
-    let t_wrap = speeds.last().unwrap().0; // == sentinel element timestamp == 86400000
-    let last_to_exit = speeds.len() - 2; // last element before sentinel
+    let t_wrap = speeds.last().unwrap().0;
+    let last_to_exit = speeds.len() - 2;
     let mut speeds = &*speeds; // reborrow for lifetime foo
     let mut extended_speeds = Vec::new();
     assert!(edge_len > 0);
     assert!(speeds.len() > 1);
-    let tt_first = tt(speeds[0].1, edge_len); // time of edge traversal with constant initial speed
-    let needs_extension = tt_first > speeds[1].0; // check if time intervals overlap
+    let tt_first = tt(speeds[0].1, edge_len);
+    let needs_extension = tt_first > speeds[1].0;
     if needs_extension {
         extended_speeds.extend_from_slice(speeds);
     }
@@ -65,7 +65,13 @@ pub fn speed_profile_to_tt_profile(speeds: &[(Timestamp, u32)], edge_len: u32) -
             let t_enter = Weight::try_from(u64::from(eval_at) * u64::from(delta_dt) / u64::from(delta_at)).unwrap() + last.0;
             let tt_enter = speeds[entered.back().unwrap() + 1].0 - t_enter;
 
-            profile.last().map(|&(t, _)| debug_assert!(t < t_enter));
+            if let Some(&(t, tt)) = profile.last() {
+                if t >= t_enter {
+                    assert_eq!(t, t_enter);
+                    assert_eq!(tt, tt_enter);
+                    profile.pop();
+                }
+            }
             profile.push((t_enter, tt_enter));
             entered.push_back(next_to_enter);
             next_to_enter += 1;
@@ -91,9 +97,8 @@ pub fn speed_profile_to_tt_profile(speeds: &[(Timestamp, u32)], edge_len: u32) -
 
 fn tt_at_exit(entered_speeds: &[(Timestamp, u32)], len_m: u32) -> Weight {
     match entered_speeds {
-        [(_at, speed)] => tt(*speed, len_m), // base case: return travel time along constant-speed segment
+        [(_at, speed)] => tt(*speed, len_m),
         [(at, speed), rest @ ..] => {
-            // travel for `t_cur` time units with `speed` km/h, subtract passed distance for recursion
             let t_cur = rest[0].0 - at;
             t_cur + tt_at_exit(rest, len_m - speed * t_cur / 3600)
         }

@@ -15,7 +15,6 @@ rust_road_router = { path = "../engine", features = ["default"] }
 conversion = { path = "../conversion" }
 rand = "^0.8.4"
 rand_distr = "^0.4.1"
-time = "^0.1.40"
 fux_kdtree = "^0.2.0"
 rayon = "^1.5.1"
 core_affinity = "^0.5.9"

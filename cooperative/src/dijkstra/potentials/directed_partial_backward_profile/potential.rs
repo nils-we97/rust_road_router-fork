@@ -102,7 +102,7 @@ impl<'a> TDPotential for TDDirectedPartialBackwardProfilePotential<'a> {
 
         // 1. retrieve lower/upper bound of earliest-arrival query
         let ((ea_dist_lower, ea_dist_upper), time) = measure(|| self.forward_cch.query(source, target).unwrap());
-        println!("Earliest arrival query took {} ms", time.to_std().unwrap().as_nanos() as f64 / 1_000_000.0);
+        println!("Earliest arrival query took {} ms", time.as_secs_f64() * 1_000.0);
         println!("Distance Bounds: ({}, {})", ea_dist_lower, ea_dist_upper);
 
         let query = TDDirectedPartialBackwardProfileQuery {

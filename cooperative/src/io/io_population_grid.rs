@@ -35,7 +35,7 @@ pub fn load_population_grid(directory: &Path) -> Result<(Kdtree<PopulationGridEn
 
         (longitude, latitude, population)
     });
-    println!("Loaded population data in {} ms", time.to_std().unwrap().as_nanos() as f64 / 1_000_000.0);
+    println!("Loaded population data in {} ms", time.as_secs_f64() * 1000.0);
 
     // transform into single data structure
     let mut entries = longitude

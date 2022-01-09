@@ -1,4 +1,5 @@
 use std::cmp::Ordering;
+use std::time::Instant;
 
 use rayon::prelude::*;
 use rust_road_router::datastr::graph::time_dependent::Timestamp;
@@ -108,7 +109,7 @@ pub fn reduce_metrics(data: &mut Vec<Vec<Weight>>, entries: &mut Vec<MetricEntry
     let num_metrics = data[0].len();
     let mut queue = IndexdMinHeap::new(num_metrics * num_metrics);
 
-    let start = time::now();
+    let start = Instant::now();
     let queue_items: Vec<Vec<MetricItem>> = (0..entries.len() - 1)
         .into_par_iter()
         .map(|i: usize| {
@@ -123,11 +124,8 @@ pub fn reduce_metrics(data: &mut Vec<Vec<Weight>>, entries: &mut Vec<MetricEntry
                 .collect::<Vec<MetricItem>>()
         })
         .collect::<Vec<Vec<MetricItem>>>();
-    let time = time::now() - start;
-    println!(
-        "Initialized all metric comparisons in {}s",
-        time.to_std().unwrap().as_nanos() as f64 / 1_000_000_000.0
-    );
+    let time = start.elapsed();
+    println!("Initialized all metric comparisons in {}s", time.as_secs_f64());
 
     // remember all deleted metric ids
     let mut metric_deactivated = vec![false; data[0].len()];

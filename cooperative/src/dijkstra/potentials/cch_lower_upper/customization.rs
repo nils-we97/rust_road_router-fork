@@ -83,13 +83,18 @@ fn prepare_weights(cch: &CCH, upward_weights: &mut Vec<(u32, u32)>, downward_wei
     report_time("Apply weights", || {
         upward_weights
             .par_iter_mut()
-            .zip(downward_weights.par_iter_mut())
-            .zip(cch.cch_edge_to_orig_arc.par_iter())
-            .for_each(|(((up_lower, up_upper), (down_lower, down_upper)), (up_arcs, down_arcs))| {
+            .zip(cch.forward_cch_edge_to_orig_arc.par_iter())
+            .for_each(|((up_lower, up_upper), up_arcs)| {
                 for &EdgeIdT(up_arc) in up_arcs {
                     *up_lower = min(*up_lower, lower_bound[up_arc as usize]);
                     *up_upper = min(*up_upper, upper_bound[up_arc as usize]);
                 }
+            });
+
+        downward_weights
+            .par_iter_mut()
+            .zip(cch.backward_cch_edge_to_orig_arc.par_iter())
+            .for_each(|((down_lower, down_upper), down_arcs)| {
                 for &EdgeIdT(down_arc) in down_arcs {
                     *down_lower = min(*down_lower, lower_bound[down_arc as usize]);
                     *down_upper = min(*down_upper, upper_bound[down_arc as usize]);
@@ -279,11 +284,10 @@ fn customize_perfect(cch: &CCH, upward_weights: &mut Vec<(Weight, Weight)>, down
 
         for node in 0..n as NodeId {
             let edge_ids = cch.neighbor_edge_indices_usize(node);
-            let orig_arcs = &cch.cch_edge_to_orig_arc[edge_ids.clone()];
 
-            for (((NodeIdT(next_node), EdgeIdT(edge_id)), (forward_orig_arcs, _)), &customized_weight) in
+            for (((NodeIdT(next_node), EdgeIdT(edge_id)), forward_orig_arcs), &customized_weight) in
                 LinkIterable::<(NodeIdT, EdgeIdT)>::link_iter(&forward, node)
-                    .zip(orig_arcs.iter())
+                    .zip(edge_ids.clone().into_iter().map(|e| &cch.forward_cch_edge_to_orig_arc[e]))
                     .zip(&upward_orig[edge_ids.clone()])
             {
                 let edge_id = edge_id as usize;
@@ -295,13 +299,13 @@ fn customize_perfect(cch: &CCH, upward_weights: &mut Vec<(Weight, Weight)>, down
                 {
                     forward_head.push(next_node);
                     forward_weight.push(upward_weights[edge_id]);
-                    forward_cch_edge_to_orig_arc.push(forward_orig_arcs.clone());
+                    forward_cch_edge_to_orig_arc.push(forward_orig_arcs.to_vec());
                     forward_edge_counter += 1;
                 }
             }
-            for (((NodeIdT(next_node), EdgeIdT(edge_id)), (_, backward_orig_arcs)), &customized_weight) in
+            for (((NodeIdT(next_node), EdgeIdT(edge_id)), backward_orig_arcs), &customized_weight) in
                 LinkIterable::<(NodeIdT, EdgeIdT)>::link_iter(&backward, node)
-                    .zip(orig_arcs.iter())
+                    .zip(edge_ids.clone().into_iter().map(|e| &cch.backward_cch_edge_to_orig_arc[e]))
                     .zip(&downward_orig[edge_ids.clone()])
             {
                 let edge_id = edge_id as usize;
@@ -311,7 +315,7 @@ fn customize_perfect(cch: &CCH, upward_weights: &mut Vec<(Weight, Weight)>, down
                 {
                     backward_head.push(next_node);
                     backward_weight.push(downward_weights[edge_id]);
-                    backward_cch_edge_to_orig_arc.push(backward_orig_arcs.clone());
+                    backward_cch_edge_to_orig_arc.push(backward_orig_arcs.to_vec());
                     backward_edge_counter += 1;
                 }
             }

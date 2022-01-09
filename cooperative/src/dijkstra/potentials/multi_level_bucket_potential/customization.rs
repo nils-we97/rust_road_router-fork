@@ -161,13 +161,20 @@ fn prepare_weights(cch: &CCH, upward_weights: &mut Vec<Vec<Weight>>, downward_we
     report_time("Apply weights", || {
         upward_weights
             .par_iter_mut()
-            .zip(downward_weights.par_iter_mut())
-            .zip(cch.cch_edge_to_orig_arc.par_iter())
-            .for_each(|((upward, downward), (up_arcs, down_arcs))| {
+            .zip(cch.forward_cch_edge_to_orig_arc.par_iter())
+            .for_each(|(upward, up_arcs)| {
                 for metric_idx in 0..upward.len() {
                     for &EdgeIdT(up_arc) in up_arcs {
                         upward[metric_idx] = min(upward[metric_idx], metric[up_arc as usize][metric_idx]);
                     }
+                }
+            });
+
+        downward_weights
+            .par_iter_mut()
+            .zip(cch.backward_cch_edge_to_orig_arc.par_iter())
+            .for_each(|(downward, down_arcs)| {
+                for metric_idx in 0..downward.len() {
                     for &EdgeIdT(down_arc) in down_arcs {
                         downward[metric_idx] = min(downward[metric_idx], metric[down_arc as usize][metric_idx]);
                     }
@@ -251,7 +258,7 @@ fn customize_basic(cch: &CCH, upward_weights: &mut Vec<Vec<Weight>>, downward_we
         customization.customize(upward_weights, downward_weights, |cb| {
             // create workspace vectors for the scope of the customization
             UPWARD_WORKSPACE.set(&RefCell::new(vec![vec![INFINITY; num_metrics]; n as usize]), || {
-                DOWNWARD_WORKSPACE.set(&RefCell::new(vec![vec![INFINITY; num_metrics]; n as usize]), || cb());
+                DOWNWARD_WORKSPACE.set(&RefCell::new(vec![vec![INFINITY; num_metrics]; n as usize]), cb);
             });
             // everything will be dropped here
         });

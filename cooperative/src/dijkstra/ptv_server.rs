@@ -6,6 +6,7 @@ use rust_road_router::datastr::graph::time_dependent::{TDGraph, Timestamp};
 use rust_road_router::datastr::graph::{Arc, EdgeIdT, Graph, LinkIterable, NodeIdT, Weight, INFINITY};
 use rust_road_router::datastr::index_heap::Indexing;
 use rust_road_router::report::measure;
+use std::time::{Duration, Instant};
 
 pub struct PTVQueryServer<Pot> {
     graph: TDGraph,
@@ -16,8 +17,8 @@ pub struct PTVQueryServer<Pot> {
 
 pub struct PTVQueryResult {
     pub distance: Option<Weight>,
-    pub time_potential: time::Duration,
-    pub time_query: time::Duration,
+    pub time_potential: Duration,
+    pub time_query: Duration,
     pub num_relaxed_arcs: u32,
     pub num_queue_pops: u32,
     pub num_queue_pushs: u32,
@@ -61,7 +62,7 @@ impl<Pot: TDPotential> PTVQueryServer<Pot> {
         let (_, time_potential) = measure(|| self.potential.init(from, to, query.departure));
         let pot = &mut self.potential;
 
-        let start = time::now();
+        let start = Instant::now();
         let mut ops = TDDijkstraOps::default();
 
         // 1. reset data
@@ -111,7 +112,7 @@ impl<Pot: TDPotential> PTVQueryServer<Pot> {
             }
         }
 
-        let time_query = time::now() - start;
+        let time_query = start.elapsed();
         self.sum_potentials += pot.potential(from, init).unwrap_or(0) as u64;
 
         /*println!(

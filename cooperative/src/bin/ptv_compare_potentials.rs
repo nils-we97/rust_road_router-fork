@@ -19,6 +19,7 @@ use std::env;
 use std::error::Error;
 use std::ops::Add;
 use std::path::Path;
+use std::time::Duration;
 
 /// Compare runtimes of different potentials on the same graph with the same queries
 /// Uses a given PTV graph and executes a set of pre-defined queries
@@ -35,7 +36,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             Vec::<u32>::load_from(&path.join("lower_bound")).unwrap(),
         )
     });
-    println!("Loaded graph in {} ms", time.to_std().unwrap().as_nanos() as f64 / 1_000_000.0);
+    println!("Loaded graph in {} ms", time.as_secs_f64() * 1000.0);
 
     // load pre-generated queries
     let queries = load_queries(&path.join("queries").join(query_directory))?;
@@ -77,7 +78,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     // ----------------------------------------------------------------------------- //
     // 2nd potential: Multi-Metric Potential
     let (customized_multi_metric, time) = measure(|| load_multiple_metrics(&path.join("customized").join(customized_mm), &cch).unwrap());
-    println!("Loaded customized data in {} ms", time.to_std().unwrap().as_nanos() as f64 / 1_000_000.0);
+    println!("Loaded customized data in {} ms", time.as_secs_f64() * 1000.0);
 
     let multi_metric_pot = MultiMetricPotential::new(&customized_multi_metric);
     let mut server = PTVQueryServer::new_with_potential(graph, multi_metric_pot);
@@ -90,7 +91,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     // ----------------------------------------------------------------------------- //
     // 3rd potential: Corridor-Lowerbound Potential
     let (customized_corridor_lowerbound, time) = measure(|| load_interval_minima(&path.join("customized").join(customized_cl)).unwrap());
-    println!("Loaded customized data in {} ms", time.to_std().unwrap().as_nanos() as f64 / 1_000_000.0);
+    println!("Loaded customized data in {} ms", time.as_secs_f64() / 1_000.0);
 
     let corridor_lowerbound_pot = CorridorLowerboundPotential::new(&customized_corridor_lowerbound);
     let mut server = PTVQueryServer::new_with_potential(graph, corridor_lowerbound_pot);
@@ -104,9 +105,9 @@ fn execute_queries<Pot: TDPotential>(server: &mut PTVQueryServer<Pot>, queries: 
     let mut num_relaxed_arcs = 0u64;
     let mut num_queue_pops = 0u64;
 
-    let mut time_total = time::Duration::zero();
-    let mut time_queries = time::Duration::zero();
-    let mut time_potentials = time::Duration::zero();
+    let mut time_total = Duration::ZERO;
+    let mut time_queries = Duration::ZERO;
+    let mut time_potentials = Duration::ZERO;
 
     queries.iter().enumerate().for_each(|(idx, &query)| {
         let (result, time) = measure(|| server.query(query));
@@ -128,9 +129,9 @@ fn execute_queries<Pot: TDPotential>(server: &mut PTVQueryServer<Pot>, queries: 
     println!("Result for {}:", pot_name);
     println!(
         "Total runtime: {} ms (potential init: {}, query + pot: {})",
-        time_total.to_std().unwrap().as_nanos() as f64 / 1_000_000.0,
-        time_potentials.to_std().unwrap().as_nanos() as f64 / 1_000_000.0,
-        time_queries.to_std().unwrap().as_nanos() as f64 / 1_000_000.0,
+        time_total.as_secs_f64() * 1000.0,
+        time_potentials.as_secs_f64() * 1000.0,
+        time_queries.as_secs_f64() * 1000.0,
     );
     println!(
         "Query statistics: {} relaxed arcs (avg: {}), {} queue pops (avg: {})",

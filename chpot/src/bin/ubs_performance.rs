@@ -60,14 +60,18 @@ fn main() -> Result<(), Box<dyn Error>> {
         CCHPotData::new(&cch, &live_graph)
     };
 
-    let num_queries = std::cmp::min(num_queries, sources.len());
-
-    let mut rank_paths = vec![Vec::new(); *ranks.iter().max().unwrap() as usize + 1];
+    let max_rank = *ranks.iter().max().unwrap() as usize;
+    let mut rank_paths = vec![Vec::new(); max_rank + 1];
+    let mut rank_query_counts = vec![0; max_rank + 1];
 
     let mut server = HeuristicTrafficAwareServer::new(graph.borrowed(), live_graph.clone(), &smooth_cch_pot, &live_cch_pot);
-    for ((&from, &to), &rank) in sources.iter().zip(targets.iter()).zip(ranks.iter()).take(num_queries) {
+    for ((&from, &to), &rank) in sources.iter().zip(targets.iter()).zip(ranks.iter()) {
+        if rank_query_counts[rank as usize] > num_queries {
+            continue;
+        }
         let _blocked = block_reporting();
         server.query(Query { from, to }, epsilon, |p| rank_paths[rank as usize].push(p.to_vec()));
+        rank_query_counts[rank as usize] += 1;
     }
 
     let mut algo_runs_ctxt = push_collection_context("algo_runs".to_string());
@@ -79,6 +83,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut ubs_checker = MinimalNonShortestSubPaths::new(&smooth_cch_pot, graph.borrowed());
 
     for (rank, paths) in rank_paths.iter().enumerate() {
+        let start = std::time::Instant::now();
         for p in paths {
             let _algo_run = algo_runs_ctxt.push_collection_item();
             report!("algo", "lazy_rphast_tree");
@@ -86,10 +91,15 @@ fn main() -> Result<(), Box<dyn Error>> {
             report!("num_nodes_on_path", p.len());
             let num_violating = silent_report_time(|| ubs_checker.find_ubs_violating_subpaths(p, epsilon).len());
             report!("num_violating_segments", num_violating);
+
+            if start.elapsed().as_secs() > 3600 {
+                break;
+            }
         }
     }
 
     for (rank, paths) in rank_paths.iter().enumerate() {
+        let start = std::time::Instant::now();
         for p in paths {
             let _algo_run = algo_runs_ctxt.push_collection_item();
             report!("algo", "lazy_rphast_naive");
@@ -97,12 +107,17 @@ fn main() -> Result<(), Box<dyn Error>> {
             report!("num_nodes_on_path", p.len());
             let num_violating = silent_report_time(|| ubs_checker.find_ubs_violating_subpaths_lazy_rphast_naive(p, epsilon).len());
             report!("num_violating_segments", num_violating);
+
+            if start.elapsed().as_secs() > 3600 {
+                break;
+            }
         }
     }
 
     let mut ubs_checker_rphast = MinimalNonShortestSubPathsSSERphast::new(&smooth_cch_pot, graph.borrowed());
 
     for (rank, paths) in rank_paths.iter().enumerate() {
+        let start = std::time::Instant::now();
         for p in paths {
             let _algo_run = algo_runs_ctxt.push_collection_item();
             report!("algo", "sse_rphast");
@@ -110,12 +125,17 @@ fn main() -> Result<(), Box<dyn Error>> {
             report!("num_nodes_on_path", p.len());
             let num_violating = silent_report_time(|| ubs_checker_rphast.find_ubs_violating_subpaths_sse_rphast(p, epsilon).len());
             report!("num_violating_segments", num_violating);
+
+            if start.elapsed().as_secs() > 3600 {
+                break;
+            }
         }
     }
 
     let mut ubs_checker_dijk = MinimalNonShortestSubPathsDijkstra::new(graph.borrowed());
 
     for (rank, paths) in rank_paths.iter().enumerate() {
+        let start = std::time::Instant::now();
         for p in paths {
             let _algo_run = algo_runs_ctxt.push_collection_item();
             report!("algo", "dijkstra_tree");
@@ -123,6 +143,10 @@ fn main() -> Result<(), Box<dyn Error>> {
             report!("num_nodes_on_path", p.len());
             let num_violating = silent_report_time(|| ubs_checker_dijk.find_ubs_violating_subpaths(p, epsilon).len());
             report!("num_violating_segments", num_violating);
+
+            if start.elapsed().as_secs() > 3600 {
+                break;
+            }
         }
     }
 

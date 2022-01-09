@@ -17,6 +17,7 @@ use std::env;
 use std::error::Error;
 use std::ops::Add;
 use std::path::Path;
+use std::time::Duration;
 
 const NUM_QUERIES_PER_RUN: u32 = 1000;
 
@@ -43,17 +44,17 @@ fn main() -> Result<(), Box<dyn Error>> {
     //let (graph, time) = measure(|| load_capacity_graph(graph_directory, num_buckets, bpr_speed_function).unwrap());
     let (graph, time) = measure(|| load_used_capacity_graph(graph_directory, num_buckets, bpr_traffic_function, "300_1635950540").unwrap());
 
-    println!("Graph loaded in {} ms", time.to_std().unwrap().as_nanos() as f64 / 1_000_000.0);
+    println!("Graph loaded in {} ms", time.as_secs_f64() * 1000.0);
 
     // init potential
     let order = load_node_order(graph_directory)?;
 
     let (cch, time) = measure(|| CCH::fix_order_and_build(&graph, order));
-    println!("CCH created in {} ms", time.to_std().unwrap().as_nanos() as f64 / 1_000_000.0);
+    println!("CCH created in {} ms", time.as_secs_f64() * 1000.0);
 
     // complete initialization block for static lowerbound pot, uncomment if not needed
     let (cch_pot_data, time) = measure(|| CCHPotData::new(&cch, &graph));
-    println!("CCH customized in {} ms", time.to_std().unwrap().as_nanos() as f64 / 1_000_000.0);
+    println!("CCH customized in {} ms", time.as_secs_f64() * 1000.0);
     let potential = cch_pot_data.forward_potential();
 
     // complete initialization block for MultiLevelBucket pot
@@ -80,10 +81,6 @@ fn main() -> Result<(), Box<dyn Error>> {
     );
     let potential = CorridorLowerboundPotential::new(&customized);*/
 
-    // experimental init block for ALT context, currently unused
-    /*let (alt_context, time) = measure(|| HeuristicUpperBoundALTPotentialContext::init(graph.first_out().to_vec(), graph.head().to_vec(), graph.travel_time()));
-    println!("Initializing ALT context took {} ms", time.to_std().unwrap().as_nanos() as f64 / 1_000_000.0);*/
-
     let mut server = CapacityServer::new_with_potential(graph, potential);
     //let mut server = CapacityServer::<ZeroPotential>::new(graph);
 
@@ -99,10 +96,10 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     while runtime < slowdown_factor * initial_runtime {
         num_runs += 1;
-        let (total_time, time_potentials, time_queries, time_buckets, time_ttf) = get_chunked_runtime_in_millis(&mut server, query_type.clone());
+        let (total_time, time_potentials, time_queries, time_ttf) = get_chunked_runtime_in_millis(&mut server, query_type.clone());
         println!(
-            "Run {}: {} ms (Potentials: {}, Queries: {}, Buckets: {}, TTF: {})",
-            num_runs, total_time, time_potentials, time_queries, time_buckets, time_ttf
+            "Run {}: {} ms (Potentials: {}, Queries: {}, TTF: {})",
+            num_runs, total_time, time_potentials, time_queries, time_ttf
         );
         runtime = total_time;
     }
@@ -113,13 +110,12 @@ fn main() -> Result<(), Box<dyn Error>> {
     store_capacity_buckets(server.borrow_graph(), graph_directory, out_name)
 }
 
-fn get_chunked_runtime_in_millis<Pot: TDPotential>(server: &mut CapacityServer<Pot>, query_type: QueryType) -> (f64, f64, f64, f64, f64) {
+fn get_chunked_runtime_in_millis<Pot: TDPotential>(server: &mut CapacityServer<Pot>, query_type: QueryType) -> (f64, f64, f64, f64) {
     let queries = generate_queries(server.borrow_graph(), query_type.clone(), NUM_QUERIES_PER_RUN);
 
-    let mut time_potentials = time::Duration::zero();
-    let mut time_queries = time::Duration::zero();
-    let mut time_buckets = time::Duration::zero();
-    let mut time_ttfs = time::Duration::zero();
+    let mut time_potentials = Duration::ZERO;
+    let mut time_queries = Duration::ZERO;
+    let mut time_ttfs = Duration::ZERO;
 
     let mut num_relaxed_arcs = 0u32;
     let mut num_queue_pops = 0u32;
@@ -130,7 +126,6 @@ fn get_chunked_runtime_in_millis<Pot: TDPotential>(server: &mut CapacityServer<P
 
             time_potentials = time_potentials.add(query_result.distance_result.time_potential);
             time_queries = time_queries.add(query_result.distance_result.time_query);
-            time_buckets = time_buckets.add(query_result.update_result.time_bucket_updates);
             time_ttfs = time_ttfs.add(query_result.update_result.time_ttf);
 
             num_relaxed_arcs += query_result.distance_result.num_relaxed_arcs;
@@ -146,11 +141,10 @@ fn get_chunked_runtime_in_millis<Pot: TDPotential>(server: &mut CapacityServer<P
         num_queue_pops / queries.len() as u32
     );
     (
-        total_time.to_std().unwrap().as_nanos() as f64 / 1_000_000.0,
-        time_potentials.to_std().unwrap().as_nanos() as f64 / 1_000_000.0,
-        time_queries.to_std().unwrap().as_nanos() as f64 / 1_000_000.0,
-        time_buckets.to_std().unwrap().as_nanos() as f64 / 1_000_000.0,
-        time_ttfs.to_std().unwrap().as_nanos() as f64 / 1_000_000.0,
+        total_time.as_secs_f64() * 1000.0,
+        time_potentials.as_secs_f64() * 1000.0,
+        time_queries.as_secs_f64() * 1000.0,
+        time_ttfs.as_secs_f64() * 1000.0,
     )
 }
 

@@ -23,11 +23,11 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     // load graph
     let (graph, time) = measure(|| load_capacity_graph(graph_directory, num_buckets, bpr_traffic_function).unwrap());
-    println!("Graph loaded in {} ms", time.to_std().unwrap().as_nanos() as f64 / 1_000_000.0);
+    println!("Graph loaded in {} ms", time.as_secs_f64() * 1000.0);
 
     // load coords
     let ((lon, lat), time) = measure(|| load_coords(graph_directory).unwrap());
-    println!("Coordinates loaded in {} ms", time.to_std().unwrap().as_nanos() as f64 / 1_000_000.0);
+    println!("Coordinates loaded in {} ms", time.as_secs_f64() * 1000.0);
 
     // load queries
     let queries = load_queries(&graph_directory.join("queries").join(query_directory))?;
