@@ -77,14 +77,20 @@ impl CustomizedApproximatedPeriodicTTF<DirectedCCH> {
         // basic workaround: convert to TD-Graph, then run PTV customization
         // TODO is pseudo-perfect customization required?
 
+        let departure = graph.departure().iter().flat_map(|d| d[0..d.len() - 1].iter()).cloned().collect::<Vec<u32>>();
+
+        let travel_time = graph
+            .travel_time()
+            .iter()
+            .flat_map(|tt| tt[0..tt.len() - 1].iter())
+            .cloned()
+            .collect::<Vec<u32>>();
+
         let mut first_ipp_of_arc = vec![0];
         graph
             .departure()
             .iter()
-            .for_each(|d| first_ipp_of_arc.push(*first_ipp_of_arc.last().unwrap() + d.len() as u32));
-
-        let departure = graph.departure().iter().flatten().cloned().collect::<Vec<u32>>();
-        let travel_time = graph.travel_time().iter().flatten().cloned().collect::<Vec<u32>>();
+            .for_each(|d| first_ipp_of_arc.push(*first_ipp_of_arc.last().unwrap() + d.len() as u32 - 1));
 
         let td_graph = TDGraph::new(graph.first_out().to_vec(), graph.head().to_vec(), first_ipp_of_arc, departure, travel_time);
 

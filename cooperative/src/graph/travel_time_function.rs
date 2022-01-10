@@ -64,7 +64,11 @@ pub fn update_ttf(timestamps: &Vec<Timestamp>, weights: &mut Vec<Weight>, update
     weights[0] = *weights.last().unwrap();
 
     for (dep, tt) in timestamps.windows(2).zip(weights.windows(2)) {
-        debug_assert!(!is_fifo_violated(dep[0], dep[1], tt[0], tt[1]), "{:#?}", (timestamps, weights, update_pos));
+        debug_assert!(
+            !is_fifo_violated(dep[0], dep[1], tt[0], tt[1]),
+            "{:#?}",
+            (&timestamps, &weights, update_pos, (dep[0], dep[1], tt[0], tt[1]))
+        );
     }
 }
 

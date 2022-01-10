@@ -58,9 +58,9 @@ pub fn create_graph(num_buckets: u32, mut edges: Vec<CapacityEdge>) -> CapacityG
 #[test]
 fn build_dummy_graph() {
     let edges = vec![
-        CapacityEdge::new(0, 1, 10, 10, 10),
-        CapacityEdge::new(1, 2, 10, 10, 10),
-        CapacityEdge::new(2, 3, 10, 10, 10),
+        CapacityEdge::new(0, 1, 10, 10000, 10),
+        CapacityEdge::new(1, 2, 10, 10000, 10),
+        CapacityEdge::new(2, 3, 10, 10000, 10),
     ];
 
     let graph = create_graph(1, edges);

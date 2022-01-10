@@ -7,9 +7,11 @@ use cooperative::graph::traffic_functions::bpr_traffic_function;
 use cooperative::io::io_graph::load_capacity_graph;
 use cooperative::io::io_node_order::load_node_order;
 use cooperative::io::io_queries::load_queries;
+use cooperative::io::modification::remove_multi_edges::remove_multi_edges;
 use cooperative::util::cli_args::{parse_arg_optional, parse_arg_required};
+use rayon::prelude::*;
 use rust_road_router::algo::ch_potentials::CCHPotData;
-use rust_road_router::algo::customizable_contraction_hierarchy::{DirectedCCH, CCH};
+use rust_road_router::algo::customizable_contraction_hierarchy::CCH;
 use rust_road_router::algo::TDQuery;
 use rust_road_router::report::measure;
 use std::env;
@@ -21,8 +23,6 @@ use std::path::Path;
 use std::str::FromStr;
 use std::time::{Duration, Instant};
 
-const NUM_QUERIES_PER_RUN: u32 = 1000;
-
 /// Evaluates the quality of A*-Potentials with a rising number of queries.
 /// As the potential metrics are not updated in every step, its quality will possibly
 /// get worse with with every additional query.
@@ -30,12 +30,26 @@ const NUM_QUERIES_PER_RUN: u32 = 1000;
 /// Compares the static lowerbound A* approach with the Corridor Lowerbound potential
 /// Updates will occur after 50k, 100k, 200k queries (but are also configurable).
 ///
-/// Additional parameters: <path_to_graph> <path_to_queries> <num_buckets> <corridor_lower_intervals> <query evaluation breakpoints, comma-separated> <cust-breakpoints = 50.000,100.000,200.000>
+/// Additional parameters: <path_to_graph> <path_to_queries> <num_buckets> <corridor_lower_intervals> <query evaluation breakpoints, comma-separated> <cust-breakpoints = 100.000>
+/// Note that all customization breakpoints must be divisible by all evaluation breakpoints
 fn main() -> Result<(), Box<dyn Error>> {
     let (graph_directory, query_directory, num_buckets, cl_num_intervals, evaluation_breakpoints, customization_breakpoints) = parse_args()?;
 
     let graph_path = Path::new(&graph_directory);
     let query_path = graph_path.join("queries").join(&query_directory);
+
+    // verify correctness of customization and evaluation breakpoints
+    evaluation_breakpoints[1..].iter().for_each(|&a| {
+        customization_breakpoints.iter().for_each(|&b| {
+            assert_eq!(
+                a % b,
+                0,
+                "Cust-Breakpoints ({:?}) must be divisible by all Eval-Breakpoints ({:?}",
+                evaluation_breakpoints,
+                customization_breakpoints
+            );
+        })
+    });
 
     // init queries
     let mut queries = load_queries(&query_path)?;
@@ -49,20 +63,24 @@ fn main() -> Result<(), Box<dyn Error>> {
     permutate_queries(&mut queries);
 
     // load cch
-    let temp_graph = load_capacity_graph(graph_path, 100, bpr_traffic_function)?;
+    let temp_graph = load_capacity_graph(graph_path, num_buckets, bpr_traffic_function)?;
+    let temp_graph = remove_multi_edges(&temp_graph);
+
     let order = load_node_order(graph_path)?;
     let (cch, time) = measure(|| CCH::fix_order_and_build(&temp_graph, order));
     drop(temp_graph);
     println!("CCH created in {} ms", time.as_secs_f64() * 1000.0);
 
     let results = [(false, *customization_breakpoints.last().unwrap())]
-        .iter()
+        .par_iter()
         .cloned()
-        .chain(customization_breakpoints.iter().map(|&p| (true, p)))
+        .chain(customization_breakpoints.par_iter().map(|&p| (true, p)))
         .flat_map(|(use_corridor_lowerbound, update_frequency)| {
             // load graph
-            let graph = load_capacity_graph(&graph_path, num_buckets, bpr_traffic_function).unwrap();
+            let mut graph = load_capacity_graph(&graph_path, num_buckets, bpr_traffic_function).unwrap();
             println!("{}-{}: Graph initialized!", update_frequency, use_corridor_lowerbound);
+            graph = remove_multi_edges(&graph);
+            println!("{}-{}: Removed multi-edges, rebuilt graph", update_frequency, use_corridor_lowerbound);
 
             let mut total_time_query = Duration::ZERO;
             let mut total_time_potential = Duration::ZERO;
@@ -72,79 +90,83 @@ fn main() -> Result<(), Box<dyn Error>> {
             let mut statistics = Vec::new();
 
             if !use_corridor_lowerbound {
-                let mut cch_pot_data = CCHPotData::new(&cch, &graph);
-                let mut server = CapacityServer::new_with_potential(graph, cch_pot_data.forward_potential());
-
                 for a in evaluation_breakpoints.windows(2) {
-                    execute_queries(
-                        &mut server,
-                        &queries,
-                        a[0],
-                        a[1],
-                        update_frequency,
-                        use_corridor_lowerbound,
-                        &mut total_time_potential,
-                        &mut total_time_query,
-                        &mut total_time_update,
-                    );
+                    let mut start = a[0];
+                    while start < a[1] {
+                        // init server
+                        let reinit_start = Instant::now();
+                        let cch_pot_data = CCHPotData::new(&cch, &graph);
+                        let mut server = CapacityServer::new_with_potential(graph, cch_pot_data.forward_potential());
+                        total_time_reinit = total_time_reinit.add(reinit_start.elapsed());
 
-                    // re-init server
-                    let reinit_start = Instant::now();
+                        execute_queries(
+                            &mut server,
+                            &queries,
+                            start,
+                            start + update_frequency,
+                            update_frequency,
+                            use_corridor_lowerbound,
+                            &mut total_time_potential,
+                            &mut total_time_query,
+                            &mut total_time_update,
+                        );
 
-                    let (graph, pot) = server.decompose();
-                    drop(pot);
-                    cch_pot_data = CCHPotData::new(&cch, &graph);
-                    server = CapacityServer::new_with_potential(graph, cch_pot_data.forward_potential());
+                        // move graph out of server
+                        let (g, _) = server.decompose();
+                        graph = g;
 
-                    total_time_reinit = total_time_reinit.add(reinit_start.elapsed());
+                        statistics.push((
+                            start + update_frequency,
+                            update_frequency,
+                            use_corridor_lowerbound,
+                            total_time_potential,
+                            total_time_query,
+                            total_time_update,
+                            total_time_reinit,
+                        ));
 
-                    statistics.push((
-                        a[1],
-                        update_frequency,
-                        use_corridor_lowerbound,
-                        total_time_potential,
-                        total_time_query,
-                        total_time_update,
-                        total_time_reinit,
-                    ));
+                        start += update_frequency;
+                    }
                 }
             } else {
-                let mut customized = CustomizedApproximatedPeriodicTTF::new_from_capacity(&cch, &graph, cl_num_intervals);
-                let potential = CorridorLowerboundPotential::new(&customized);
-                let mut server = CapacityServer::new_with_potential(graph, potential);
-
                 for a in evaluation_breakpoints.windows(2) {
-                    execute_queries(
-                        &mut server,
-                        &queries,
-                        a[0],
-                        a[1],
-                        update_frequency,
-                        use_corridor_lowerbound,
-                        &mut total_time_potential,
-                        &mut total_time_query,
-                        &mut total_time_update,
-                    );
+                    let mut start = a[0];
+                    while start < a[1] {
+                        // re-init server
+                        let reinit_start = Instant::now();
+                        let customized = CustomizedApproximatedPeriodicTTF::new_from_capacity(&cch, &graph, cl_num_intervals);
+                        let potential = CorridorLowerboundPotential::new(&customized);
+                        let mut server = CapacityServer::new_with_potential(graph, potential);
+                        total_time_reinit = total_time_reinit.add(reinit_start.elapsed());
 
-                    // re-init server
-                    let reinit_start = Instant::now();
+                        execute_queries(
+                            &mut server,
+                            &queries,
+                            start,
+                            start + update_frequency,
+                            update_frequency,
+                            use_corridor_lowerbound,
+                            &mut total_time_potential,
+                            &mut total_time_query,
+                            &mut total_time_update,
+                        );
 
-                    let (graph, _) = server.decompose();
-                    customized = CustomizedApproximatedPeriodicTTF::new_from_capacity(&cch, &graph, cl_num_intervals);
-                    let potential = CorridorLowerboundPotential::new(&customized);
-                    server = CapacityServer::new_with_potential(graph, potential);
+                        // move graph out of server
+                        let (g, _) = server.decompose();
+                        graph = g;
 
-                    total_time_reinit = total_time_reinit.add(reinit_start.elapsed());
+                        statistics.push((
+                            start + update_frequency,
+                            update_frequency,
+                            use_corridor_lowerbound,
+                            total_time_potential,
+                            total_time_query,
+                            total_time_update,
+                            total_time_reinit,
+                        ));
 
-                    statistics.push((
-                        a[1],
-                        update_frequency,
-                        use_corridor_lowerbound,
-                        total_time_potential,
-                        total_time_query,
-                        total_time_update,
-                        total_time_reinit,
-                    ));
+                        start += update_frequency;
+                    }
                 }
             }
             statistics
@@ -169,6 +191,7 @@ fn execute_queries<Pot: TDPotential>(
     let mut time_query = Duration::ZERO;
     let mut time_update = Duration::ZERO;
     let mut time_potential = Duration::ZERO;
+    let mut sum_dist = 0;
 
     (start..end)
         .into_iter()
@@ -176,25 +199,28 @@ fn execute_queries<Pot: TDPotential>(
         .for_each(|(idx, query)| {
             if (idx + 1) % 10000 == 0 {
                 println!(
-                    "{}-{}: Finished {} of {} queries. Last step: {}ms pot init, {}ms query, {}ms ttf update",
+                    "{}-{}: Finished {} of {} queries. Last step: {}ms pot init, {}ms query, {}ms ttf update - avg dist: {}",
                     update_frequency,
                     use_corridor_lowerbound,
                     idx + 1,
                     queries.len(),
                     time_potential.as_secs_f64() * 1000.0,
                     time_query.as_secs_f64() * 1000.0,
-                    time_update.as_secs_f64() * 1000.0
+                    time_update.as_secs_f64() * 1000.0,
+                    sum_dist / 10000
                 );
 
                 time_potential = Duration::ZERO;
                 time_query = Duration::ZERO;
                 time_update = Duration::ZERO;
+                sum_dist = 0;
             }
 
             let query_result = server.query_measured(*query, true);
             time_potential = time_potential.add(query_result.distance_result.time_potential);
             time_query = time_query.add(query_result.distance_result.time_query);
             time_update = time_update.add(query_result.update_time);
+            sum_dist += query_result.query_result.map(|x| x.distance).unwrap_or(0) as u64;
 
             *total_time_query = total_time_query.add(query_result.distance_result.time_query);
             *total_time_potential = total_time_potential.add(query_result.distance_result.time_potential);
@@ -243,7 +269,7 @@ fn parse_args() -> Result<(String, String, u32, u32, Vec<u32>, Vec<u32>), Box<dy
     let num_buckets = parse_arg_required(&mut args, "number of buckets")?;
     let cl_num_intervals = parse_arg_required(&mut args, "number of intervals [corridor-lowerbound]")?;
     let evaluation_breakpoints: String = parse_arg_required(&mut args, "Query breakpoints")?;
-    let customization_breakpoints = parse_arg_optional(&mut args, "50000,100000,200000".to_string());
+    let customization_breakpoints = parse_arg_optional(&mut args, "100000".to_string());
 
     let mut evaluation_breakpoints = ["0"]
         .iter()
