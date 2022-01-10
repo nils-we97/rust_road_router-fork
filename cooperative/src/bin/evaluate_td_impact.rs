@@ -1,7 +1,6 @@
 use std::env;
 use std::error::Error;
 
-use cooperative::dijkstra::model::PathResult;
 use cooperative::dijkstra::potentials::init_cch_potential::init_cch_potential;
 use cooperative::dijkstra::potentials::TDPotential;
 use cooperative::dijkstra::server::{CapacityServer, CapacityServerOps};
@@ -14,6 +13,7 @@ use rayon::prelude::*;
 use rust_road_router::algo::ch_potentials::BorrowedCCHPot;
 use rust_road_router::algo::TDQuery;
 use rust_road_router::datastr::graph::time_dependent::Timestamp;
+use rust_road_router::datastr::graph::EdgeId;
 use std::path::Path;
 use std::time::Instant;
 
@@ -42,7 +42,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let bucket_sizes = [1, 100, 200, 300, 400, 600];
 
     // parallel retrieving of paths, one server for each core
-    let path_results: Vec<(Option<CapacityServer<BorrowedCCHPot>>, Vec<PathResult>)> = bucket_sizes
+    let path_results: Vec<(Option<CapacityServer<BorrowedCCHPot>>, Vec<(Vec<EdgeId>, Timestamp)>)> = bucket_sizes
         .par_iter()
         .map(|&num_buckets| {
             let td_graph = load_capacity_graph(&path, num_buckets, bpr_traffic_function).unwrap();
@@ -78,7 +78,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn get_query_paths<Pot: TDPotential>(server: &mut CapacityServer<Pot>, queries: &Vec<TDQuery<Timestamp>>, num_buckets: u32) -> Vec<PathResult> {
+fn get_query_paths<Pot: TDPotential>(server: &mut CapacityServer<Pot>, queries: &Vec<TDQuery<Timestamp>>, num_buckets: u32) -> Vec<(Vec<EdgeId>, Timestamp)> {
     println!("Starting to calculate results for {} buckets..", num_buckets);
     let mut last_start = Instant::now();
     queries
@@ -97,13 +97,13 @@ fn get_query_paths<Pot: TDPotential>(server: &mut CapacityServer<Pot>, queries: 
                 last_start = Instant::now();
             }
 
-            server.query(*query, true).map(|result| result.path)
+            server.query(*query, true).map(|result| (result.path.edge_path, query.departure))
         })
-        .collect::<Vec<PathResult>>()
+        .collect::<Vec<(Vec<EdgeId>, Timestamp)>>()
 }
 
-fn sum_path_lengths<Pot: TDPotential>(paths: &Vec<PathResult>, server: &CapacityServer<Pot>) -> u128 {
-    paths.iter().map(|path| server.path_distance(path) as u128).sum()
+fn sum_path_lengths<Pot: TDPotential>(paths: &Vec<(Vec<EdgeId>, Timestamp)>, server: &CapacityServer<Pot>) -> u128 {
+    paths.iter().map(|(path, departure)| server.path_distance(path, *departure) as u128).sum()
 }
 
 fn parse_args() -> Result<(String, String), Box<dyn Error>> {

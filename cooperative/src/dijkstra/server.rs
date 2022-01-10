@@ -2,7 +2,7 @@ use rust_road_router::algo::a_star::ZeroPotential;
 use rust_road_router::algo::dijkstra::{DijkstraData, DijkstraOps, Label, State};
 use rust_road_router::algo::{GenQuery, TDQuery};
 use rust_road_router::datastr::graph::time_dependent::Timestamp;
-use rust_road_router::datastr::graph::{Arc, EdgeIdT, Graph, LinkIterable, NodeIdT, Weight, INFINITY};
+use rust_road_router::datastr::graph::{Arc, EdgeId, EdgeIdT, Graph, LinkIterable, NodeIdT, Weight, INFINITY};
 use rust_road_router::datastr::index_heap::Indexing;
 use rust_road_router::report;
 use rust_road_router::report::*;
@@ -56,7 +56,7 @@ pub trait CapacityServerOps {
     fn update(&mut self, path: &PathResult);
     fn distance(&mut self, query: TDQuery<Timestamp>) -> DistanceMeasure;
     fn path(&self, query: TDQuery<Timestamp>) -> PathResult;
-    fn path_distance(&self, path: &PathResult) -> Weight;
+    fn path_distance(&self, edge_path: &Vec<EdgeId>, query_start: Timestamp) -> Weight;
 }
 
 impl<Pot: TDPotential> CapacityServerOps for CapacityServer<Pot> {
@@ -242,11 +242,13 @@ impl<Pot: TDPotential> CapacityServerOps for CapacityServer<Pot> {
         PathResult::new(node_path, edge_path, departure)
     }
 
-    fn path_distance(&self, path: &PathResult) -> Weight {
-        path.edge_path
-            .iter()
-            .enumerate()
-            .map(|(idx, &edge_id)| self.graph.travel_time_function(edge_id).eval(path.departure[idx]))
-            .sum()
+    fn path_distance(&self, edge_path: &Vec<EdgeId>, query_start: Timestamp) -> Weight {
+        let mut current_ts = query_start;
+
+        for edge in edge_path {
+            current_ts += self.graph.travel_time_function(*edge).eval(current_ts);
+        }
+
+        current_ts - query_start
     }
 }
