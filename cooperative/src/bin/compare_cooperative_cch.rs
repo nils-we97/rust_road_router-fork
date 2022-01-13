@@ -72,13 +72,15 @@ fn main() -> Result<(), Box<dyn Error>> {
             .zip(queries[a[0] as usize..a[1] as usize].iter())
             .for_each(|(idx, query)| {
                 if (idx + 1) % 10000 == 0 {
-                    println!("Finished {} of {} queries", idx, queries.len());
+                    println!("-----------------");
+                    println!("Finished {} of {} queries", idx + 1, queries.len());
                     println!(
-                        "Coop: {}, CCHs ({:?}): {:?}",
+                        "Coop: {} seconds, CCHs ({:?}): {:?} seconds each",
                         total_time_coop.as_secs_f64(),
                         &cch_frequencies,
-                        total_time_cch.iter().map(|time| time.as_secs_f64())
+                        total_time_cch.iter().map(|time| time.as_secs_f64()).collect::<Vec<f64>>()
                     );
+                    println!("-----------------");
                 }
 
                 // process cooperative query
@@ -93,7 +95,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
                 // process query for cch servers
                 for i in 0..cch_frequencies.len() {
-                    if idx > 0 && cch_frequencies[i] % idx as u32 == 0 {
+                    if idx > 0 && idx as u32 % cch_frequencies[i] == 0 {
                         let current_ts = queries[idx].departure;
                         println!(
                             "Customizing CCH graph after {} queries (frequency: {}), timestamp: {}",
@@ -120,7 +122,14 @@ fn main() -> Result<(), Box<dyn Error>> {
                         cch_servers[i].query(Query::new(query.from, query.to, 0)).node_path().map(|node_path| {
                             node_path
                                 .windows(2)
-                                .map(|edge| server.borrow_graph().edge_indices(edge[0], edge[1]).next().map(|EdgeIdT(e)| e).unwrap())
+                                .map(|edge| {
+                                    server
+                                        .borrow_graph()
+                                        .edge_indices(edge[0], edge[1])
+                                        .min_by_key(|&EdgeIdT(e)| server.borrow_graph().free_flow_time()[e as usize])
+                                        .map(|EdgeIdT(e)| e)
+                                        .unwrap()
+                                })
                                 .collect::<Vec<u32>>()
                         })
                     });
@@ -174,6 +183,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 cch_distances[i] / runs_cch[i].len() as u64
             );
         }
+        println!("------------------------------------------");
     }
 
     Ok(())

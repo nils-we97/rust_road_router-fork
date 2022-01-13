@@ -43,7 +43,7 @@ pub fn remove_multi_edges(graph: &CapacityGraph) -> CapacityGraph {
     println!("Reduced to {} nodes, {} edges", first_out.len(), head.len());
     println!("Before: {} nodes, {} edges", graph.first_out().len(), graph.head().len());
 
-    let ret = CapacityGraph::new(
+    CapacityGraph::new(
         num_buckets,
         first_out,
         head,
@@ -51,7 +51,5 @@ pub fn remove_multi_edges(graph: &CapacityGraph) -> CapacityGraph {
         free_flow_travel_time,
         max_capacity,
         bpr_traffic_function,
-    );
-
-    ret
+    )
 }

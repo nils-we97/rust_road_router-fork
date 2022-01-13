@@ -64,7 +64,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     // load cch
     let temp_graph = load_capacity_graph(graph_path, num_buckets, bpr_traffic_function)?;
-    let temp_graph = remove_multi_edges(&temp_graph);
+    //let temp_graph = remove_multi_edges(&temp_graph);
 
     let order = load_node_order(graph_path)?;
     let (cch, time) = measure(|| CCH::fix_order_and_build(&temp_graph, order));
@@ -79,7 +79,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             // load graph
             let mut graph = load_capacity_graph(&graph_path, num_buckets, bpr_traffic_function).unwrap();
             println!("{}-{}: Graph initialized!", update_frequency, use_corridor_lowerbound);
-            graph = remove_multi_edges(&graph);
+            //graph = remove_multi_edges(&graph);
             println!("{}-{}: Removed multi-edges, rebuilt graph", update_frequency, use_corridor_lowerbound);
 
             let mut total_time_query = Duration::ZERO;

@@ -58,7 +58,7 @@ impl CapacityGraph {
             .iter()
             .map(|&capacity| {
                 // avoid unnecessary edges
-                if capacity >= 10 {
+                if capacity >= 100 {
                     (capacity as f64 * capacity_adjustment_factor) as Capacity
                 } else {
                     0
@@ -66,8 +66,14 @@ impl CapacityGraph {
             })
             .collect::<Vec<Capacity>>();
 
-        // adjust initial freeflow time (assuming it is given in seconds and needed in milliseconds!)
-        let free_flow_travel_time = free_flow_travel_time.iter().map(|&val| val).collect::<Vec<Weight>>();
+        // adjust initial freeflow time
+        let free_flow_travel_time = free_flow_travel_time
+            .iter()
+            .enumerate()
+            .map(|(idx, &val)| if max_capacity[idx] > 0 { val } else { INFINITY })
+            .collect::<Vec<Weight>>();
+
+        assert!(!free_flow_travel_time.iter().any(|&x| x > INFINITY));
 
         // initialize bucket containers as well as departure and travel_time structs
         let used_capacity = vec![CapacityBuckets::Unused; max_capacity.len()];

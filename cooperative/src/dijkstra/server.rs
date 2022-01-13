@@ -243,12 +243,12 @@ impl<Pot: TDPotential> CapacityServerOps for CapacityServer<Pot> {
     }
 
     fn path_distance(&self, edge_path: &Vec<EdgeId>, query_start: Timestamp) -> Weight {
-        let mut current_ts = query_start;
+        let mut duration = 0;
 
         for edge in edge_path {
-            current_ts += self.graph.travel_time_function(*edge).eval(current_ts);
+            duration += self.graph.travel_time_function(*edge).eval(query_start + duration);
         }
 
-        current_ts - query_start
+        duration
     }
 }

@@ -75,6 +75,7 @@ pub fn update_ttf(timestamps: &Vec<Timestamp>, weights: &mut Vec<Weight>, update
 #[inline(always)]
 fn is_fifo_violated(x1: Timestamp, x2: Timestamp, y1: Weight, y2: Weight) -> bool {
     // fifo is violated if slope is smaller than -1 => use additional check for overflow-safe code
+    debug_assert!(x1 < x2);
     y2 < y1 && (y1 - y2) > (x2 - x1)
 }
 
