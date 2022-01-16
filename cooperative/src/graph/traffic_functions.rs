@@ -5,8 +5,10 @@ use rust_road_router::datastr::graph::{Weight, INFINITY};
 
 use crate::graph::Capacity;
 
-const BPR_ALPHA: f64 = 0.15;
-const BPR_BETA: i32 = 4;
+/*const BPR_ALPHA: f64 = 0.15;
+const BPR_BETA: i32 = 4;*/
+const BPR_ALPHA: f64 = 1.0;
+const BPR_BETA: i32 = 2;
 
 /// Bureau of public roads function, modification from travel time -> travel speed
 pub fn bpr_traffic_function(freeflow_time: Weight, max_capacity: Capacity, used_capacity: Capacity) -> Weight {

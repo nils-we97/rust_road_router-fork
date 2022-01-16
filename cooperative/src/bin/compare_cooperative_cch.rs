@@ -8,7 +8,7 @@ use rust_road_router::algo::ch_potentials::CCHPotData;
 use rust_road_router::algo::customizable_contraction_hierarchy::query::Server as CCHServer;
 use rust_road_router::algo::customizable_contraction_hierarchy::{customize, customize_perfect, DirectedCCH, CCH};
 use rust_road_router::algo::{GenQuery, Query, QueryServer};
-use rust_road_router::datastr::graph::{EdgeIdGraph, EdgeIdT, FirstOutGraph, Graph, OwnedGraph};
+use rust_road_router::datastr::graph::{EdgeIdGraph, EdgeIdT, FirstOutGraph, Graph, OwnedGraph, INFINITY};
 use rust_road_router::io::Load;
 use rust_road_router::report::measure;
 use std::env;
@@ -59,17 +59,17 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let mut csv_results = Vec::new();
 
+    let mut total_time_coop = Duration::ZERO;
+    let mut runs_coop = Vec::with_capacity(queries.len());
+    let mut paths_coop = Vec::with_capacity(queries.len());
+
+    let mut total_time_cch = vec![Duration::ZERO; cch_frequencies.len()];
+    let mut cust_time_cch = vec![Duration::ZERO; cch_frequencies.len()];
+    let mut runs_cch = vec![Vec::with_capacity(queries.len()); cch_frequencies.len()];
+    let mut paths_cch = vec![Vec::with_capacity(queries.len()); cch_frequencies.len()];
+
     // run queries
     for a in evaluation_breakpoints.windows(2) {
-        let mut total_time_coop = Duration::ZERO;
-        let mut runs_coop = Vec::with_capacity(queries.len());
-        let mut paths_coop = Vec::with_capacity(queries.len());
-
-        let mut total_time_cch = vec![Duration::ZERO; cch_frequencies.len()];
-        let mut cust_time_cch = vec![Duration::ZERO; cch_frequencies.len()];
-        let mut runs_cch = vec![Vec::with_capacity(queries.len()); cch_frequencies.len()];
-        let mut paths_cch = vec![Vec::with_capacity(queries.len()); cch_frequencies.len()];
-
         (a[0] as usize..a[1] as usize)
             .into_iter()
             .zip(queries[a[0] as usize..a[1] as usize].iter())
@@ -146,12 +146,22 @@ fn main() -> Result<(), Box<dyn Error>> {
             });
 
         // Evaluate paths
+        let mut num_runs_coop = runs_coop.len();
         let coop_distance = paths_coop
             .iter()
             .zip(runs_coop.iter())
-            .map(|(path, &query_idx)| server.path_distance(path, queries[query_idx].departure) as u64)
+            .map(|(path, &query_idx)| {
+                let dist = server.path_distance(path, queries[query_idx].departure);
+                if dist == INFINITY {
+                    num_runs_coop -= 1;
+                    0u64
+                } else {
+                    dist as u64
+                }
+            })
             .sum::<u64>();
 
+        let mut num_runs_cch = runs_cch.iter().map(|v| v.len()).collect::<Vec<usize>>();
         let cch_distances = paths_cch
             .iter()
             .enumerate()
@@ -159,7 +169,15 @@ fn main() -> Result<(), Box<dyn Error>> {
                 paths
                     .iter()
                     .zip(runs_cch[idx].iter())
-                    .map(|(path, &query_idx)| server.path_distance(path, queries[query_idx].departure) as u64)
+                    .map(|(path, &query_idx)| {
+                        let dist = server.path_distance(path, queries[query_idx].departure);
+                        if dist == INFINITY {
+                            num_runs_cch[idx] -= 1;
+                            0u64
+                        } else {
+                            dist as u64
+                        }
+                    })
                     .sum::<u64>()
             })
             .collect::<Vec<u64>>();
@@ -170,8 +188,8 @@ fn main() -> Result<(), Box<dyn Error>> {
             "Time: {}s, total distance: {} ({} runs -> avg: {})",
             total_time_coop.as_secs_f64(),
             coop_distance,
-            runs_coop.len(),
-            coop_distance / runs_coop.len() as u64
+            num_runs_coop,
+            coop_distance / num_runs_coop as u64
         );
         csv_results.push((
             "cooperative",
@@ -179,8 +197,9 @@ fn main() -> Result<(), Box<dyn Error>> {
             total_time_coop.as_secs_f64(),
             0.0,
             coop_distance,
-            runs_coop.len(),
-            coop_distance / runs_coop.len() as u64,
+            num_runs_coop,
+            a[1],
+            coop_distance / num_runs_coop as u64,
         ));
 
         for i in 0..cch_frequencies.len() {
@@ -191,8 +210,8 @@ fn main() -> Result<(), Box<dyn Error>> {
                 total_time_cch[i].as_secs_f64(),
                 cust_time_cch[i].as_secs_f64(),
                 cch_distances[i],
-                runs_cch[i].len(),
-                cch_distances[i] / runs_cch[i].len() as u64
+                num_runs_cch[i],
+                cch_distances[i] / num_runs_cch[i] as u64
             );
 
             csv_results.push((
@@ -201,8 +220,9 @@ fn main() -> Result<(), Box<dyn Error>> {
                 total_time_cch[i].as_secs_f64(),
                 cust_time_cch[i].as_secs_f64(),
                 cch_distances[i],
-                runs_cch[i].len(),
-                cch_distances[i] / runs_cch[i].len() as u64,
+                num_runs_cch[i],
+                a[1],
+                cch_distances[i] / num_runs_cch[i] as u64,
             ));
         }
         println!("------------------------------------------");
@@ -211,16 +231,16 @@ fn main() -> Result<(), Box<dyn Error>> {
     write_results(&csv_results, &query_path)
 }
 
-fn write_results(results: &Vec<(&str, u32, f64, f64, u64, usize, u64)>, path: &Path) -> Result<(), Box<dyn Error>> {
+fn write_results(results: &Vec<(&str, u32, f64, f64, u64, usize, u32, u64)>, path: &Path) -> Result<(), Box<dyn Error>> {
     let mut file = File::create(&path.join("coop_vs_cch_results.csv"))?;
 
-    let header = "type,refresh_interval,time,cust_time,total_dist,num_runs,avg_dist\n";
+    let header = "type,refresh_interval,time,cust_time,total_dist,num_runs,num_actual_runs,avg_dist\n";
     file.write(header.as_bytes())?;
 
-    for &(algorithm, refresh_interval, time, customization_time, total_distance, num_runs, avg_distance) in results {
+    for &(algorithm, refresh_interval, time, customization_time, total_distance, num_runs, num_actual_runs, avg_distance) in results {
         let line = format!(
-            "{},{},{},{},{},{},{}\n",
-            algorithm, refresh_interval, time, customization_time, total_distance, num_runs, avg_distance
+            "{},{},{},{},{},{},{},{}\n",
+            algorithm, refresh_interval, time, customization_time, total_distance, num_runs, num_actual_runs, avg_distance
         );
         file.write(line.as_bytes())?;
     }

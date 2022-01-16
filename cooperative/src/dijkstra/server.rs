@@ -247,6 +247,12 @@ impl<Pot: TDPotential> CapacityServerOps for CapacityServer<Pot> {
 
         for edge in edge_path {
             duration += self.graph.travel_time_function(*edge).eval(query_start + duration);
+
+            // abort if the distance exceeds infinity
+            if duration > INFINITY {
+                duration = INFINITY;
+                break;
+            }
         }
 
         duration
