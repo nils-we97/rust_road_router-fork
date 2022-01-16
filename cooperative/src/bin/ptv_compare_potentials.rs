@@ -11,7 +11,7 @@ use rust_road_router::algo::ch_potentials::CCHPotData;
 use rust_road_router::algo::customizable_contraction_hierarchy::CCH;
 use rust_road_router::algo::TDQuery;
 use rust_road_router::datastr::graph::time_dependent::TDGraph;
-use rust_road_router::datastr::graph::FirstOutGraph;
+use rust_road_router::datastr::graph::{FirstOutGraph, Graph};
 use rust_road_router::datastr::node_order::NodeOrder;
 use rust_road_router::io::{Load, Reconstruct};
 use rust_road_router::report::measure;
@@ -37,6 +37,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         )
     });
     println!("Loaded graph in {} ms", time.as_secs_f64() * 1000.0);
+    println!("{} edges, {} constant", graph.num_arcs(), graph.num_constant());
 
     // load pre-generated queries
     let queries = load_queries(&path.join("queries").join(query_directory))?;

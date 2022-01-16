@@ -7,7 +7,6 @@ use cooperative::graph::traffic_functions::bpr_traffic_function;
 use cooperative::io::io_graph::load_capacity_graph;
 use cooperative::io::io_node_order::load_node_order;
 use cooperative::io::io_queries::load_queries;
-use cooperative::io::modification::remove_multi_edges::remove_multi_edges;
 use cooperative::util::cli_args::{parse_arg_optional, parse_arg_required};
 use rayon::prelude::*;
 use rust_road_router::algo::ch_potentials::CCHPotData;
@@ -64,7 +63,6 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     // load cch
     let temp_graph = load_capacity_graph(graph_path, num_buckets, bpr_traffic_function)?;
-    //let temp_graph = remove_multi_edges(&temp_graph);
 
     let order = load_node_order(graph_path)?;
     let (cch, time) = measure(|| CCH::fix_order_and_build(&temp_graph, order));
@@ -79,8 +77,6 @@ fn main() -> Result<(), Box<dyn Error>> {
             // load graph
             let mut graph = load_capacity_graph(&graph_path, num_buckets, bpr_traffic_function).unwrap();
             println!("{}-{}: Graph initialized!", update_frequency, use_corridor_lowerbound);
-            //graph = remove_multi_edges(&graph);
-            println!("{}-{}: Removed multi-edges, rebuilt graph", update_frequency, use_corridor_lowerbound);
 
             let mut total_time_query = Duration::ZERO;
             let mut total_time_potential = Duration::ZERO;
@@ -269,7 +265,7 @@ fn parse_args() -> Result<(String, String, u32, u32, Vec<u32>, Vec<u32>), Box<dy
     let num_buckets = parse_arg_required(&mut args, "number of buckets")?;
     let cl_num_intervals = parse_arg_required(&mut args, "number of intervals [corridor-lowerbound]")?;
     let evaluation_breakpoints: String = parse_arg_required(&mut args, "Query breakpoints")?;
-    let customization_breakpoints = parse_arg_optional(&mut args, "100000".to_string());
+    let customization_breakpoints = parse_arg_optional(&mut args, "50000".to_string());
 
     let mut evaluation_breakpoints = ["0"]
         .iter()

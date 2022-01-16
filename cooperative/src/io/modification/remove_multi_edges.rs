@@ -1,6 +1,6 @@
 use crate::graph::capacity_graph::CapacityGraph;
 use crate::graph::traffic_functions::bpr_traffic_function;
-use rust_road_router::datastr::graph::{EdgeIdGraph, EdgeIdT, Graph, NodeId};
+use rust_road_router::datastr::graph::{EdgeId, EdgeIdGraph, EdgeIdT, Graph, NodeId};
 
 pub fn remove_multi_edges(graph: &CapacityGraph) -> CapacityGraph {
     let num_buckets = graph.num_buckets();
@@ -21,8 +21,6 @@ pub fn remove_multi_edges(graph: &CapacityGraph) -> CapacityGraph {
         neighbors.sort();
         neighbors.dedup();
 
-        let num_neighbors = neighbors.len();
-
         for neighbor in neighbors {
             graph
                 .edge_indices(node, neighbor)
@@ -37,7 +35,7 @@ pub fn remove_multi_edges(graph: &CapacityGraph) -> CapacityGraph {
                 });
         }
 
-        first_out.push(*first_out.last().unwrap() + num_neighbors as u32);
+        first_out.push(head.len() as EdgeId);
     }
 
     println!("Reduced to {} nodes, {} edges", first_out.len(), head.len());

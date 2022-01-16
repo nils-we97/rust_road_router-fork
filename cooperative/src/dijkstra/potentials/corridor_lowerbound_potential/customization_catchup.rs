@@ -29,7 +29,7 @@ scoped_thread_local!(static DOWNWARD_WORKSPACE: RefCell<Vec<(FlWeight, FlWeight)
 // because we map to the edge id instead of the values.
 scoped_thread_local!(static PERFECT_WORKSPACE: RefCell<Vec<InRangeOption<EdgeId>>>);
 
-pub fn customize_ptv_graph(cch: &CCH, metric: &TDGraph, num_intervals: u32) -> (Vec<ShortcutWrapper>, Vec<ShortcutWrapper>) {
+pub fn customize_td_graph(cch: &CCH, metric: &TDGraph, num_intervals: u32) -> (Vec<ShortcutWrapper>, Vec<ShortcutWrapper>) {
     report!("algo", "Floating TDCCH Customization");
 
     let n = (cch.first_out.len() - 1) as NodeId;

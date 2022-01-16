@@ -13,6 +13,8 @@ use rust_road_router::io::Load;
 use rust_road_router::report::measure;
 use std::env;
 use std::error::Error;
+use std::fs::File;
+use std::io::Write;
 use std::ops::Add;
 use std::path::Path;
 use std::str::FromStr;
@@ -36,7 +38,6 @@ fn main() -> Result<(), Box<dyn Error>> {
     let first_out = Vec::<u32>::load_from(&graph_path.join("first_out"))?;
     let head = Vec::<u32>::load_from(&graph_path.join("head"))?;
     let weight = Vec::<u32>::load_from(&graph_path.join("travel_time"))?;
-    let weight = weight.iter().map(|&val| val * 1000).collect::<Vec<u32>>();
     let lower_bound = OwnedGraph::new(first_out, head, weight);
 
     let order = load_node_order(&graph_path)?;
@@ -55,6 +56,8 @@ fn main() -> Result<(), Box<dyn Error>> {
             CCHServer::new(customized)
         })
         .collect::<Vec<CCHServer<DirectedCCH, DirectedCCH>>>();
+
+    let mut csv_results = Vec::new();
 
     // run queries
     for a in evaluation_breakpoints.windows(2) {
@@ -170,6 +173,15 @@ fn main() -> Result<(), Box<dyn Error>> {
             runs_coop.len(),
             coop_distance / runs_coop.len() as u64
         );
+        csv_results.push((
+            "cooperative",
+            0,
+            total_time_coop.as_secs_f64(),
+            0.0,
+            coop_distance,
+            runs_coop.len(),
+            coop_distance / runs_coop.len() as u64,
+        ));
 
         for i in 0..cch_frequencies.len() {
             println!("------------------------------------------");
@@ -182,8 +194,35 @@ fn main() -> Result<(), Box<dyn Error>> {
                 runs_cch[i].len(),
                 cch_distances[i] / runs_cch[i].len() as u64
             );
+
+            csv_results.push((
+                "cch",
+                cch_frequencies[i],
+                total_time_cch[i].as_secs_f64(),
+                cust_time_cch[i].as_secs_f64(),
+                cch_distances[i],
+                runs_cch[i].len(),
+                cch_distances[i] / runs_cch[i].len() as u64,
+            ));
         }
         println!("------------------------------------------");
+    }
+
+    write_results(&csv_results, &query_path)
+}
+
+fn write_results(results: &Vec<(&str, u32, f64, f64, u64, usize, u64)>, path: &Path) -> Result<(), Box<dyn Error>> {
+    let mut file = File::create(&path.join("coop_vs_cch_results.csv"))?;
+
+    let header = "type,refresh_interval,time,cust_time,total_dist,num_runs,avg_dist\n";
+    file.write(header.as_bytes())?;
+
+    for &(algorithm, refresh_interval, time, customization_time, total_distance, num_runs, avg_distance) in results {
+        let line = format!(
+            "{},{},{},{},{},{},{}\n",
+            algorithm, refresh_interval, time, customization_time, total_distance, num_runs, avg_distance
+        );
+        file.write(line.as_bytes())?;
     }
 
     Ok(())
