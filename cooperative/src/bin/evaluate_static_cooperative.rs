@@ -1,4 +1,3 @@
-use cooperative::dijkstra::model::PathResult;
 use cooperative::dijkstra::server::{CapacityServer, CapacityServerOps};
 use cooperative::experiments::queries::permutate_queries;
 use cooperative::graph::traffic_functions::bpr_traffic_function;
@@ -9,13 +8,16 @@ use cooperative::util::cli_args::{parse_arg_optional, parse_arg_required};
 use rayon::prelude::*;
 use rust_road_router::algo::ch_potentials::{BorrowedCCHPot, CCHPotData};
 use rust_road_router::algo::customizable_contraction_hierarchy::CCH;
-use rust_road_router::datastr::graph::OwnedGraph;
-use rust_road_router::io::{Load, Store};
+use rust_road_router::datastr::graph::time_dependent::Timestamp;
+use rust_road_router::datastr::graph::{EdgeId, OwnedGraph};
+use rust_road_router::io::Load;
 use std::env;
 use std::error::Error;
+use std::fs::File;
+use std::io::Write;
 use std::path::Path;
-use std::process::exit;
 use std::str::FromStr;
+use std::time::Instant;
 
 /// Evaluate the difference between static (no updates) and cooperative routing.
 /// In the static setting, no updates take place after calculating the routes.
@@ -30,29 +32,6 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let graph_path = Path::new(&graph_directory);
     let query_path = graph_path.join("queries").join(&query_directory);
-
-    // read statistic results
-    if query_path.join("perf_stats_num_buckets").exists() {
-        let s_num_buckets = Vec::<u32>::load_from(&query_path.join("perf_stats_num_buckets"))?;
-        let s_num_queries = Vec::<u32>::load_from(&query_path.join("perf_stats_num_queries"))?;
-        let s_cooperative = Vec::<u32>::load_from(&query_path.join("perf_stats_cooperative"))?;
-        let s_sum_distance = Vec::<u64>::load_from(&query_path.join("perf_stats_sum_distance"))?;
-        let s_avg_distance = Vec::<u64>::load_from(&query_path.join("perf_stats_avg_distance"))?;
-
-        println!("Experiment has already been conducted, see results below!");
-        for i in 0..s_sum_distance.len() {
-            println!("--------------------------------------");
-            println!(
-                "Statistics for {} buckets (cooperative {}) after {} queries:",
-                s_num_buckets[i],
-                s_cooperative[i] > 0,
-                s_num_queries[i]
-            );
-            println!("Distance sum: {} (avg: {})", s_sum_distance[i], s_avg_distance[i]);
-        }
-        println!("--------------------------------------");
-        exit(0);
-    }
 
     // init queries
     let mut queries = load_queries(&query_path)?;
@@ -69,8 +48,6 @@ fn main() -> Result<(), Box<dyn Error>> {
     let first_out = Vec::<u32>::load_from(&graph_path.join("first_out"))?;
     let head = Vec::<u32>::load_from(&graph_path.join("head"))?;
     let weight = Vec::<u32>::load_from(&graph_path.join("travel_time"))?;
-    let weight = weight.iter().map(|&val| val * 1000).collect::<Vec<u32>>();
-
     let lower_bound = OwnedGraph::new(first_out, head, weight);
 
     let order = load_node_order(&graph_path)?;
@@ -84,7 +61,8 @@ fn main() -> Result<(), Box<dyn Error>> {
         .cloned()
         .collect::<Vec<(u32, bool)>>();
 
-    let mut path_results = vec![Vec::<PathResult>::with_capacity(queries.len()); graph_attributes.len()];
+    let mut path_results = vec![Vec::<Vec<EdgeId>>::with_capacity(queries.len()); graph_attributes.len()];
+    let mut query_starts = vec![Vec::<Timestamp>::with_capacity(queries.len()); graph_attributes.len()];
 
     let mut servers = graph_attributes
         .iter()
@@ -103,17 +81,28 @@ fn main() -> Result<(), Box<dyn Error>> {
             .par_iter_mut()
             .zip(graph_attributes.par_iter())
             .zip(path_results.par_iter_mut())
-            .for_each(|((server, &(num_buckets, updates)), paths)| {
+            .zip(query_starts.par_iter_mut())
+            .for_each(|(((server, &(num_buckets, updates)), paths), query_starts)| {
+                let mut time = Instant::now();
+
                 (i[0] as usize..i[1] as usize)
                     .into_iter()
                     .zip(queries[i[0] as usize..i[1] as usize].iter())
                     .for_each(|(idx, query)| {
                         if (idx + 1) % 10000 == 0 {
-                            println!("{} buckets - finished {} of {} queries", num_buckets, idx + 1, queries.len());
+                            println!(
+                                "{} buckets - finished {} of {} queries - last step took {}s",
+                                num_buckets,
+                                idx + 1,
+                                queries.len(),
+                                time.elapsed().as_secs_f64()
+                            );
+                            time = Instant::now();
                         }
 
                         if let Some(result) = server.query(*query, updates) {
-                            paths.push(result.path);
+                            paths.push(result.path.edge_path);
+                            query_starts.push(query.departure);
                         }
                     });
             });
@@ -129,8 +118,13 @@ fn main() -> Result<(), Box<dyn Error>> {
         let results = graph_attributes
             .par_iter()
             .zip(path_results.par_iter())
-            .map(|(&(num_buckets, updates), paths)| {
-                let sum_dist = paths.iter().map(|path| evaluation_server.path_distance(path) as u64).sum::<u64>();
+            .zip(query_starts.par_iter())
+            .map(|((&(num_buckets, updates), paths), query_starts)| {
+                let sum_dist = paths
+                    .iter()
+                    .zip(query_starts.iter())
+                    .map(|(path, query_start)| evaluation_server.path_distance(path, *query_start) as u64)
+                    .sum::<u64>();
                 (num_buckets, i[1], updates, sum_dist, sum_dist / paths.len() as u64)
             })
             .collect::<Vec<(u32, u32, bool, u64, u64)>>();
@@ -148,31 +142,19 @@ fn main() -> Result<(), Box<dyn Error>> {
         println!("--------------------------------------");
     }
 
-    perf_statistics
-        .iter()
-        .map(|x| x.0)
-        .collect::<Vec<u32>>()
-        .write_to(&query_path.join("perf_stats_num_buckets"))?;
-    perf_statistics
-        .iter()
-        .map(|x| x.1)
-        .collect::<Vec<u32>>()
-        .write_to(&query_path.join("perf_stats_num_queries"))?;
-    perf_statistics
-        .iter()
-        .map(|x| x.2 as u32)
-        .collect::<Vec<u32>>()
-        .write_to(&query_path.join("perf_stats_cooperative"))?;
-    perf_statistics
-        .iter()
-        .map(|x| x.3)
-        .collect::<Vec<u64>>()
-        .write_to(&query_path.join("perf_stats_sum_distance"))?;
-    perf_statistics
-        .iter()
-        .map(|x| x.4)
-        .collect::<Vec<u64>>()
-        .write_to(&query_path.join("perf_stats_avg_distance"))?;
+    write_results(&perf_statistics, &query_path.join("evaluate_static_cooperative.csv"))
+}
+
+fn write_results(results: &Vec<(u32, u32, bool, u64, u64)>, path: &Path) -> Result<(), Box<dyn Error>> {
+    let mut file = File::create(path)?;
+
+    let header = "num_buckets,num_queries,cooperative,sum_distance,avg_distance\n";
+    file.write(header.as_bytes())?;
+
+    for (num_buckets, num_queries, cooperative, sum_distance, avg_distance) in results {
+        let line = format!("{},{},{},{},{}\n", num_buckets, num_queries, *cooperative as u32, sum_distance, avg_distance);
+        file.write(line.as_bytes())?;
+    }
 
     Ok(())
 }

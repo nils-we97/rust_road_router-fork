@@ -9,12 +9,14 @@ use rayon::prelude::*;
 use rust_road_router::algo::ch_potentials::CCHPotData;
 use rust_road_router::algo::customizable_contraction_hierarchy::CCH;
 use rust_road_router::datastr::graph::{Graph, OwnedGraph};
-use rust_road_router::io::{Load, Store};
+use rust_road_router::io::Load;
 use std::env;
 use std::error::Error;
+use std::fs::File;
+use std::io::Write;
 use std::path::Path;
-use std::process::exit;
 use std::str::FromStr;
+use std::time::Instant;
 
 /// Evaluates the memory consumption of a cooperative routing approach.
 /// After a given number of queries, the current memory consumption is evaluated, before further processing occurs.
@@ -25,29 +27,6 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let graph_path = Path::new(&graph_directory);
     let query_path = graph_path.join("queries").join(&query_directory);
-
-    // read statistic results
-    if query_path.join("perf_stats_num_buckets").exists() {
-        let s_num_buckets = Vec::<u32>::load_from(&query_path.join("stats_num_buckets"))?;
-        let s_num_queries = Vec::<u32>::load_from(&query_path.join("stats_num_queries"))?;
-        let s_bucket_usage = Vec::<f64>::load_from(&query_path.join("stats_bucket_usage"))?;
-        let s_bucket_usage_abs = Vec::<u64>::load_from(&query_path.join("stats_bucket_usage_abs"))?;
-        let s_memory_usage = Vec::<u64>::load_from(&query_path.join("stats_memory_usage"))?;
-
-        println!("Experiment has already been conducted, see results below!");
-        for i in 0..s_num_buckets.len() {
-            println!("---------------------------------");
-            println!("Statistics for {} buckets, after {} queries:", s_num_buckets[i], s_num_queries[i]);
-            println!(
-                "Memory consumption: {} bytes, bucket usage: {}% (absolute: {})",
-                s_memory_usage[i],
-                s_bucket_usage[i] * 100.0,
-                s_bucket_usage_abs[i]
-            );
-        }
-        println!("--------------------------------------");
-        exit(0);
-    }
 
     // init queries
     let mut queries = load_queries(&query_path)?;
@@ -64,8 +43,6 @@ fn main() -> Result<(), Box<dyn Error>> {
     let first_out = Vec::<u32>::load_from(&graph_path.join("first_out"))?;
     let head = Vec::<u32>::load_from(&graph_path.join("head"))?;
     let weight = Vec::<u32>::load_from(&graph_path.join("travel_time"))?;
-    let weight = weight.iter().map(|&val| val * 1000).collect::<Vec<u32>>();
-
     let lower_bound = OwnedGraph::new(first_out, head, weight);
 
     let order = load_node_order(&graph_path)?;
@@ -82,13 +59,22 @@ fn main() -> Result<(), Box<dyn Error>> {
             let mut server = CapacityServer::new_with_potential(graph, cch_pot_data.forward_potential());
             println!("{} buckets - starting queries!", num_buckets);
 
+            let mut query_time = Instant::now();
+
             for i in query_breakpoints.windows(2) {
                 (i[0] as usize..i[1] as usize)
                     .into_iter()
                     .zip(queries[i[0] as usize..i[1] as usize].iter())
                     .for_each(|(idx, query)| {
                         if (idx + 1) % 10000 == 0 {
-                            println!("{} buckets - finished {} of {} queries", num_buckets, idx + 1, queries.len());
+                            println!(
+                                "{} buckets - finished {} of {} queries - last step took {}s",
+                                num_buckets,
+                                idx + 1,
+                                queries.len(),
+                                query_time.elapsed().as_secs_f64()
+                            );
+                            query_time = Instant::now();
                         }
 
                         server.query(*query, true);
@@ -104,41 +90,18 @@ fn main() -> Result<(), Box<dyn Error>> {
         })
         .collect::<Vec<(u32, u32, f64, usize, usize)>>();
 
-    usage_statistics
-        .iter()
-        .map(|x| x.0)
-        .collect::<Vec<u32>>()
-        .write_to(&query_path.join("stats_num_buckets"))?;
-    usage_statistics
-        .iter()
-        .map(|x| x.1)
-        .collect::<Vec<u32>>()
-        .write_to(&query_path.join("stats_num_queries"))?;
-    usage_statistics
-        .iter()
-        .map(|x| x.2)
-        .collect::<Vec<f64>>()
-        .write_to(&query_path.join("stats_bucket_usage"))?;
-    usage_statistics
-        .iter()
-        .map(|x| x.3 as u64)
-        .collect::<Vec<u64>>()
-        .write_to(&query_path.join("stats_bucket_usage_abs"))?;
-    usage_statistics
-        .iter()
-        .map(|x| x.4 as u64)
-        .collect::<Vec<u64>>()
-        .write_to(&query_path.join("stats_memory_usage"))?;
+    write_results(&usage_statistics, &query_path.join("evaluate_cooperative_storage.csv"))
+}
 
-    for (num_buckets, num_queries, bucket_usage, bucket_usage_abs, memory_usage) in usage_statistics {
-        println!("---------------------------------");
-        println!("Statistics for {} buckets, after {} queries:", num_buckets, num_queries);
-        println!(
-            "Memory consumption: {} bytes, bucket usage: {}% (absolute: {})",
-            memory_usage,
-            bucket_usage * 100.0,
-            bucket_usage_abs
-        );
+fn write_results(results: &Vec<(u32, u32, f64, usize, usize)>, path: &Path) -> Result<(), Box<dyn Error>> {
+    let mut file = File::create(path)?;
+
+    let header = "num_buckets,num_queries,bucket_usage_rel,bucket_usage_abs,memory_usage\n";
+    file.write(header.as_bytes())?;
+
+    for (num_buckets, num_queries, bucket_usage_rel, bucket_usage_abs, memory_usage) in results {
+        let line = format!("{},{},{},{},{}\n", num_buckets, num_queries, bucket_usage_rel, bucket_usage_abs, memory_usage);
+        file.write(line.as_bytes())?;
     }
 
     Ok(())
