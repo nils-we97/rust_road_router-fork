@@ -181,6 +181,7 @@ impl<Pot: TDPotential> CapacityServerOps for CapacityServer<Pot> {
 
         let time_query = start.elapsed();
 
+        pot.verify_result(result.unwrap_or(INFINITY));
         /*println!(
             "Query results: {}, potential: {}",
             result.unwrap_or(INFINITY),

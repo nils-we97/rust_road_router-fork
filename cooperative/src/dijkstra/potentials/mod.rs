@@ -15,6 +15,10 @@ pub mod partial_backward_profile;
 pub trait TDPotential {
     fn init(&mut self, source: NodeId, target: NodeId, timestamp: Timestamp);
     fn potential(&mut self, node: NodeId, timestamp: Timestamp) -> Option<Weight>;
+
+    fn verify_result(&self, _distance: Weight) -> bool {
+        true
+    }
 }
 
 impl<T: Potential> TDPotential for T {

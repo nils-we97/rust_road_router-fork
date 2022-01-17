@@ -107,15 +107,6 @@ impl<'a, CCH: CCHT> TDPotential for CorridorLowerboundPotential<'a, CCH> {
                             });
                         }
 
-                        /*let edge_weight = if start_idx <= end_idx {
-                            self.backward_cch_weights[edge_id][start_idx..=end_idx].iter().min().cloned().unwrap()
-                        } else {
-                            min(
-                                self.backward_cch_weights[edge_id][start_idx..].iter().min().cloned().unwrap(),
-                                self.backward_cch_weights[edge_id][..=end_idx].iter().min().cloned().unwrap(),
-                            )
-                        };*/
-
                         // update distances
                         self.context.backward_distances[next_node as usize] = min(
                             self.context.backward_distances[next_node as usize],
@@ -179,5 +170,14 @@ impl<'a, CCH: CCHT> TDPotential for CorridorLowerboundPotential<'a, CCH> {
         } else {
             None
         }
+    }
+
+    fn verify_result(&self, distance: Weight) -> bool {
+        if distance < INFINITY {
+            debug_assert!(self.context.target_dist_bounds.is_some());
+            let upper_bound = self.context.target_dist_bounds.unwrap().1;
+            debug_assert!(upper_bound >= distance, "Upper bound {} violated! Actual distance: {}", upper_bound, distance);
+        }
+        true
     }
 }

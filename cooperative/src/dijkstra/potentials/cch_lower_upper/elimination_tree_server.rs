@@ -72,14 +72,14 @@ impl<'a, CCH: CCHT, W: AsRef<Vec<(Weight, Weight)>>> CorridorEliminationTreeServ
         loop {
             match (fw_walk.peek(), bw_walk.peek()) {
                 (Some(fw_node), Some(bw_node)) if fw_node < bw_node => {
-                    if fw_walk.tentative_distance(fw_node).0 < tentative_distance.1 {
+                    if fw_walk.tentative_distance(fw_node).0 <= tentative_distance.1 {
                         fw_walk.next();
                     } else {
                         fw_walk.skip_next();
                     }
                 }
                 (Some(fw_node), Some(bw_node)) if fw_node > bw_node => {
-                    if bw_walk.tentative_distance(bw_node).0 < tentative_distance.1 {
+                    if bw_walk.tentative_distance(bw_node).0 <= tentative_distance.1 {
                         bw_walk.next();
                     } else {
                         bw_walk.skip_next();
@@ -89,14 +89,14 @@ impl<'a, CCH: CCHT, W: AsRef<Vec<(Weight, Weight)>>> CorridorEliminationTreeServ
                     debug_assert_eq!(node, _node);
 
                     // nodes can be skipped if the lower distance already exceeds the tenative upper bound
-                    if fw_walk.tentative_distance(node).0 < tentative_distance.1 {
+                    if fw_walk.tentative_distance(node).0 <= tentative_distance.1 {
                         fw_walk.next();
                     } else {
                         fw_walk.skip_next();
                     }
 
                     // analogous for backward search
-                    if bw_walk.tentative_distance(node).0 < tentative_distance.1 {
+                    if bw_walk.tentative_distance(node).0 <= tentative_distance.1 {
                         bw_walk.next();
                     } else {
                         bw_walk.skip_next();

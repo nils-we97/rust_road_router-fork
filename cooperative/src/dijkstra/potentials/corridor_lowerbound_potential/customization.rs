@@ -10,6 +10,7 @@ use rust_road_router::datastr::graph::{
 use rust_road_router::report::measure;
 use scoped_tls::scoped_thread_local;
 use std::cell::RefCell;
+use std::cmp::max;
 
 // One mapping of node id to weight for each thread during the scope of the customization.
 scoped_thread_local!(static UPWARD_WORKSPACE: RefCell<Vec<Vec<TTFPoint>>>);
@@ -27,50 +28,24 @@ pub struct CustomizedApproximatedPeriodicTTF<CCH> {
 impl CustomizedApproximatedPeriodicTTF<DirectedCCH> {
     pub fn new_from_capacity(cch: &CCH, graph: &CapacityGraph, num_intervals: u32) -> Self {
         // basic workaround: convert to TD-Graph, then run PTV customization
-        /*let departure = graph.departure().iter().flatten().cloned().collect::<Vec<u32>>();
-        let travel_time = graph.travel_time().iter().flatten().cloned().collect::<Vec<u32>>();
-
         let mut first_ipp_of_arc = vec![0];
-        graph
-            .departure()
-            .iter()
-            .for_each(|d| first_ipp_of_arc.push(*first_ipp_of_arc.last().unwrap() + d.len() as u32));
-
-        debug_assert!(first_ipp_of_arc.iter().enumerate().all(|(idx, &val)| idx as u32 == val / 2));*/
-
-        /*let mut first_ipp_of_arc = vec![0];
         let mut departure = Vec::new();
         let mut travel_time = Vec::new();
 
-        graph
-            .departure()
-            .iter()
-            .zip(graph.travel_time().iter())
-            .enumerate()
-            .for_each(|(idx, (dep, tt))| {
-                if tt.len() == 2 && tt[0] == tt[1] {
-                    first_ipp_of_arc.push(*first_ipp_of_arc.last().unwrap() + 1);
-                    departure.push(dep[0]);
-                    travel_time.push(graph.free_flow_time()[idx]);
-                } else {
-                    first_ipp_of_arc.push(*first_ipp_of_arc.last().unwrap() + dep.len() as u32);
-                    departure.extend_from_slice(dep);
-                    travel_time.extend_from_slice(tt);
-                    println!("Other case!");
-                }
-            });*/
-
-        let first_ipp_of_arc = (0..graph.num_arcs() as u32 + 1).collect::<Vec<u32>>();
-        let departure = vec![0; graph.num_arcs()];
-        let travel_time = graph.free_flow_time().to_vec();
+        graph.departure().iter().zip(graph.travel_time().iter()).for_each(|(dep, tt)| {
+            // constant edges only have one entry (0, tt) whereas non-constant edge functions are periodic
+            if tt.iter().all(|&val| val == tt[0]) {
+                first_ipp_of_arc.push(*first_ipp_of_arc.last().unwrap() + 1);
+                departure.push(dep[0]);
+                travel_time.push(tt[0]);
+            } else {
+                first_ipp_of_arc.push(*first_ipp_of_arc.last().unwrap() + dep.len() as u32);
+                departure.extend_from_slice(dep);
+                travel_time.extend_from_slice(tt);
+            }
+        });
 
         let td_graph = TDGraph::new(graph.first_out().to_vec(), graph.head().to_vec(), first_ipp_of_arc, departure, travel_time);
-
-        for i in 0..10 {
-            println!("TTF for {}: {:?}", i, td_graph.travel_time_function(i as u32));
-        }
-
-        println!("Graph statistics: {} edges ({} constant)", td_graph.num_arcs(), td_graph.num_constant());
 
         Self::run_customization(cch, &td_graph, num_intervals, true)
     }
@@ -151,10 +126,11 @@ fn extract_intervals_and_bounds(weights: &mut Vec<ShortcutWrapper>, scale_upper_
             if wrapper.shortcut.required && wrapper.bounds.0 <= wrapper.bounds.1 {
                 // scale upper bound by 100%
                 if scale_upper_bound {
-                    wrapper.bounds.1 *= 2;
+                    wrapper.bounds.0 = (wrapper.bounds.0 / 1000) * 1000;
+                    wrapper.bounds.1 = max(wrapper.bounds.1 * 2, 5000);
                 }
 
-                let ret = (wrapper.interval_minima.clone(), wrapper.bounds);
+                let ret = (wrapper.interval_minima.iter().map(|&v| (v / 1000) * 1000).collect::<Vec<u32>>(), wrapper.bounds);
                 wrapper.interval_minima = vec![];
                 ret
             } else {
@@ -275,27 +251,3 @@ fn build_customized_graph(
 
     (cch, forward_weights, backward_weights, forward_bounds, backward_bounds)
 }
-
-/*fn empty_ttf() -> Vec<TTFPoint> {
-    vec![
-        TTFPoint {
-            at: Timestamp::ZERO,
-            val: FlWeight::INFINITY,
-        },
-        TTFPoint {
-            at: Timestamp(86400.0),
-            val: FlWeight::INFINITY,
-        },
-    ]
-}*/
-
-/*pub fn reorder_edge_intervals(intervals: &Vec<u32>, num_edges: usize, num_intervals: u32) -> Vec<u32> {
-    let mut ret = vec![0; intervals.len()];
-
-    for edge_id in 0..num_edges {
-        for interval_id in 0..num_intervals as usize {
-            ret[interval_id * num_edges + edge_id] = intervals[edge_id * num_intervals as usize + interval_id];
-        }
-    }
-    ret
-}*/
