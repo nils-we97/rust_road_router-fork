@@ -73,7 +73,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let (customized_multi_metric, time) = measure(|| load_multiple_metrics(&customized_path, &cch).unwrap());
     println!("Loaded customized data in {} ms", time.as_secs_f64() * 1000.0);
 
-    let multi_metric_pot = MultiMetricPotential::new(&customized_multi_metric);
+    let multi_metric_pot = MultiMetricPotential::new(customized_multi_metric);
     let mut server = PTVQueryServer::new_with_potential(graph, multi_metric_pot);
     execute_queries(
         &mut server,
@@ -86,7 +86,6 @@ fn main() -> Result<(), Box<dyn Error>> {
     let (graph, pot) = server.decompose();
 
     drop(pot);
-    drop(customized_multi_metric);
 
     // ----------------------------------------------------------------------------- //
     // 3rd potential: Corridor-Lowerbound Potential

@@ -1,5 +1,6 @@
 use crate::dijkstra::potentials::cch_lower_upper::elimination_tree_server::CorridorEliminationTreeServer;
 use crate::dijkstra::potentials::multi_metric_potential::customization::CustomizedMultiMetrics;
+use crate::dijkstra::potentials::multi_metric_potential::metric_reduction::MetricEntry;
 use crate::dijkstra::potentials::TDPotential;
 use crate::graph::MAX_BUCKETS;
 use rust_road_router::algo::customizable_contraction_hierarchy::{CCH, CCHT};
@@ -10,11 +11,9 @@ use rust_road_router::util::in_range_option::InRangeOption;
 use std::cmp::min;
 
 pub struct MultiMetricPotential<'a> {
-    customized: &'a CustomizedMultiMetrics<'a>,
+    customized: CustomizedMultiMetrics<'a>,
     forward_cch_graph: UnweightedFirstOutGraph<&'a [EdgeId], &'a [NodeId]>,
-    forward_cch_weights: &'a Vec<Weight>,
     backward_cch_graph: UnweightedFirstOutGraph<&'a [EdgeId], &'a [NodeId]>,
-    backward_cch_weights: &'a Vec<Weight>,
     interval_query_server: CorridorEliminationTreeServer<'a, CCH, Vec<(Weight, Weight)>>,
     context: MultiLevelBucketPotentialContext,
 }
@@ -30,9 +29,13 @@ struct MultiLevelBucketPotentialContext {
 }
 
 impl<'a> MultiMetricPotential<'a> {
-    pub fn new(customized: &'a CustomizedMultiMetrics<'a>) -> Self {
-        let (forward_cch_graph, forward_cch_weights) = customized.forward_graph();
-        let (backward_cch_graph, backward_cch_weights) = customized.backward_graph();
+    pub fn new(customized: CustomizedMultiMetrics<'a>) -> Self {
+        let forward_cch_graph = UnweightedFirstOutGraph::new(&customized.cch.forward_first_out()[..], &customized.cch.forward_head()[..]);
+        let forward_cch_weights = &customized.upward[..];
+
+        let backward_cch_graph = UnweightedFirstOutGraph::new(&customized.cch.backward_first_out()[..], &customized.cch.backward_head()[..]);
+        let backward_cch_weights = &customized.downward[..];
+
         let n = forward_cch_graph.num_nodes();
 
         // initialize lowerbound forward potential for interval query (also as fallback potential on tight corridors!)
@@ -67,9 +70,7 @@ impl<'a> MultiMetricPotential<'a> {
         Self {
             customized,
             forward_cch_graph,
-            forward_cch_weights,
             backward_cch_graph,
-            backward_cch_weights,
             interval_query_server,
             context,
         }
@@ -126,7 +127,8 @@ impl<'a> TDPotential for MultiMetricPotential<'a> {
 
                         let weight = self.context.backward_distances[node as usize]
                             + *unsafe {
-                                self.backward_cch_weights
+                                self.customized
+                                    .downward
                                     .get_unchecked(self.context.current_metric * self.backward_cch_graph.num_arcs() + edge as usize)
                             };
 
@@ -160,7 +162,8 @@ impl<'a> TDPotential for MultiMetricPotential<'a> {
                 for (NodeIdT(next_node), EdgeIdT(edge)) in LinkIterable::<(NodeIdT, EdgeIdT)>::link_iter(&self.forward_cch_graph, current_node) {
                     let weight = self.context.backward_distances[next_node as usize]
                         + *unsafe {
-                            self.forward_cch_weights
+                            self.customized
+                                .upward
                                 .get_unchecked(self.context.current_metric * self.forward_cch_graph.num_arcs() + edge as usize)
                         };
 
@@ -174,5 +177,9 @@ impl<'a> TDPotential for MultiMetricPotential<'a> {
         } else {
             None
         }
+    }
+
+    fn verify_result(&self, distance: Weight) -> bool {
+        distance == INFINITY || distance <= self.context.latest_arrival_dist.unwrap()
     }
 }

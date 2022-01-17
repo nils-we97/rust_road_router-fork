@@ -173,11 +173,6 @@ impl<'a, CCH: CCHT> TDPotential for CorridorLowerboundPotential<'a, CCH> {
     }
 
     fn verify_result(&self, distance: Weight) -> bool {
-        if distance < INFINITY {
-            debug_assert!(self.context.target_dist_bounds.is_some());
-            let upper_bound = self.context.target_dist_bounds.unwrap().1;
-            debug_assert!(upper_bound >= distance, "Upper bound {} violated! Actual distance: {}", upper_bound, distance);
-        }
-        true
+        distance == INFINITY || self.context.target_dist_bounds.unwrap().1 >= distance
     }
 }

@@ -149,18 +149,19 @@ impl CapacityGraph {
     /// get memory consumption
     pub fn get_mem_size(&self) -> usize {
         // static graph data: first_out, head, distance, max-capacity and freeflow time
-        let static_graph_size = std::mem::size_of_val(&*self.first_out)
-            + std::mem::size_of_val(&*self.head)
-            + std::mem::size_of_val(&*self.distance)
-            + std::mem::size_of_val(&*self.max_capacity)
-            + std::mem::size_of_val(&*self.free_flow_travel_time);
+        let static_graph_size = 4
+            * (self.first_out.capacity()
+                + self.head.capacity()
+                + self.distance.capacity()
+                + self.max_capacity.capacity()
+                + self.free_flow_travel_time.capacity());
 
         let capacity_bucket_size = self
             .used_capacity
             .iter()
             .map(|buckets| match buckets {
                 CapacityBuckets::Unused => std::mem::size_of_val(&CapacityBuckets::Unused),
-                CapacityBuckets::Used(data) => std::mem::size_of_val(&*buckets) + std::mem::size_of_val(&*data),
+                CapacityBuckets::Used(data) => std::mem::size_of_val(&CapacityBuckets::Unused) + data.capacity() * 8,
             })
             .sum::<usize>();
 
@@ -168,7 +169,7 @@ impl CapacityGraph {
             .departure
             .iter()
             .zip(self.travel_time.iter())
-            .map(|(dep, tt)| std::mem::size_of_val(&*dep) + std::mem::size_of_val(&*tt))
+            .map(|(dep, tt)| dep.capacity() * 4 + tt.capacity() * 4)
             .sum::<usize>();
 
         static_graph_size + capacity_bucket_size + ttf_size

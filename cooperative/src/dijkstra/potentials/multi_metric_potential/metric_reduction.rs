@@ -128,7 +128,8 @@ pub fn reduce_metrics(data: &mut Vec<Vec<Weight>>, entries: &mut Vec<MetricEntry
     println!("Initialized all metric comparisons in {}s", time.as_secs_f64());
 
     // remember all deleted metric ids
-    let mut metric_deactivated = vec![false; data[0].len()];
+    let highest_metric_id = entries.iter().max_by_key(|m| m.metric_id).map(|m| m.metric_id).unwrap();
+    let mut metric_deactivated = vec![false; highest_metric_id + 1];
     let mut num_active_metrics = entries.len();
 
     // reduce pairs with a difference of 0 right away, only insert non-zero values in the queue
@@ -224,11 +225,9 @@ pub fn reduce_metrics(data: &mut Vec<Vec<Weight>>, entries: &mut Vec<MetricEntry
     debug_assert!(!metric_deactivated[0] && !metric_deactivated[1]);
 
     data.par_iter_mut().for_each(|edge_metrics| {
-        *edge_metrics = edge_metrics
-            .iter()
-            .enumerate()
-            .filter(|&(metric_id, _)| !metric_deactivated[metric_id])
-            .map(|(_, &val)| val)
+        *edge_metrics = (0..=highest_metric_id)
+            .into_iter()
+            .filter_map(|metric_id| if metric_deactivated[metric_id] { None } else { Some(edge_metrics[metric_id]) })
             .collect::<Vec<Weight>>();
     });
 

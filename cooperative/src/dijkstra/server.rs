@@ -18,6 +18,7 @@ pub struct CapacityServer<Pot = ZeroPotential> {
     graph: CapacityGraph,
     dijkstra: DijkstraData<Weight, EdgeIdT, Weight>,
     potential: Pot,
+    requires_pot_update: bool,
 }
 
 impl<Pot: TDPotential> CapacityServer<Pot> {
@@ -28,6 +29,7 @@ impl<Pot: TDPotential> CapacityServer<Pot> {
             graph,
             dijkstra: DijkstraData::new(nodes),
             potential: ZeroPotential(),
+            requires_pot_update: false,
         }
     }
 
@@ -38,7 +40,17 @@ impl<Pot: TDPotential> CapacityServer<Pot> {
             graph,
             dijkstra: DijkstraData::new(nodes),
             potential,
+            requires_pot_update: false,
         }
+    }
+
+    pub fn requires_pot_update(&self) -> bool {
+        self.requires_pot_update
+    }
+
+    pub fn update_potential(&mut self, mut potential: Pot) {
+        std::mem::swap(&mut self.potential, &mut potential);
+        self.requires_pot_update = false;
     }
 
     pub fn decompose(self) -> (CapacityGraph, Pot) {
@@ -181,7 +193,8 @@ impl<Pot: TDPotential> CapacityServerOps for CapacityServer<Pot> {
 
         let time_query = start.elapsed();
 
-        pot.verify_result(result.unwrap_or(INFINITY));
+        self.requires_pot_update =
+            !pot.verify_result(result.unwrap_or(INFINITY), false) || result.unwrap_or(INFINITY) < pot.potential(from, init).unwrap_or(INFINITY);
         /*println!(
             "Query results: {}, potential: {}",
             result.unwrap_or(INFINITY),
@@ -193,7 +206,7 @@ impl<Pot: TDPotential> CapacityServerOps for CapacityServer<Pot> {
             time_query.to_std().unwrap().as_nanos() as f64 / 1_000_000.0
         );*/
         debug_assert!(
-            result.unwrap_or(INFINITY) + 1 >= pot.potential(from, init).unwrap_or(INFINITY),
+            result.unwrap_or(INFINITY) >= pot.potential(from, init).unwrap_or(INFINITY) || self.requires_pot_update,
             "{:#?} {:#?} {:#?}",
             &result,
             &pot.potential(from, init),

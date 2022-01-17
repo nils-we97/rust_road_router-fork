@@ -33,6 +33,7 @@ impl<'a> CustomizedMultiMetrics<'a> {
         travel_times: &Vec<Vec<Weight>>,
         intervals: &Vec<(Timestamp, Timestamp)>,
         num_max_metrics: usize,
+        cooperative: bool,
     ) -> Self {
         let m = cch.num_arcs();
         debug_assert!(!intervals.is_empty(), "Intervals must not be empty!");
@@ -60,8 +61,8 @@ impl<'a> CustomizedMultiMetrics<'a> {
         customize_basic(cch, &mut upward_weights, &mut downward_weights);
 
         // 6. reorder weights
-        let upward_weights = reorder_weights(&upward_weights, num_metrics);
-        let downward_weights = reorder_weights(&downward_weights, num_metrics);
+        let upward_weights = reorder_weights(&upward_weights, num_metrics, cooperative);
+        let downward_weights = reorder_weights(&downward_weights, num_metrics, cooperative);
 
         Self {
             cch,
@@ -100,7 +101,7 @@ fn build_metric_entries(intervals: &Vec<(Timestamp, Timestamp)>) -> Vec<MetricEn
 
 /// reorder weights, flatten the 2-dimensional vector into a single dimension
 /// data by metric and edge_id is found at index `metric * num_edges + edge_id`
-fn reorder_weights(weights: &Vec<Vec<Weight>>, num_metrics: usize) -> Vec<Weight> {
+fn reorder_weights(weights: &Vec<Vec<Weight>>, num_metrics: usize, scale_upper_bound: bool) -> Vec<Weight> {
     let mut ret = vec![0; weights.len() * num_metrics];
 
     weights.iter().enumerate().for_each(|(edge_id, edge_weights)| {
@@ -108,6 +109,12 @@ fn reorder_weights(weights: &Vec<Vec<Weight>>, num_metrics: usize) -> Vec<Weight
             ret[metric_id * weights.len() + edge_id] = val;
         });
     });
+
+    if scale_upper_bound {
+        for edge_id in 0..weights.len() {
+            ret[UPPERBOUND_METRIC * weights.len() + edge_id] = min(INFINITY, (ret[UPPERBOUND_METRIC * weights.len() + edge_id] / 2) * 3);
+        }
+    }
 
     ret
 }

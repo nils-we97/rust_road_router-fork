@@ -86,7 +86,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
             let (departure, travel_time) = retrieve_departure_and_travel_time(&graph);
             let (customized_multi_metric, time) =
-                measure(|| CustomizedMultiMetrics::new(&cch, &departure, &travel_time, &balanced_interval_pattern(), num_metrics));
+                measure(|| CustomizedMultiMetrics::new(&cch, &departure, &travel_time, &balanced_interval_pattern(), num_metrics, false));
             println!("Complete customization took {} ms", time.as_secs_f64() * 1000.0);
 
             let memory_usage = std::mem::size_of_val(&*customized_multi_metric.upward)
