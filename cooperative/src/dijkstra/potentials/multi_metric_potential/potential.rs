@@ -1,6 +1,5 @@
 use crate::dijkstra::potentials::cch_lower_upper::elimination_tree_server::CorridorEliminationTreeServer;
 use crate::dijkstra::potentials::multi_metric_potential::customization::CustomizedMultiMetrics;
-use crate::dijkstra::potentials::multi_metric_potential::metric_reduction::MetricEntry;
 use crate::dijkstra::potentials::TDPotential;
 use crate::graph::MAX_BUCKETS;
 use rust_road_router::algo::customizable_contraction_hierarchy::{CCH, CCHT};

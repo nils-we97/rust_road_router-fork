@@ -75,16 +75,18 @@ impl<Pot: TDPotential> CapacityServerOps for CapacityServer<Pot> {
     fn query(&mut self, query: TDQuery<Timestamp>, update: bool) -> Option<CapacityQueryResult> {
         let query_result = self.distance(query.clone());
 
-        if let Some(distance) = query_result.distance {
+        if self.requires_pot_update {
+            None
+        } else if let Some(distance) = query_result.distance {
             let path = self.path(query);
             debug_assert_eq!(*path.departure.last().unwrap() - *path.departure.first().unwrap(), distance);
             if update {
                 self.update(&path);
             }
-            return Some(CapacityQueryResult::new(distance, path));
+            Some(CapacityQueryResult::new(distance, path))
+        } else {
+            None
         }
-
-        return None;
     }
 
     fn query_measured(&mut self, query: TDQuery<u32>, update: bool) -> MeasuredCapacityQueryResult {
@@ -193,8 +195,7 @@ impl<Pot: TDPotential> CapacityServerOps for CapacityServer<Pot> {
 
         let time_query = start.elapsed();
 
-        self.requires_pot_update =
-            !pot.verify_result(result.unwrap_or(INFINITY), false) || result.unwrap_or(INFINITY) < pot.potential(from, init).unwrap_or(INFINITY);
+        self.requires_pot_update = !pot.verify_result(result.unwrap_or(INFINITY)) || result.unwrap_or(INFINITY) < pot.potential(from, init).unwrap_or(INFINITY);
         /*println!(
             "Query results: {}, potential: {}",
             result.unwrap_or(INFINITY),

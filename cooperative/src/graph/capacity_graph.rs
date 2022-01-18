@@ -146,7 +146,7 @@ impl CapacityGraph {
         PiecewiseLinearFunction::new(&self.departure[edge_id], &self.travel_time[edge_id])
     }
 
-    /// get memory consumption
+    /// estimate memory consumption
     pub fn get_mem_size(&self) -> usize {
         // static graph data: first_out, head, distance, max-capacity and freeflow time
         let static_graph_size = 4
@@ -160,8 +160,8 @@ impl CapacityGraph {
             .used_capacity
             .iter()
             .map(|buckets| match buckets {
-                CapacityBuckets::Unused => std::mem::size_of_val(&CapacityBuckets::Unused),
-                CapacityBuckets::Used(data) => std::mem::size_of_val(&CapacityBuckets::Unused) + data.capacity() * 8,
+                CapacityBuckets::Unused => 0,
+                CapacityBuckets::Used(data) => data.capacity() * 8,
             })
             .sum::<usize>();
 

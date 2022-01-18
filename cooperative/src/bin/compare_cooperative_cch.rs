@@ -1,10 +1,12 @@
+use cooperative::dijkstra::potentials::multi_metric_potential::customization::CustomizedMultiMetrics;
+use cooperative::dijkstra::potentials::multi_metric_potential::interval_patterns::balanced_interval_pattern;
+use cooperative::dijkstra::potentials::multi_metric_potential::potential::MultiMetricPotential;
 use cooperative::dijkstra::server::{CapacityServer, CapacityServerOps};
 use cooperative::graph::traffic_functions::bpr_traffic_function;
 use cooperative::io::io_graph::load_capacity_graph;
 use cooperative::io::io_node_order::load_node_order;
 use cooperative::io::io_queries::load_queries;
 use cooperative::util::cli_args::{parse_arg_optional, parse_arg_required};
-use rust_road_router::algo::ch_potentials::CCHPotData;
 use rust_road_router::algo::customizable_contraction_hierarchy::query::Server as CCHServer;
 use rust_road_router::algo::customizable_contraction_hierarchy::{customize, customize_perfect, DirectedCCH, CCH};
 use rust_road_router::algo::{GenQuery, Query, QueryServer};
@@ -22,9 +24,9 @@ use std::time::Duration;
 
 /// compares the cooperative routing approach with frequent routing in a CCH
 ///
-/// additional parameters: <path_to_graph> <path_to_queries> <num_buckets> <evaluation_breakpoints> <coop-update-frequency> <CCH-update-frequency = 20000,100000>
+/// additional parameters: <path_to_graph> <path_to_queries> <num_buckets> <num_pot_metrics> <evaluation_breakpoints> <CCH-update-frequency = 20000,100000>
 fn main() -> Result<(), Box<dyn Error>> {
-    let (graph_directory, query_directory, num_buckets, evaluation_breakpoints, _coop_frequency, cch_frequencies) = parse_args()?;
+    let (graph_directory, query_directory, num_buckets, num_pot_metrics, evaluation_breakpoints, cch_frequencies) = parse_args()?;
 
     let graph_path = Path::new(&graph_directory);
     let query_path = graph_path.join("queries").join(&query_directory);
@@ -40,12 +42,22 @@ fn main() -> Result<(), Box<dyn Error>> {
     let weight = Vec::<u32>::load_from(&graph_path.join("travel_time"))?;
     let lower_bound = OwnedGraph::new(first_out, head, weight);
 
+    // init multi metrics pot
     let order = load_node_order(&graph_path)?;
     let cch = CCH::fix_order_and_build(&lower_bound, order);
-    let cch_pot_data = CCHPotData::new(&cch, &lower_bound);
+    let customized = CustomizedMultiMetrics::new(
+        &cch,
+        coop_graph.departure(),
+        coop_graph.travel_time(),
+        &balanced_interval_pattern(),
+        num_pot_metrics as usize,
+        true,
+    );
+    let potential = MultiMetricPotential::new(customized);
 
     // init coop server
-    let mut server = CapacityServer::new_with_potential(coop_graph, cch_pot_data.forward_potential());
+    let mut server = CapacityServer::new_with_potential(coop_graph, potential);
+    println!("Initialized cooperative server");
 
     // init cch server
     let mut cch_servers = cch_frequencies
@@ -60,6 +72,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut csv_results = Vec::new();
 
     let mut total_time_coop = Duration::ZERO;
+    let mut cust_time_coop = Duration::ZERO;
     let mut runs_coop = Vec::with_capacity(queries.len());
     let mut paths_coop = Vec::with_capacity(queries.len());
 
@@ -74,7 +87,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             .into_iter()
             .zip(queries[a[0] as usize..a[1] as usize].iter())
             .for_each(|(idx, query)| {
-                if (idx + 1) % 10000 == 0 {
+                if (idx + 1) % 100 == 0 {
                     println!("-----------------");
                     println!("Finished {} of {} queries", idx + 1, queries.len());
                     println!(
@@ -86,15 +99,33 @@ fn main() -> Result<(), Box<dyn Error>> {
                     println!("-----------------");
                 }
 
+                // customize coop server whenever required
+                let mut coop_result = measure(|| server.query(*query, true));
+                while server.requires_pot_update() {
+                    let (customized, time) = measure(|| {
+                        CustomizedMultiMetrics::new(
+                            &cch,
+                            server.borrow_graph().departure(),
+                            server.borrow_graph().travel_time(),
+                            &balanced_interval_pattern(),
+                            num_pot_metrics as usize,
+                            true,
+                        )
+                    });
+                    cust_time_coop = cust_time_coop.add(time);
+
+                    let potential = MultiMetricPotential::new(customized);
+                    server.update_potential(potential);
+
+                    coop_result = measure(|| server.query(*query, true));
+                }
+
                 // process cooperative query
-                let (coop_result, time) = measure(|| server.query(*query, true));
-                total_time_coop = total_time_coop.add(time);
-                if let Some(result) = coop_result {
+                total_time_coop = total_time_coop.add(coop_result.1);
+                if let Some(result) = coop_result.0 {
                     runs_coop.push(idx);
                     paths_coop.push(result.path.edge_path);
                 }
-
-                // todo cooperative potential update?
 
                 // process query for cch servers
                 for i in 0..cch_frequencies.len() {
@@ -195,7 +226,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             "cooperative",
             0,
             total_time_coop.as_secs_f64(),
-            0.0,
+            cust_time_coop.as_secs_f64(),
             coop_distance,
             num_runs_coop,
             a[1],
@@ -248,14 +279,14 @@ fn write_results(results: &Vec<(&str, u32, f64, f64, u64, usize, u32, u64)>, pat
     Ok(())
 }
 
-fn parse_args() -> Result<(String, String, u32, Vec<u32>, u32, Vec<u32>), Box<dyn Error>> {
+fn parse_args() -> Result<(String, String, u32, u32, Vec<u32>, Vec<u32>), Box<dyn Error>> {
     let mut args = env::args().skip(1);
 
     let graph_directory = parse_arg_required(&mut args, "Graph Directory")?;
     let query_directory = parse_arg_required(&mut args, "Query Directory")?;
     let num_buckets = parse_arg_required(&mut args, "num buckets")?;
+    let num_pot_metrics = parse_arg_required(&mut args, "number of metrics")?;
     let evaluation_breakpoints: String = parse_arg_required(&mut args, "Evaluation Breakpoints")?;
-    let coop_update_frequency = parse_arg_required(&mut args, "Coop Update Frequency")?;
     let cch_update_frequency = parse_arg_optional(&mut args, "20000,100000".to_string());
 
     let mut cch_frequency = cch_update_frequency.split(",").filter_map(|val| u32::from_str(val).ok()).collect::<Vec<u32>>();
@@ -279,8 +310,8 @@ fn parse_args() -> Result<(String, String, u32, Vec<u32>, u32, Vec<u32>), Box<dy
         graph_directory,
         query_directory,
         num_buckets,
+        num_pot_metrics,
         evaluation_breakpoints,
-        coop_update_frequency,
         cch_frequency,
     ))
 }

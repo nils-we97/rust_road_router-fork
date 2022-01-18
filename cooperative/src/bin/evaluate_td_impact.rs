@@ -19,7 +19,7 @@ use std::time::Instant;
 
 /// Evaluates the impact of time-dependence on a given set of queries.
 /// Comparison is provided by a more static setting with only 1 bucket per edge.
-/// The evaluation itself takes place on the time-dependent graph, with several steps (100/200/300/400/600 buckets)
+/// The evaluation itself takes place on the time-dependent graph, with several steps (100/200/300/400 buckets)
 ///
 /// Expected result: with a rising number of long-distance queries, the time-dependent graph
 /// should outperform the static setting (in terms of travel times).
@@ -39,7 +39,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let order = load_node_order(&path)?;
     let cch_pot_data = init_cch_potential(&graph, order);
 
-    let bucket_sizes = [1, 100, 200, 300, 400, 600];
+    let bucket_sizes = [1, 100, 200, 300, 400];
 
     // parallel retrieving of paths, one server for each core
     let path_results: Vec<(Option<CapacityServer<BorrowedCCHPot>>, Vec<(Vec<EdgeId>, Timestamp)>)> = bucket_sizes
@@ -49,7 +49,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             let mut server = CapacityServer::new_with_potential(td_graph, cch_pot_data.forward_potential());
             let results = get_query_paths(&mut server, &queries, num_buckets);
 
-            if num_buckets == 600 {
+            if num_buckets == 400 {
                 (Some(server), results)
             } else {
                 (None, results)

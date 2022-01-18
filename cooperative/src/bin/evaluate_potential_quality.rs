@@ -129,15 +129,6 @@ fn main() -> Result<(), Box<dyn Error>> {
                         );
 
                         if server.requires_pot_update() || (current_idx + 1) % update_frequency == 0 {
-                            server
-                                .borrow_graph()
-                                .travel_time()
-                                .iter()
-                                .zip(server.borrow_graph().free_flow_time().iter())
-                                .for_each(|(tt, &free)| {
-                                    tt.iter().for_each(|&t| debug_assert!(t >= free));
-                                });
-
                             let reinit_start = Instant::now();
                             let customized = CustomizedMultiMetrics::new(
                                 &cch,
