@@ -53,6 +53,10 @@ impl<Pot: TDPotential> CapacityServer<Pot> {
         self.requires_pot_update = false;
     }
 
+    pub fn update_potential_bounds(&mut self) {
+        self.potential.refresh_bounds(&self.graph);
+    }
+
     pub fn decompose(self) -> (CapacityGraph, Pot) {
         (self.graph, self.potential)
     }

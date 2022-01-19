@@ -1,6 +1,7 @@
 use crate::dijkstra::potentials::cch_lower_upper::elimination_tree_server::CorridorEliminationTreeServer;
 use crate::dijkstra::potentials::multi_metric_potential::customization::CustomizedMultiMetrics;
 use crate::dijkstra::potentials::TDPotential;
+use crate::graph::capacity_graph::CapacityGraph;
 use crate::graph::MAX_BUCKETS;
 use rust_road_router::algo::customizable_contraction_hierarchy::{CCH, CCHT};
 use rust_road_router::datastr::graph::time_dependent::Timestamp;
@@ -30,30 +31,17 @@ struct MultiLevelBucketPotentialContext {
 impl<'a> MultiMetricPotential<'a> {
     pub fn new(customized: CustomizedMultiMetrics<'a>) -> Self {
         let forward_cch_graph = UnweightedFirstOutGraph::new(&customized.cch.forward_first_out()[..], &customized.cch.forward_head()[..]);
-        let forward_cch_weights = &customized.upward[..];
-
         let backward_cch_graph = UnweightedFirstOutGraph::new(&customized.cch.backward_first_out()[..], &customized.cch.backward_head()[..]);
-        let backward_cch_weights = &customized.downward[..];
 
-        let n = forward_cch_graph.num_nodes();
+        let n = customized.cch.num_nodes();
+        let m = customized.cch.num_arcs();
 
-        // initialize lowerbound forward potential for interval query (also as fallback potential on tight corridors!)
-        let pot_forward_weights = (0..forward_cch_graph.num_arcs())
-            .into_iter()
-            .map(|edge_id| (forward_cch_weights[edge_id], forward_cch_weights[forward_cch_graph.num_arcs() + edge_id]))
-            .collect::<Vec<(Weight, Weight)>>();
-
-        let pot_backward_weights = (0..backward_cch_graph.num_arcs())
-            .into_iter()
-            .map(|edge_id| (backward_cch_weights[edge_id], backward_cch_weights[backward_cch_graph.num_arcs() + edge_id]))
-            .collect::<Vec<(Weight, Weight)>>();
-
-        let interval_query_server = CorridorEliminationTreeServer::new(
+        let interval_query_server = Self::init_elimination_tree_server(
             customized.cch,
-            forward_cch_graph.clone(),
-            pot_forward_weights,
-            backward_cch_graph.clone(),
-            pot_backward_weights,
+            &customized.upward[..m],
+            &customized.upward[m..2 * m],
+            &customized.downward[..m],
+            &customized.downward[m..2 * m],
         );
 
         let context = MultiLevelBucketPotentialContext {
@@ -77,6 +65,31 @@ impl<'a> MultiMetricPotential<'a> {
 
     pub fn num_pot_computations(&self) -> usize {
         self.context.num_pot_computations
+    }
+
+    fn init_elimination_tree_server(
+        cch: &'a CCH,
+        upward_lower: &[Weight],
+        upward_upper: &[Weight],
+        downward_lower: &[Weight],
+        downward_upper: &[Weight],
+    ) -> CorridorEliminationTreeServer<'a, CCH, Vec<(Weight, Weight)>> {
+        let m = cch.num_arcs();
+
+        let forward_graph = UnweightedFirstOutGraph::new(&cch.forward_first_out()[..], &cch.forward_head()[..]);
+        let backward_graph = UnweightedFirstOutGraph::new(&cch.backward_first_out()[..], &cch.backward_head()[..]);
+
+        let pot_forward_weights = (0..m)
+            .into_iter()
+            .map(|edge_id| (upward_lower[edge_id], upward_upper[edge_id]))
+            .collect::<Vec<(Weight, Weight)>>();
+
+        let pot_backward_weights = (0..m)
+            .into_iter()
+            .map(|edge_id| (downward_lower[edge_id], downward_upper[edge_id]))
+            .collect::<Vec<(Weight, Weight)>>();
+
+        CorridorEliminationTreeServer::new(cch, forward_graph, pot_forward_weights, backward_graph, pot_backward_weights)
     }
 }
 
@@ -180,5 +193,21 @@ impl<'a> TDPotential for MultiMetricPotential<'a> {
 
     fn verify_result(&self, distance: Weight) -> bool {
         distance == INFINITY || distance <= self.context.latest_arrival_dist.unwrap()
+    }
+
+    fn refresh_bounds(&mut self, graph: &CapacityGraph) {
+        let m = self.customized.cch.num_arcs();
+        let (upper_forward, upper_backward) = self.customized.coop_fix_upper_bound(graph);
+
+        debug_assert_eq!(m, upper_forward.len());
+        debug_assert_eq!(m, upper_backward.len());
+
+        self.interval_query_server = Self::init_elimination_tree_server(
+            self.customized.cch,
+            &self.customized.upward[..m],
+            &upper_forward,
+            &self.customized.downward[..m],
+            &upper_backward,
+        );
     }
 }

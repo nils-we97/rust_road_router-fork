@@ -68,7 +68,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     // ----------------------------------------------------------------------------- //
     // 3rd potential: Corridor-Lowerbound Potential
-    let customized_corridor_lowerbound = CustomizedApproximatedPeriodicTTF::new(&cch, graph.departure(), graph.travel_time(), 200, 48);
+    let customized_corridor_lowerbound = CustomizedApproximatedPeriodicTTF::new_from_capacity(&cch, graph.departure(), graph.travel_time(), 200, 48);
     let corridor_lowerbound_pot = CorridorLowerboundPotential::new(&customized_corridor_lowerbound);
     let mut server = CapacityServer::new_with_potential(graph, corridor_lowerbound_pot);
 

@@ -1,3 +1,4 @@
+use crate::graph::capacity_graph::CapacityGraph;
 use rust_road_router::algo::a_star::Potential;
 use rust_road_router::datastr::graph::time_dependent::Timestamp;
 use rust_road_router::datastr::graph::{NodeId, Weight};
@@ -19,6 +20,8 @@ pub trait TDPotential {
     fn verify_result(&self, _distance: Weight) -> bool {
         true
     }
+
+    fn refresh_bounds(&mut self, _graph: &CapacityGraph) {}
 }
 
 impl<T: Potential> TDPotential for T {

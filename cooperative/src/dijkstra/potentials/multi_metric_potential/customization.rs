@@ -1,5 +1,6 @@
 use crate::dijkstra::potentials::cch_parallelization_util::SeparatorBasedParallelCustomization;
 use crate::dijkstra::potentials::multi_metric_potential::metric_reduction::{reduce_metrics, MetricEntry};
+use crate::graph::capacity_graph::CapacityGraph;
 use crate::graph::MAX_BUCKETS;
 use rayon::prelude::*;
 use rust_road_router::algo::customizable_contraction_hierarchy::{CCH, CCHT};
@@ -85,6 +86,21 @@ impl<'a> CustomizedMultiMetrics<'a> {
             UnweightedFirstOutGraph::new(self.cch.backward_first_out(), self.cch.backward_head()),
             &self.downward,
         )
+    }
+
+    pub fn coop_fix_upper_bound(&self, graph: &CapacityGraph) -> (Vec<Weight>, Vec<Weight>) {
+        let upper_bound = (0..graph.num_arcs())
+            .into_iter()
+            .map(|e| vec![*graph.travel_time()[e].iter().max().unwrap()])
+            .collect::<Vec<Vec<Weight>>>();
+
+        let mut upwards = vec![vec![INFINITY; 1]; self.cch.num_arcs()];
+        let mut downwards = vec![vec![INFINITY; 1]; self.cch.num_arcs()];
+
+        prepare_weights(self.cch, &mut upwards, &mut downwards, &upper_bound);
+        customize_basic(self.cch, &mut upwards, &mut downwards);
+
+        (upwards.iter().map(|v| v[0]).collect(), downwards.iter().map(|v| v[0]).collect())
     }
 }
 

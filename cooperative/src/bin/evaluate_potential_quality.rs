@@ -128,7 +128,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                             &mut total_time_update,
                         );
 
-                        if server.requires_pot_update() || (current_idx + 1) % update_frequency == 0 {
+                        if (current_idx + 1) % update_frequency == 0 {
                             let reinit_start = Instant::now();
                             let customized = CustomizedMultiMetrics::new(
                                 &cch,
@@ -142,11 +142,10 @@ fn main() -> Result<(), Box<dyn Error>> {
                             server.update_potential(potential);
                             total_time_reinit = total_time_reinit.add(reinit_start.elapsed());
 
-                            if server.requires_pot_update() {
-                                println!("**** SERVER NEEDS UPDATE ****");
-                            } else {
-                                current_idx += 1;
-                            }
+                            current_idx += 1;
+                        } else if server.requires_pot_update() {
+                            let (_, time) = measure(|| server.update_potential_bounds());
+                            total_time_reinit = total_time_reinit.add(time);
                         } else {
                             current_idx += 1;
                         }
@@ -234,7 +233,7 @@ fn execute_query<Pot: TDPotential>(
             time_potential.as_secs_f64(),
             time_query.as_secs_f64(),
             time_update.as_secs_f64(),
-            *sum_dist / 10000
+            *sum_dist / 1000
         );
 
         *time_potential = Duration::ZERO;

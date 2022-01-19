@@ -43,6 +43,18 @@ impl<'a, CCH: CCHT, W: AsRef<Vec<(Weight, Weight)>>> CorridorEliminationTreeServ
         &self.bw_distances
     }
 
+    pub fn update_upper_bounds(&mut self, upper_forward: &Vec<Weight>, upper_backward: &Vec<Weight>) {
+        assert_eq!(upper_forward.len(), self.fw_distances.len());
+        assert_eq!(upper_backward.len(), self.bw_distances.len());
+
+        for i in 0..upper_forward.len() {
+            self.fw_distances[i].1 = upper_forward[i];
+        }
+        for i in 0..upper_backward.len() {
+            self.bw_distances[i].1 = upper_backward[i];
+        }
+    }
+
     pub fn query(&mut self, from: NodeId, to: NodeId) -> Option<(Weight, Weight)> {
         // get ranks
         let from = self.cch.node_order().rank(from);
