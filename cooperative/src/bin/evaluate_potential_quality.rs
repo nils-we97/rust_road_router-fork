@@ -4,6 +4,7 @@ use cooperative::dijkstra::potentials::multi_metric_potential::potential::MultiM
 use cooperative::dijkstra::potentials::TDPotential;
 use cooperative::dijkstra::server::{CapacityServer, CapacityServerOps};
 use cooperative::experiments::queries::permutate_queries;
+use cooperative::experiments::types::PotentialType;
 use cooperative::graph::traffic_functions::bpr_traffic_function;
 use cooperative::io::io_graph::load_capacity_graph;
 use cooperative::io::io_node_order::load_node_order;
@@ -71,12 +72,13 @@ fn main() -> Result<(), Box<dyn Error>> {
     drop(temp_graph);
     println!("CCH created in {} ms", time.as_secs_f64() * 1000.0);
 
-    let results = [(false, *customization_breakpoints.last().unwrap())]
+    let results = [(PotentialType::CCHPot, *customization_breakpoints.last().unwrap())]
         .par_iter()
         .cloned()
-        .chain(customization_breakpoints.par_iter().map(|&p| (true, p)))
-        .flat_map(|(use_multi_metrics, update_frequency)| {
-            let heuristic_name = format!("{}-{}", update_frequency, use_multi_metrics);
+        .chain(customization_breakpoints.par_iter().map(|&p| (PotentialType::MultiMetrics, p)))
+        //.chain(customization_breakpoints.iter().map(|&p| (PotentialType::CorridorLowerbound, p)))
+        .flat_map(|(potential_type, update_frequency)| {
+            let heuristic_name = format!("{}-{}", update_frequency, potential_type.to_string());
 
             // load graph
             let graph = load_capacity_graph(&graph_path, num_buckets, bpr_traffic_function).unwrap();
@@ -94,106 +96,176 @@ fn main() -> Result<(), Box<dyn Error>> {
 
             let mut statistics = Vec::new();
 
-            if use_multi_metrics {
-                // init server
-                let init_start = Instant::now();
-                let customized = CustomizedMultiMetrics::new(
-                    &cch,
-                    graph.departure(),
-                    graph.travel_time(),
-                    &balanced_interval_pattern(),
-                    mm_num_metrics as usize,
-                    true,
-                );
-                let potential = MultiMetricPotential::new(customized);
-                let mut server = CapacityServer::new_with_potential(graph, potential);
-                total_time_reinit = total_time_reinit.add(init_start.elapsed());
+            match potential_type {
+                PotentialType::CCHPot => {
+                    let init_start = Instant::now();
+                    let cch_pot_data = CCHPotData::new(&cch, &graph);
+                    let mut server = CapacityServer::new_with_potential(graph, cch_pot_data.forward_potential());
+                    total_time_reinit = total_time_reinit.add(init_start.elapsed());
 
-                // execute all queries
-                for a in evaluation_breakpoints.windows(2) {
-                    let mut current_idx = a[0];
-
-                    while current_idx < a[1] {
-                        execute_query(
-                            &mut server,
-                            heuristic_name.as_str(),
-                            &queries[current_idx as usize],
-                            current_idx as usize,
-                            &mut time_potential,
-                            &mut time_query,
-                            &mut time_update,
-                            &mut sum_dist,
-                            &mut total_time_potential,
-                            &mut total_time_query,
-                            &mut total_time_update,
-                        );
-
-                        if (current_idx + 1) % update_frequency == 0 {
-                            let reinit_start = Instant::now();
-                            let customized = CustomizedMultiMetrics::new(
-                                &cch,
-                                server.borrow_graph().departure(),
-                                server.borrow_graph().travel_time(),
-                                &balanced_interval_pattern(),
-                                mm_num_metrics as usize,
-                                true,
+                    for a in evaluation_breakpoints.windows(2) {
+                        for current_idx in a[0]..a[1] {
+                            execute_query(
+                                &mut server,
+                                heuristic_name.as_str(),
+                                &queries[current_idx as usize],
+                                current_idx as usize,
+                                &mut time_potential,
+                                &mut time_query,
+                                &mut time_update,
+                                &mut sum_dist,
+                                &mut total_time_potential,
+                                &mut total_time_query,
+                                &mut total_time_update,
                             );
-                            let potential = MultiMetricPotential::new(customized);
-                            server.update_potential(potential);
-                            total_time_reinit = total_time_reinit.add(reinit_start.elapsed());
-
-                            current_idx += 1;
-                        } else if server.requires_pot_update() {
-                            let (_, time) = measure(|| server.update_potential_bounds());
-                            total_time_reinit = total_time_reinit.add(time);
-                        } else {
-                            current_idx += 1;
+                            // no re-customization required!
                         }
+
+                        statistics.push((
+                            heuristic_name.clone(),
+                            a[1],
+                            total_time_potential,
+                            total_time_query,
+                            total_time_update,
+                            total_time_reinit,
+                        ));
                     }
-
-                    statistics.push((
-                        heuristic_name.clone(),
-                        a[1],
-                        total_time_potential,
-                        total_time_query,
-                        total_time_update,
-                        total_time_reinit,
-                    ));
                 }
-            } else {
-                let init_start = Instant::now();
-                let cch_pot_data = CCHPotData::new(&cch, &graph);
-                let mut server = CapacityServer::new_with_potential(graph, cch_pot_data.forward_potential());
-                total_time_reinit = total_time_reinit.add(init_start.elapsed());
+                PotentialType::CorridorLowerbound => {
+                    /*let init_start = Instant::now();
+                    let mut customized_ttf = CustomizedApproximatedPeriodicTTF::new_from_capacity(&cch, &graph, 72);
+                    let mut customized_bounds = CustomizedLowerUpper::new(&cch, graph.travel_time());
+                    customized_bounds.scale_upper_bounds();
 
-                for a in evaluation_breakpoints.windows(2) {
-                    for current_idx in a[0]..a[1] {
-                        execute_query(
-                            &mut server,
-                            heuristic_name.as_str(),
-                            &queries[current_idx as usize],
-                            current_idx as usize,
-                            &mut time_potential,
-                            &mut time_query,
-                            &mut time_update,
-                            &mut sum_dist,
-                            &mut total_time_potential,
-                            &mut total_time_query,
-                            &mut total_time_update,
-                        );
-                        // no re-customization required!
+                    let potential = CorridorLowerboundPotential::new_with_separate_bounds(&customized_ttf, &customized_bounds);
+                    let mut server = CapacityServer::new_with_potential(graph, potential);
+                    total_time_reinit = total_time_reinit.add(init_start.elapsed());
+
+                    // execute all queries
+                    for a in evaluation_breakpoints.windows(2) {
+                        let mut current_idx = a[0];
+
+                        while current_idx < a[1] {
+                            execute_query(
+                                &mut server,
+                                heuristic_name.as_str(),
+                                &queries[current_idx as usize],
+                                current_idx as usize,
+                                &mut time_potential,
+                                &mut time_query,
+                                &mut time_update,
+                                &mut sum_dist,
+                                &mut total_time_potential,
+                                &mut total_time_query,
+                                &mut total_time_update,
+                            );
+
+                            if (current_idx + 1) % update_frequency == 0 {
+                                let reinit_start = Instant::now();
+                                let (graph, pot) = server.decompose();
+                                drop(pot);
+
+                                let mut customized_ttf_update = CustomizedApproximatedPeriodicTTF::new_from_capacity(&cch, &graph, 72);
+                                std::mem::swap(&mut customized_ttf.downward_intervals, &mut customized_ttf_update.downward_intervals);
+
+                                customized_bounds = CustomizedLowerUpper::new(&cch, graph.travel_time());
+                                customized_bounds.scale_upper_bounds();
+
+                                let potential = CorridorLowerboundPotential::new_with_separate_bounds(&customized_ttf, &customized_bounds);
+                                server = CapacityServer::new_with_potential(graph, potential);
+                                total_time_reinit = total_time_reinit.add(reinit_start.elapsed());
+
+                                current_idx += 1;
+                            } else if server.requires_pot_update() {
+                                customized_bounds = CustomizedLowerUpper::new(&cch, server.borrow_graph().travel_time());
+                                customized_bounds.scale_upper_bounds();
+                                let (_, time) = measure(|| server.update_potential_bounds(&customized_bounds));
+                                total_time_reinit = total_time_reinit.add(time);
+                            } else {
+                                current_idx += 1;
+                            }
+                        }
+
+                        statistics.push((
+                            heuristic_name.clone(),
+                            a[1],
+                            total_time_potential,
+                            total_time_query,
+                            total_time_update,
+                            total_time_reinit,
+                        ));
+                    }*/
+                }
+                PotentialType::MultiMetrics => {
+                    // init server
+                    let init_start = Instant::now();
+                    let customized = CustomizedMultiMetrics::new(
+                        &cch,
+                        graph.departure(),
+                        graph.travel_time(),
+                        &balanced_interval_pattern(),
+                        mm_num_metrics as usize,
+                        true,
+                    );
+                    let potential = MultiMetricPotential::new(customized);
+                    let mut server = CapacityServer::new_with_potential(graph, potential);
+                    total_time_reinit = total_time_reinit.add(init_start.elapsed());
+
+                    // execute all queries
+                    for a in evaluation_breakpoints.windows(2) {
+                        let mut current_idx = a[0];
+
+                        while current_idx < a[1] {
+                            execute_query(
+                                &mut server,
+                                heuristic_name.as_str(),
+                                &queries[current_idx as usize],
+                                current_idx as usize,
+                                &mut time_potential,
+                                &mut time_query,
+                                &mut time_update,
+                                &mut sum_dist,
+                                &mut total_time_potential,
+                                &mut total_time_query,
+                                &mut total_time_update,
+                            );
+
+                            if (current_idx + 1) % update_frequency == 0 {
+                                let reinit_start = Instant::now();
+                                let customized = CustomizedMultiMetrics::new(
+                                    &cch,
+                                    server.borrow_graph().departure(),
+                                    server.borrow_graph().travel_time(),
+                                    &balanced_interval_pattern(),
+                                    mm_num_metrics as usize,
+                                    true,
+                                );
+                                let potential = MultiMetricPotential::new(customized);
+                                server.update_potential(potential);
+                                total_time_reinit = total_time_reinit.add(reinit_start.elapsed());
+
+                                current_idx += 1;
+                            } else if server.requires_pot_update() {
+                                let (_, time) = measure(|| server.update_potential_bounds());
+                                total_time_reinit = total_time_reinit.add(time);
+                            } else {
+                                current_idx += 1;
+                            }
+                        }
+
+                        statistics.push((
+                            heuristic_name.clone(),
+                            a[1],
+                            total_time_potential,
+                            total_time_query,
+                            total_time_update,
+                            total_time_reinit,
+                        ));
                     }
-
-                    statistics.push((
-                        heuristic_name.clone(),
-                        a[1],
-                        total_time_potential,
-                        total_time_query,
-                        total_time_update,
-                        total_time_reinit,
-                    ));
                 }
+                PotentialType::MultiLevelBucket => {}
             }
+
             statistics
         })
         .collect::<Vec<(String, u32, Duration, Duration, Duration, Duration)>>();

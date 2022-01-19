@@ -68,7 +68,8 @@ impl<'a, CCH: CCHT> BoundedLowerUpperPotential<'a, CCH> {
         self.target_bounds
     }
 
-    pub fn potential_bounds(&mut self, rank: NodeId) -> Option<(Weight, Weight)> {
+    pub fn potential_bounds(&mut self, node: NodeId) -> Option<(Weight, Weight)> {
+        let rank = self.cch.node_order().rank(node);
         if let Some((_, target_upper)) = self.target_bounds {
             // upward search until a node with existing distance to target is found
             let mut cur_node = rank;
