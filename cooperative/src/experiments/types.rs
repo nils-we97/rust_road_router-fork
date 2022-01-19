@@ -22,3 +22,14 @@ impl FromStr for PotentialType {
         }
     }
 }
+
+impl ToString for PotentialType {
+    fn to_string(&self) -> String {
+        match self {
+            PotentialType::CCHPot => "CCH-Pot".to_string(),
+            PotentialType::CorridorLowerbound => "Corridor-Lowerbound".to_string(),
+            PotentialType::MultiMetrics => "Multi-Metric".to_string(),
+            PotentialType::MultiLevelBucket => "Multi-Level-Bucket".to_string(),
+        }
+    }
+}
