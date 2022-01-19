@@ -67,6 +67,22 @@ impl<'a> MultiMetricPotential<'a> {
         self.context.num_pot_computations
     }
 
+    pub fn refresh_bounds(&mut self, graph: &CapacityGraph) {
+        let m = self.customized.cch.num_arcs();
+        let (upper_forward, upper_backward) = self.customized.coop_fix_upper_bound(graph);
+
+        debug_assert_eq!(m, upper_forward.len());
+        debug_assert_eq!(m, upper_backward.len());
+
+        self.interval_query_server = Self::init_elimination_tree_server(
+            self.customized.cch,
+            &self.customized.upward[..m],
+            &upper_forward,
+            &self.customized.downward[..m],
+            &upper_backward,
+        );
+    }
+
     fn init_elimination_tree_server(
         cch: &'a CCH,
         upward_lower: &[Weight],
@@ -193,21 +209,5 @@ impl<'a> TDPotential for MultiMetricPotential<'a> {
 
     fn verify_result(&self, distance: Weight) -> bool {
         distance == INFINITY || distance <= self.context.latest_arrival_dist.unwrap()
-    }
-
-    fn refresh_bounds(&mut self, graph: &CapacityGraph) {
-        let m = self.customized.cch.num_arcs();
-        let (upper_forward, upper_backward) = self.customized.coop_fix_upper_bound(graph);
-
-        debug_assert_eq!(m, upper_forward.len());
-        debug_assert_eq!(m, upper_backward.len());
-
-        self.interval_query_server = Self::init_elimination_tree_server(
-            self.customized.cch,
-            &self.customized.upward[..m],
-            &upper_forward,
-            &self.customized.downward[..m],
-            &upper_backward,
-        );
     }
 }

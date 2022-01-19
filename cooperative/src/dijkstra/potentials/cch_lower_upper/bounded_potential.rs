@@ -7,18 +7,18 @@ use std::cmp::min;
 
 pub struct BoundedLowerUpperPotential<'a, CCH> {
     cch: &'a CCH,
-    elimination_tree_server: CorridorEliminationTreeServer<'a, CCH, &'a Vec<(Weight, Weight)>>,
+    elimination_tree_server: CorridorEliminationTreeServer<'a, CCH, Vec<(Weight, Weight)>>,
     stack: Vec<NodeId>,
     potentials: TimestampedVector<InRangeOption<(Weight, Weight)>>,
     backward_cch_graph: UnweightedFirstOutGraph<&'a [EdgeId], &'a [NodeId]>,
-    backward_cch_weights: &'a Vec<(Weight, Weight)>,
+    backward_cch_weights: Vec<(Weight, Weight)>,
     forward_distances: TimestampedVector<(Weight, Weight)>,
     num_pot_computations: usize,
     target_bounds: Option<(Weight, Weight)>,
 }
 
 impl<'a, CCH: CCHT> BoundedLowerUpperPotential<'a, CCH> {
-    pub fn new(cch: &'a CCH, forward_cch_weights: &'a Vec<(Weight, Weight)>, backward_cch_weights: &'a Vec<(Weight, Weight)>) -> Self {
+    pub fn new(cch: &'a CCH, forward_cch_weights: Vec<(Weight, Weight)>, backward_cch_weights: Vec<(Weight, Weight)>) -> Self {
         let forward_cch_graph = UnweightedFirstOutGraph::new(cch.forward_first_out(), cch.forward_head());
         let backward_cch_graph = UnweightedFirstOutGraph::new(cch.backward_first_out(), cch.backward_head());
         let n = forward_cch_graph.num_nodes();
@@ -28,7 +28,7 @@ impl<'a, CCH: CCHT> BoundedLowerUpperPotential<'a, CCH> {
             forward_cch_graph.clone(),
             forward_cch_weights,
             backward_cch_graph.clone(),
-            backward_cch_weights,
+            backward_cch_weights.clone(),
         );
 
         Self {

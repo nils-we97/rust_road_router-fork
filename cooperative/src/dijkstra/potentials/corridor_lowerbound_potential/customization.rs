@@ -10,7 +10,6 @@ use rust_road_router::datastr::graph::{
 use rust_road_router::report::measure;
 use scoped_tls::scoped_thread_local;
 use std::cell::RefCell;
-use std::cmp::max;
 
 // One mapping of node id to weight for each thread during the scope of the customization.
 scoped_thread_local!(static UPWARD_WORKSPACE: RefCell<Vec<Vec<TTFPoint>>>);
@@ -47,28 +46,28 @@ impl CustomizedApproximatedPeriodicTTF<DirectedCCH> {
 
         let td_graph = TDGraph::new(graph.first_out().to_vec(), graph.head().to_vec(), first_ipp_of_arc, departure, travel_time);
 
-        Self::run_customization(cch, &td_graph, num_intervals, true)
+        Self::run_customization(cch, &td_graph, num_intervals)
     }
 
     pub fn new_from_ptv(cch: &CCH, graph: &TDGraph, num_intervals: u32) -> Self {
-        Self::run_customization(cch, graph, num_intervals, false)
+        Self::run_customization(cch, graph, num_intervals)
     }
 
-    fn run_customization(cch: &CCH, graph: &TDGraph, num_intervals: u32, cooperative: bool) -> Self {
+    fn run_customization(cch: &CCH, graph: &TDGraph, num_intervals: u32) -> Self {
         debug_assert!(MAX_BUCKETS % num_intervals == 0);
 
         let ((mut upward_weights, mut downward_weights), time) = measure(|| customize_td_graph(cch, graph, num_intervals));
         println!("Interval Minima Customization took {} ms", time.as_secs_f64() * 1000.0);
 
         // extract relevant data, scale upper bounds
-        let (mut upward_intervals, upward_bounds, num_removed_edges) = extract_intervals_and_bounds(&mut upward_weights, cooperative);
+        let (mut upward_intervals, upward_bounds, num_removed_edges) = extract_intervals_and_bounds(&mut upward_weights);
         println!(
             "Reduction in upward direction: Removed {} of {} edges.",
             num_removed_edges,
             upward_weights.len()
         );
 
-        let (mut downward_intervals, downward_bounds, num_removed_edges) = extract_intervals_and_bounds(&mut downward_weights, cooperative);
+        let (mut downward_intervals, downward_bounds, num_removed_edges) = extract_intervals_and_bounds(&mut downward_weights);
         println!(
             "Reduction in downward direction: Removed {} of {} edges.",
             num_removed_edges,
@@ -118,25 +117,20 @@ impl<CCH: CCHT> CustomizedApproximatedPeriodicTTF<CCH> {
     }
 }
 
-fn extract_intervals_and_bounds(weights: &mut Vec<ShortcutWrapper>, scale_upper_bound: bool) -> (Vec<Vec<u32>>, Vec<(u32, u32)>, u32) {
+fn extract_intervals_and_bounds(weights: &mut Vec<ShortcutWrapper>) -> (Vec<Vec<u32>>, Vec<(u32, u32)>, u32) {
     let mut num_removed_edges = 0;
     let (intervals, bounds) = weights
         .iter_mut()
         .map(|wrapper| {
-            if wrapper.shortcut.required && wrapper.bounds.0 <= wrapper.bounds.1 {
-                // scale upper bound by 100%
-                if scale_upper_bound {
-                    wrapper.bounds.0 = (wrapper.bounds.0 / 1000) * 1000;
-                    wrapper.bounds.1 = max(wrapper.bounds.1 * 2, 5000);
-                }
-
-                let ret = (wrapper.interval_minima.iter().map(|&v| (v / 1000) * 1000).collect::<Vec<u32>>(), wrapper.bounds);
-                wrapper.interval_minima = vec![];
-                ret
+            let ret = if wrapper.shortcut.required && wrapper.bounds.0 <= wrapper.bounds.1 {
+                (wrapper.interval_minima.clone(), wrapper.bounds)
             } else {
                 num_removed_edges += 1;
                 (vec![], (INFINITY, INFINITY))
-            }
+            };
+
+            wrapper.interval_minima = vec![];
+            ret
         })
         .unzip();
 

@@ -1,21 +1,22 @@
 use crate::dijkstra::potentials::cch_lower_upper::bounded_potential::BoundedLowerUpperPotential;
+use crate::dijkstra::potentials::cch_lower_upper::customization::CustomizedLowerUpper;
 use crate::dijkstra::potentials::corridor_lowerbound_potential::customization::CustomizedApproximatedPeriodicTTF;
 use crate::dijkstra::potentials::TDPotential;
 use crate::graph::MAX_BUCKETS;
-use rust_road_router::algo::customizable_contraction_hierarchy::CCHT;
+use rust_road_router::algo::customizable_contraction_hierarchy::{DirectedCCH, CCHT};
 use rust_road_router::datastr::graph::time_dependent::Timestamp;
 use rust_road_router::datastr::graph::{EdgeId, EdgeIdT, Graph, LinkIterable, NodeId, NodeIdT, UnweightedFirstOutGraph, Weight, INFINITY};
 use rust_road_router::datastr::timestamped_vector::TimestampedVector;
 use rust_road_router::util::in_range_option::InRangeOption;
 use std::cmp::min;
 
-pub struct CorridorLowerboundPotential<'a, CCH> {
-    customized: &'a CustomizedApproximatedPeriodicTTF<CCH>,
+pub struct CorridorLowerboundPotential<'a> {
+    customized: &'a CustomizedApproximatedPeriodicTTF<DirectedCCH>,
     forward_cch_graph: UnweightedFirstOutGraph<&'a [EdgeId], &'a [NodeId]>,
     forward_cch_weights: &'a Vec<Weight>,
     backward_cch_graph: UnweightedFirstOutGraph<&'a [EdgeId], &'a [NodeId]>,
     backward_cch_weights: &'a Vec<Weight>,
-    forward_potential: BoundedLowerUpperPotential<'a, CCH>,
+    forward_potential: BoundedLowerUpperPotential<'a, DirectedCCH>,
     interval_length: u32,
     context: CorridorLowerboundPotentialContext,
 }
@@ -30,13 +31,13 @@ struct CorridorLowerboundPotentialContext {
     potentials: TimestampedVector<InRangeOption<Weight>>,
 }
 
-impl<'a, CCH: CCHT> CorridorLowerboundPotential<'a, CCH> {
-    pub fn new(customized: &'a CustomizedApproximatedPeriodicTTF<CCH>) -> Self {
+impl<'a> CorridorLowerboundPotential<'a> {
+    pub fn new(customized: &'a CustomizedApproximatedPeriodicTTF<DirectedCCH>) -> Self {
         let (forward_cch_graph, forward_cch_weights, forward_cch_bounds) = customized.forward_graph();
         let (backward_cch_graph, backward_cch_weights, backward_cch_bounds) = customized.backward_graph();
         let n = forward_cch_graph.num_nodes();
 
-        let forward_potential = BoundedLowerUpperPotential::new(&customized.cch, forward_cch_bounds, backward_cch_bounds);
+        let forward_potential = BoundedLowerUpperPotential::new(&customized.cch, forward_cch_bounds.clone(), backward_cch_bounds.clone());
         let interval_length = MAX_BUCKETS / customized.num_intervals;
 
         let context = CorridorLowerboundPotentialContext {
@@ -60,12 +61,47 @@ impl<'a, CCH: CCHT> CorridorLowerboundPotential<'a, CCH> {
         }
     }
 
+    pub fn new_with_separate_bounds(customized_ttf: &'a CustomizedApproximatedPeriodicTTF<DirectedCCH>, customized_bounds: &'a CustomizedLowerUpper) -> Self {
+        // init main pot structs
+        let (forward_cch_graph, forward_cch_weights, _) = customized_ttf.forward_graph();
+        let (backward_cch_graph, backward_cch_weights, _) = customized_ttf.backward_graph();
+
+        let n = customized_ttf.cch.forward_first_out().len() - 1;
+        let interval_length = MAX_BUCKETS / customized_ttf.num_intervals;
+        let context = CorridorLowerboundPotentialContext {
+            num_pot_computations: 0,
+            query_start: 0,
+            target_dist_bounds: None,
+            backward_distances: TimestampedVector::new(n),
+            stack: Vec::new(),
+            potentials: TimestampedVector::new(n),
+        };
+
+        // init corridor pot structs
+        let forward_potential = BoundedLowerUpperPotential::new(&customized_bounds.cch, customized_bounds.upward.clone(), customized_bounds.downward.clone());
+
+        Self {
+            customized: customized_ttf,
+            forward_cch_graph,
+            forward_cch_weights,
+            backward_cch_graph,
+            backward_cch_weights,
+            forward_potential,
+            interval_length,
+            context,
+        }
+    }
+
+    pub fn refresh_bounds(&mut self, customized_bounds: &'a CustomizedLowerUpper) {
+        self.forward_potential = BoundedLowerUpperPotential::new(&customized_bounds.cch, customized_bounds.upward.clone(), customized_bounds.downward.clone());
+    }
+
     pub fn num_pot_computations(&self) -> usize {
         self.context.num_pot_computations
     }
 }
 
-impl<'a, CCH: CCHT> TDPotential for CorridorLowerboundPotential<'a, CCH> {
+impl<'a> TDPotential for CorridorLowerboundPotential<'a> {
     fn init(&mut self, source: u32, target: u32, timestamp: u32) {
         self.context.num_pot_computations = 0;
         self.context.query_start = timestamp;

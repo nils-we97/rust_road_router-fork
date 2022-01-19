@@ -10,6 +10,9 @@ use std::time::{Duration, Instant};
 
 use crate::dijkstra::capacity_dijkstra_ops::CapacityDijkstraOps;
 use crate::dijkstra::model::{CapacityQueryResult, DistanceMeasure, MeasuredCapacityQueryResult, PathResult};
+use crate::dijkstra::potentials::cch_lower_upper::customization::CustomizedLowerUpper;
+use crate::dijkstra::potentials::corridor_lowerbound_potential::CorridorLowerboundPotential;
+use crate::dijkstra::potentials::multi_metric_potential::potential::MultiMetricPotential;
 use crate::dijkstra::potentials::TDPotential;
 use crate::graph::capacity_graph::CapacityGraph;
 use crate::graph::ModifiableWeight;
@@ -53,16 +56,24 @@ impl<Pot: TDPotential> CapacityServer<Pot> {
         self.requires_pot_update = false;
     }
 
-    pub fn update_potential_bounds(&mut self) {
-        self.potential.refresh_bounds(&self.graph);
-    }
-
     pub fn decompose(self) -> (CapacityGraph, Pot) {
         (self.graph, self.potential)
     }
 
     pub fn borrow_graph(&self) -> &CapacityGraph {
         &self.graph
+    }
+}
+
+impl<'a> CapacityServer<MultiMetricPotential<'a>> {
+    pub fn update_potential_bounds(&mut self) {
+        self.potential.refresh_bounds(&self.graph);
+    }
+}
+
+impl<'a> CapacityServer<CorridorLowerboundPotential<'a>> {
+    pub fn update_potential_bounds(&mut self, customized: &'a CustomizedLowerUpper) {
+        self.potential.refresh_bounds(customized);
     }
 }
 
