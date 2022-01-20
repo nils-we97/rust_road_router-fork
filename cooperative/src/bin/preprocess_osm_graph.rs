@@ -1,4 +1,4 @@
-use cooperative::graph::traffic_functions::bpr_traffic_function;
+use cooperative::graph::traffic_functions::BPRTrafficFunction;
 use cooperative::graph::MAX_BUCKETS;
 use cooperative::io::io_graph::load_capacity_graph;
 use cooperative::io::modification::filter_invalid_nodes_and_edges::filter_invalid_nodes_and_edges;

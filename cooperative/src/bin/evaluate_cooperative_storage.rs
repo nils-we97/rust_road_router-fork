@@ -1,6 +1,6 @@
 use cooperative::dijkstra::server::{CapacityServer, CapacityServerOps};
 use cooperative::experiments::queries::permutate_queries;
-use cooperative::graph::traffic_functions::bpr_traffic_function;
+use cooperative::graph::traffic_functions::BPRTrafficFunction;
 use cooperative::io::io_graph::load_capacity_graph;
 use cooperative::io::io_node_order::load_node_order;
 use cooperative::io::io_queries::load_queries;
@@ -55,7 +55,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         .flat_map(|&num_buckets| {
             let mut statistics = Vec::with_capacity(query_breakpoints.len() - 1);
 
-            let graph = load_capacity_graph(graph_path, num_buckets, bpr_traffic_function).unwrap();
+            let graph = load_capacity_graph(graph_path, num_buckets, BPRTrafficFunction::default()).unwrap();
             let mut server = CapacityServer::new_with_potential(graph, cch_pot_data.forward_potential());
             println!("{} buckets - starting queries!", num_buckets);
 

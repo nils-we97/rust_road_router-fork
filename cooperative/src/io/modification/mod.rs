@@ -7,7 +7,6 @@ use std::path::Path;
 
 pub mod extract_scc;
 pub mod filter_invalid_nodes_and_edges;
-pub mod remove_multi_edges;
 
 pub struct CapacityGraphContainer {
     pub first_out: Vec<EdgeId>,

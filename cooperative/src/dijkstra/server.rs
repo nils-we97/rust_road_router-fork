@@ -68,6 +68,7 @@ impl<Pot: TDPotential> CapacityServer<Pot> {
 impl<'a> CapacityServer<MultiMetricPotential<'a>> {
     pub fn update_potential_bounds(&mut self) {
         self.potential.refresh_bounds(&self.graph);
+        self.requires_pot_update = false;
     }
 }
 
@@ -210,7 +211,16 @@ impl<Pot: TDPotential> CapacityServerOps for CapacityServer<Pot> {
 
         let time_query = start.elapsed();
 
-        self.requires_pot_update = !pot.verify_result(result.unwrap_or(INFINITY)) || result.unwrap_or(INFINITY) < pot.potential(from, init).unwrap_or(INFINITY);
+        self.requires_pot_update =
+            !pot.verify_result(result.unwrap_or(INFINITY)) || result.unwrap_or(INFINITY + 1) < pot.potential(from, init).unwrap_or(INFINITY);
+        if self.requires_pot_update {
+            println!(
+                "Result: {}, Potential: {}",
+                result.unwrap_or(INFINITY),
+                pot.potential(from, init).unwrap_or(INFINITY)
+            );
+        }
+
         /*println!(
             "Query results: {}, potential: {}",
             result.unwrap_or(INFINITY),

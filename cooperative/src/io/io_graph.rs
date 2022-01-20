@@ -2,19 +2,16 @@ use std::cmp::max;
 use std::error::Error;
 use std::path::Path;
 
-use rust_road_router::datastr::graph::{Graph, Weight};
+use rust_road_router::datastr::graph::Graph;
 use rust_road_router::io::{Load, Store};
 
 use crate::graph::capacity_graph::CapacityGraph;
-use crate::graph::{Capacity, ExportableCapacity, Velocity};
+use crate::graph::traffic_functions::BPRTrafficFunction;
+use crate::graph::{Capacity, ExportableCapacity};
 use rust_road_router::datastr::graph::time_dependent::Timestamp;
 
 /// Loads and initializes a capacity graph with empty capacity buckets.
-pub fn load_capacity_graph(
-    graph_directory: &Path,
-    num_buckets: u32,
-    traffic_function: fn(Weight, Capacity, Capacity) -> Weight,
-) -> Result<CapacityGraph, Box<dyn Error>> {
+pub fn load_capacity_graph(graph_directory: &Path, num_buckets: u32, traffic_function: BPRTrafficFunction) -> Result<CapacityGraph, Box<dyn Error>> {
     let first_out = Vec::load_from(graph_directory.join("first_out"))?;
     let head = Vec::load_from(graph_directory.join("head"))?;
     let geo_distance = Vec::load_from(graph_directory.join("geo_distance"))?;
@@ -40,10 +37,10 @@ pub fn load_capacity_graph(
 pub fn load_used_capacity_graph(
     graph_directory: &Path,
     num_buckets: u32,
-    speed_function: fn(Velocity, Capacity, Capacity) -> Weight,
+    traffic_function: BPRTrafficFunction,
     bucket_directory_ts: &str,
 ) -> Result<CapacityGraph, Box<dyn Error>> {
-    let mut graph = load_capacity_graph(graph_directory, num_buckets, speed_function)?;
+    let mut graph = load_capacity_graph(graph_directory, num_buckets, traffic_function)?;
 
     let bucket_directory = graph_directory.join("capacities").join(bucket_directory_ts);
 

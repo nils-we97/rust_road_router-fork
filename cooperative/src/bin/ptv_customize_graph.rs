@@ -83,10 +83,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             let output_path = create_output_directory(&graph_directory, output_directory)?;
 
             let num_metrics = parse_arg_optional(&mut remaining_args, 20);
-
-            let (departure, travel_time) = retrieve_departure_and_travel_time(&graph);
-            let (customized_multi_metric, time) =
-                measure(|| CustomizedMultiMetrics::new(&cch, &departure, &travel_time, &balanced_interval_pattern(), num_metrics, false));
+            let (customized_multi_metric, time) = measure(|| CustomizedMultiMetrics::new_from_ptv(&cch, &graph, &balanced_interval_pattern(), num_metrics));
             println!("Complete customization took {} ms", time.as_secs_f64() * 1000.0);
 
             let memory_usage = std::mem::size_of_val(&*customized_multi_metric.upward)
@@ -114,28 +111,6 @@ fn parse_required_args() -> Result<(String, PotentialType, impl Iterator<Item = 
     let potential_type: PotentialType = parse_arg_required(&mut args, "Potential Type")?;
 
     Ok((graph_directory, potential_type, args))
-}
-
-fn retrieve_departure_and_travel_time(graph: &TDGraph) -> (Vec<Vec<Timestamp>>, Vec<Vec<Weight>>) {
-    (0..graph.head().len())
-        .into_iter()
-        .map(|edge_id| {
-            let plf = graph.travel_time_function(edge_id as EdgeId);
-
-            let mut departures = plf.departure().to_vec();
-            let mut travel_times = plf.travel_time().to_vec();
-
-            if departures.is_empty() {
-                departures = vec![0, MAX_BUCKETS];
-                travel_times = vec![0, 0];
-            } else if departures.last().unwrap_or(&0) != &MAX_BUCKETS {
-                departures.push(MAX_BUCKETS);
-                travel_times.push(travel_times.first().unwrap().clone());
-            }
-
-            (departures, travel_times)
-        })
-        .unzip()
 }
 
 fn create_output_directory(base: &Path, output_directory: String) -> Result<PathBuf, Box<dyn Error>> {

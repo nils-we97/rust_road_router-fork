@@ -8,7 +8,7 @@ use cooperative::experiments::queries::population_density_based::{
 use cooperative::experiments::queries::random_geometric::generate_random_geometric_queries;
 use cooperative::experiments::queries::random_uniform::generate_random_uniform_queries;
 use cooperative::experiments::queries::{GraphType, QueryType};
-use cooperative::graph::traffic_functions::bpr_traffic_function;
+use cooperative::graph::traffic_functions::BPRTrafficFunction;
 use cooperative::io::io_coordinates::load_coords;
 use cooperative::io::io_graph::load_capacity_graph;
 use cooperative::io::io_population_grid::load_population_grid;
@@ -42,7 +42,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             OwnedGraph::new(graph.first_out().to_vec(), graph.head().to_vec(), lower_bound)
         }
         GraphType::CAPACITY => {
-            let graph = load_capacity_graph(graph_directory, 1, bpr_traffic_function).unwrap();
+            let graph = load_capacity_graph(graph_directory, 1, BPRTrafficFunction::default()).unwrap();
             OwnedGraph::new(graph.first_out().to_vec(), graph.head().to_vec(), graph.free_flow_time().to_vec())
         }
     };

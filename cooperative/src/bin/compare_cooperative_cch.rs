@@ -2,7 +2,7 @@ use cooperative::dijkstra::potentials::multi_metric_potential::customization::Cu
 use cooperative::dijkstra::potentials::multi_metric_potential::interval_patterns::balanced_interval_pattern;
 use cooperative::dijkstra::potentials::multi_metric_potential::potential::MultiMetricPotential;
 use cooperative::dijkstra::server::{CapacityServer, CapacityServerOps};
-use cooperative::graph::traffic_functions::bpr_traffic_function;
+use cooperative::graph::traffic_functions::BPRTrafficFunction;
 use cooperative::io::io_graph::load_capacity_graph;
 use cooperative::io::io_node_order::load_node_order;
 use cooperative::io::io_queries::load_queries;
@@ -34,7 +34,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let queries = load_queries(&query_path)?;
 
     // init capacity graph for cooperative routing
-    let coop_graph = load_capacity_graph(graph_path, num_buckets, bpr_traffic_function)?;
+    let coop_graph = load_capacity_graph(graph_path, num_buckets, BPRTrafficFunction::default())?;
 
     // init cch
     let first_out = Vec::<u32>::load_from(&graph_path.join("first_out"))?;
@@ -45,14 +45,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     // init multi metrics pot
     let order = load_node_order(&graph_path)?;
     let cch = CCH::fix_order_and_build(&lower_bound, order);
-    let customized = CustomizedMultiMetrics::new(
-        &cch,
-        coop_graph.departure(),
-        coop_graph.travel_time(),
-        &balanced_interval_pattern(),
-        num_pot_metrics as usize,
-        true,
-    );
+    let customized = CustomizedMultiMetrics::new_from_capacity(&cch, &coop_graph, &balanced_interval_pattern(), num_pot_metrics as usize);
     let potential = MultiMetricPotential::new(customized);
 
     // init coop server
@@ -102,7 +95,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 // customize coop server whenever required
                 let mut coop_result = measure(|| server.query(*query, true));
                 while server.requires_pot_update() {
-                    let (customized, time) = measure(|| {
+                    /*let (customized, time) = measure(|| {
                         CustomizedMultiMetrics::new(
                             &cch,
                             server.borrow_graph().departure(),
@@ -112,10 +105,11 @@ fn main() -> Result<(), Box<dyn Error>> {
                             true,
                         )
                     });
-                    cust_time_coop = cust_time_coop.add(time);
-
                     let potential = MultiMetricPotential::new(customized);
-                    server.update_potential(potential);
+                    server.update_potential(potential);*/
+
+                    let (_, time) = measure(|| server.update_potential_bounds());
+                    cust_time_coop = cust_time_coop.add(time);
 
                     coop_result = measure(|| server.query(*query, true));
                 }

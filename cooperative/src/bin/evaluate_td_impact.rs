@@ -4,7 +4,7 @@ use std::error::Error;
 use cooperative::dijkstra::potentials::init_cch_potential::init_cch_potential;
 use cooperative::dijkstra::potentials::TDPotential;
 use cooperative::dijkstra::server::{CapacityServer, CapacityServerOps};
-use cooperative::graph::traffic_functions::bpr_traffic_function;
+use cooperative::graph::traffic_functions::BPRTrafficFunction;
 use cooperative::io::io_graph::load_capacity_graph;
 use cooperative::io::io_node_order::load_node_order;
 use cooperative::io::io_queries::load_queries;
@@ -33,7 +33,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let query_path = path.join("queries").join(query_directory);
     let queries = load_queries(&query_path)?;
 
-    let graph = load_capacity_graph(&path, 600, bpr_traffic_function).unwrap();
+    let graph = load_capacity_graph(&path, 600, BPRTrafficFunction::default()).unwrap();
 
     // init cch potential
     let order = load_node_order(&path)?;
@@ -45,7 +45,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let path_results: Vec<(Option<CapacityServer<BorrowedCCHPot>>, Vec<(Vec<EdgeId>, Timestamp)>)> = bucket_sizes
         .par_iter()
         .map(|&num_buckets| {
-            let td_graph = load_capacity_graph(&path, num_buckets, bpr_traffic_function).unwrap();
+            let td_graph = load_capacity_graph(&path, num_buckets, BPRTrafficFunction::default()).unwrap();
             let mut server = CapacityServer::new_with_potential(td_graph, cch_pot_data.forward_potential());
             let results = get_query_paths(&mut server, &queries, num_buckets);
 

@@ -2,7 +2,7 @@ use std::cmp::max;
 
 use cooperative::dijkstra::elimination_tree::multi_level_buckets::bucket_tree::BucketTreeEntry;
 use cooperative::graph::capacity_graph::CapacityGraph;
-use cooperative::graph::traffic_functions::bpr_traffic_function;
+use cooperative::graph::traffic_functions::BPRTrafficFunction;
 use cooperative::graph::{Capacity, MAX_BUCKETS};
 use rust_road_router::datastr::graph::{NodeId, Weight};
 
@@ -52,7 +52,15 @@ pub fn create_graph(num_buckets: u32, mut edges: Vec<CapacityEdge>) -> CapacityG
     });
 
     degree.iter().for_each(|&deg| first_out.push(*first_out.last().unwrap() + deg));
-    CapacityGraph::new(num_buckets, first_out, head, distance, freeflow_time, max_capacity, bpr_traffic_function)
+    CapacityGraph::new(
+        num_buckets,
+        first_out,
+        head,
+        distance,
+        freeflow_time,
+        max_capacity,
+        BPRTrafficFunction::default(),
+    )
 }
 
 #[test]
