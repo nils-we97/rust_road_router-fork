@@ -5,6 +5,7 @@ use crate::graph::edge_buckets::CapacityBuckets;
 use crate::graph::traffic_functions::BPRTrafficFunction;
 use crate::graph::{Capacity, ExportableCapacity, ModifiableWeight, MAX_BUCKETS};
 use conversion::speed_profile_to_tt_profile;
+use std::cmp::{max, min};
 
 /// Structure of a time-dependent graph with capacity buckets for each edge
 /// After each query, the capacities of all edges on the shortest path get modified
@@ -68,19 +69,31 @@ impl CapacityGraph {
             })
             .collect::<Vec<Capacity>>();
 
-        // adjust initial free-flow time
-        let free_flow_travel_time = free_flow_travel_time
-            .iter()
-            .enumerate()
-            .map(|(idx, &val)| if max_capacity[idx] > 0 { val } else { INFINITY })
+        // initialize free-flow speed
+        // fallback to speed 1 if capacity or time are invalid
+        let free_flow_speed_kmh = (0..head.len())
+            .into_iter()
+            .map(|idx| {
+                if free_flow_travel_time[idx] == 1 || free_flow_travel_time[idx] >= INFINITY || max_capacity[idx] == 0 {
+                    1
+                } else {
+                    (3600 * distance[idx]) / free_flow_travel_time[idx]
+                }
+            })
             .collect::<Vec<Weight>>();
 
-        // initialize free-flow speed
-        let free_flow_speed_kmh = distance
-            .iter()
-            .zip(free_flow_travel_time.iter())
-            .map(|(&dist_m, &time_ms)| if time_ms == 1 || time_ms == INFINITY { 1 } else { (3600 * dist_m) / time_ms })
-            .collect::<Vec<Weight>>();
+        let free_flow_travel_time = (0..head.len())
+            .into_iter()
+            .map(|idx| {
+                if free_flow_travel_time[idx] >= INFINITY || max_capacity[idx] == 0 {
+                    INFINITY
+                } else if free_flow_travel_time[idx] == 1 {
+                    1
+                } else {
+                    3600 * distance[idx] / free_flow_speed_kmh[idx]
+                }
+            })
+            .collect::<Vec<u32>>();
 
         assert!(!free_flow_travel_time.iter().any(|&x| x > INFINITY));
 
@@ -210,12 +223,19 @@ impl CapacityGraph {
 
     fn rebuild_travel_time_profile(&mut self, edge_id: usize) {
         if self.max_capacity[edge_id] == 0 {
-            self.departure[edge_id] = vec![0, MAX_BUCKETS];
-            self.travel_time[edge_id] = vec![INFINITY, INFINITY];
-        } else if !self.used_capacity[edge_id].is_used() {
-            self.departure[edge_id] = vec![0, MAX_BUCKETS];
-            self.travel_time[edge_id] = vec![self.free_flow_travel_time[edge_id], self.free_flow_travel_time[edge_id]];
+            // zero-capacity edges must not be traversed at all!
+            debug_assert_eq!(self.departure[edge_id].len(), 2);
+            debug_assert_eq!(min(self.travel_time[edge_id][0], self.travel_time[edge_id][1]), INFINITY);
+        } else if !self.used_capacity[edge_id].is_used() || self.free_flow_travel_time[edge_id] < 100 {
+            // unused edges can be kept at their free-flow time
+            // dummy edges with extremely short distances (e.g. at junctions) won't be penalized either
+            debug_assert_eq!(self.departure[edge_id].len(), 2);
+            debug_assert_eq!(
+                max(self.travel_time[edge_id][0], self.travel_time[edge_id][1]),
+                self.free_flow_travel_time[edge_id]
+            );
         } else if self.num_buckets == 1 {
+            // special-case treatment for single-bucket graphs -> updating the capacities and ttf is straightforward
             let travel_time = self.traffic_function.travel_time(
                 self.free_flow_travel_time[edge_id],
                 self.max_capacity[edge_id],
@@ -224,8 +244,6 @@ impl CapacityGraph {
 
             self.departure[edge_id] = vec![0, MAX_BUCKETS];
             self.travel_time[edge_id] = vec![travel_time, travel_time];
-        } else if self.free_flow_travel_time[edge_id] < 1000 {
-            debug_assert_eq!(self.free_flow_travel_time[edge_id], 1);
         } else {
             let free_flow_speed = self.free_flow_speed_kmh[edge_id];
             let max_capacity = self.max_capacity[edge_id];
@@ -251,24 +269,23 @@ impl CapacityGraph {
             for i in start_index..used_capacities.len() {
                 let (current_ts, current_val) = used_capacities[i];
                 let current_speed = self.traffic_function.speed(free_flow_speed, max_capacity, current_val);
-                let (last_ts, last_speed) = *speeds.last().unwrap();
+                let (last_ts, _last_speed) = *speeds.last().unwrap();
 
-                // only add the current entry if its speed differs from the last entry
-                if current_speed != last_speed {
-                    // check if we have to prepend a free flow entry
-                    if current_ts - last_ts > bucket_size {
-                        speeds.push((last_ts + bucket_size, free_flow_speed));
-                    }
-
-                    speeds.push((current_ts, current_speed));
+                // check if we have to prepend a free flow entry
+                if current_ts - last_ts > bucket_size {
+                    speeds.push((last_ts + bucket_size, free_flow_speed));
                 }
+
+                speeds.push((current_ts, current_speed));
             }
 
             // special case treatment for last entry: check if we have to prepend an entry, then add sentinel
-            let (last_ts, last_speed) = *speeds.last().unwrap();
+            let (last_ts, _last_speed) = *speeds.last().unwrap();
             let (_, first_speed) = speeds[0];
 
-            if last_speed != first_speed && last_ts + bucket_size < MAX_BUCKETS {
+            if
+            /*last_speed != first_speed &&*/
+            last_ts + bucket_size < MAX_BUCKETS {
                 speeds.push((last_ts + bucket_size, free_flow_speed));
             }
             speeds.push((MAX_BUCKETS, first_speed));
@@ -276,8 +293,6 @@ impl CapacityGraph {
             // convert speed to tt profile
             let (departure, travel_time) = speed_profile_to_tt_profile(&speeds, self.distance[edge_id]).iter().cloned().unzip();
             self.departure[edge_id] = departure;
-            //println!("TT was: {:?}, now {:?}", &self.travel_time[edge_id], &travel_time);
-
             self.travel_time[edge_id] = travel_time;
         }
     }
@@ -299,23 +314,12 @@ impl ModifiableWeight for CapacityGraph {
                 };
 
                 self.used_capacity[edge_id] = CapacityBuckets::Used(vec![(0, prev_capacity + 1)]);
-
-                // no adjustment on departures needed (they will remain constant!)
-                // travel time profile update is straightforward
-                let travel_time = self
-                    .traffic_function
-                    .travel_time(self.free_flow_travel_time[edge_id], self.max_capacity[edge_id], prev_capacity + 1);
-                debug_assert!(self.travel_time[edge_id][0] <= travel_time);
-                self.travel_time[edge_id][0] = travel_time;
-                self.travel_time[edge_id][1] = travel_time;
             } else {
-                // find suitable bucket in which to insert
+                // find suitable bucket in which to insert, then update capacity
                 let ts_rounded = self.round_timestamp(timestamp);
-
-                // update capacity, rebuild function
                 self.used_capacity[edge_id].increment(ts_rounded);
-                self.rebuild_travel_time_profile(edge_id);
             }
+            self.rebuild_travel_time_profile(edge_id);
         });
     }
 

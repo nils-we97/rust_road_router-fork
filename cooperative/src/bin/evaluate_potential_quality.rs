@@ -248,17 +248,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                                 println!("--------------------------\n\n");
 
                                 if last_update_step == current_idx {
-                                    let reinit_start = Instant::now();
-                                    let customized = CustomizedMultiMetrics::new_from_capacity(
-                                        &cch,
-                                        server.borrow_graph(),
-                                        &balanced_interval_pattern(),
-                                        mm_num_metrics as usize,
-                                    );
-
-                                    let potential = MultiMetricPotential::new(customized);
-                                    server.update_potential(potential);
-                                    total_time_reinit = total_time_reinit.add(reinit_start.elapsed());
+                                    panic!("Failed twice in the same step! Query: {:?}", &queries[current_idx as usize]);
                                 } else {
                                     let (_, time) = measure(|| server.update_potential_bounds());
                                     total_time_reinit = total_time_reinit.add(time);
