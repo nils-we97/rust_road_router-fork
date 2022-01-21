@@ -31,12 +31,7 @@ impl<'a> CustomizedMultiMetrics<'a> {
     pub fn new_from_capacity(cch: &'a CCH, graph: &CapacityGraph, intervals: &Vec<(Timestamp, Timestamp)>, num_max_metrics: usize) -> Self {
         debug_assert!(!intervals.is_empty(), "Intervals must not be empty!");
 
-        // build metrics
-        let metric_entries = build_metric_entries(intervals);
-        let (metrics, time) = measure(|| extract_metrics(graph.departure(), graph.travel_time(), &metric_entries, Some(MAX_BUCKETS / graph.num_buckets())));
-        println!("Extracting all metrics took {} ms", time.as_secs_f64() * 1000.0);
-
-        Self::new(cch, metric_entries, metrics, num_max_metrics, true)
+        Self::new(cch, graph.departure(), graph.travel_time(), intervals, num_max_metrics, true)
     }
 
     pub fn new_from_ptv(cch: &'a CCH, graph: &TDGraph, intervals: &Vec<(Timestamp, Timestamp)>, num_max_metrics: usize) -> Self {
@@ -48,34 +43,43 @@ impl<'a> CustomizedMultiMetrics<'a> {
             .map(|edge_id| {
                 let plf = graph.travel_time_function(edge_id as EdgeId);
 
-                let mut departures = plf.departure().to_vec();
-                let mut travel_times = plf.travel_time().to_vec();
+                let mut departure = plf.departure().to_vec();
+                let mut travel_time = plf.travel_time().to_vec();
 
-                if departures.is_empty() {
-                    departures = vec![0, MAX_BUCKETS];
-                    travel_times = vec![0, 0];
-                } else if departures.last().unwrap_or(&0) != &MAX_BUCKETS {
-                    departures.push(MAX_BUCKETS);
-                    travel_times.push(travel_times.first().unwrap().clone());
+                if departure.is_empty() {
+                    departure = vec![0, MAX_BUCKETS];
+                    travel_time = vec![0, 0];
+                } else if departure.last().unwrap_or(&0) != &MAX_BUCKETS {
+                    departure.push(MAX_BUCKETS);
+                    travel_time.push(*travel_time.first().unwrap());
                 }
 
-                (departures, travel_times)
+                (departure, travel_time)
             })
             .unzip();
 
-        // build metrics
-        let metric_entries = build_metric_entries(intervals);
-        let (metrics, time) = measure(|| extract_metrics(&departures, &travel_times, &metric_entries, None));
-        println!("Extracting all metrics took {} ms", time.as_secs_f64() * 1000.0);
-
-        Self::new(cch, metric_entries, metrics, num_max_metrics, false)
+        Self::new(cch, &departures, &travel_times, intervals, num_max_metrics, false)
     }
 
-    fn new(cch: &'a CCH, mut metric_entries: Vec<MetricEntry>, mut metrics: Vec<Vec<Weight>>, num_max_metrics: usize, cooperative: bool) -> Self {
+    fn new(
+        cch: &'a CCH,
+        departures: &Vec<Vec<Timestamp>>,
+        travel_times: &Vec<Vec<Weight>>,
+        intervals: &Vec<(Timestamp, Timestamp)>,
+        num_max_metrics: usize,
+        cooperative: bool,
+    ) -> Self {
         assert!(num_max_metrics >= 1, "At least one metric (lowerbound) must be kept!");
         let m = cch.num_arcs();
 
-        // 1. reduce the number of metrics by merging similar intervals
+        // 1. build metrics
+        let mut metric_entries = build_metric_entries(intervals);
+
+        // 2. extract metrics
+        let (mut metrics, time) = measure(|| extract_metrics(departures, travel_times, &metric_entries));
+        println!("Extracting all metrics took {} ms", time.as_secs_f64() * 1000.0);
+
+        // 3. reduce the number of metrics by merging similar intervals
         let (num_metrics, time) = measure(|| reduce_metrics(&mut metrics, &mut metric_entries, num_max_metrics));
         println!("Reducing to {} metrics took {} ms", num_metrics, time.as_secs_f64() * 1000.0);
 
@@ -83,13 +87,13 @@ impl<'a> CustomizedMultiMetrics<'a> {
         let mut upward_weights = vec![vec![INFINITY; num_metrics]; m];
         let mut downward_weights = vec![vec![INFINITY; num_metrics]; m];
 
-        // 2. initialize upward and downward weights with correct lower/upper bound
+        // 4. initialize upward and downward weights with correct lower/upper bound
         prepare_weights(cch, &mut upward_weights, &mut downward_weights, &metrics);
 
-        // 3. run basic customization
+        // 5. run basic customization
         customize_basic(cch, &mut upward_weights, &mut downward_weights);
 
-        // 4. reorder weights, scale upper bounds graceful for cooperative graphs
+        // 6. reorder weights, scale upper bounds graceful for cooperative graphs
         let upward_weights = reorder_weights(&upward_weights, num_metrics, cooperative);
         let downward_weights = reorder_weights(&downward_weights, num_metrics, cooperative);
 
@@ -166,12 +170,7 @@ fn reorder_weights(weights: &Vec<Vec<Weight>>, num_metrics: usize, scale_upper_b
     ret
 }
 
-fn extract_metrics(
-    departures: &Vec<Vec<Timestamp>>,
-    travel_times: &Vec<Vec<Weight>>,
-    entries: &Vec<MetricEntry>,
-    coop_bucket_size: Option<u32>,
-) -> Vec<Vec<Weight>> {
+fn extract_metrics(departures: &Vec<Vec<Timestamp>>, travel_times: &Vec<Vec<Weight>>, entries: &Vec<MetricEntry>) -> Vec<Vec<Weight>> {
     let mut metrics = vec![vec![INFINITY; entries.len() + 2]; departures.len()];
 
     // collect the metrics edge by edge; this layout is also needed by the customization step
@@ -196,30 +195,12 @@ fn extract_metrics(
         // -> interpolate in order to consider otherwise missing entries!
         let plf = PiecewiseLinearFunction::new(&departures[edge_id], &travel_times[edge_id]);
 
-        // use a different approach for cooperative graphs
-        if let Some(bucket_size) = coop_bucket_size {
-            entries.iter().for_each(|entry| {
-                let plf_at_begin = if entry.start % bucket_size == 0 {
-                    plf.eval(entry.start)
-                } else {
-                    plf.eval((entry.start / bucket_size) * bucket_size)
-                };
-                let plf_at_end = if entry.end % bucket_size == 0 {
-                    plf.eval(entry.end)
-                } else {
-                    plf.eval((entry.end / bucket_size) * (bucket_size + 1))
-                };
+        entries.iter().for_each(|entry| {
+            let plf_at_begin = plf.eval(entry.start);
+            let plf_at_end = plf.eval(entry.end);
 
-                edge_metrics[entry.metric_id] = min(edge_metrics[entry.metric_id], min(plf_at_begin, plf_at_end));
-            });
-        } else {
-            entries.iter().for_each(|entry| {
-                let plf_at_begin = plf.eval(entry.start);
-                let plf_at_end = plf.eval(entry.end);
-
-                edge_metrics[entry.metric_id] = min(edge_metrics[entry.metric_id], min(plf_at_begin, plf_at_end));
-            });
-        }
+            edge_metrics[entry.metric_id] = min(edge_metrics[entry.metric_id], min(plf_at_begin, plf_at_end));
+        });
     });
 
     metrics

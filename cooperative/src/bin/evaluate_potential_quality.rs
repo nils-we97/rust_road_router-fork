@@ -96,6 +96,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             let mut time_potential = Duration::ZERO;
             let mut time_update = Duration::ZERO;
             let mut sum_dist = 0;
+            let mut num_runs = 0;
 
             let mut statistics = Vec::new();
 
@@ -117,6 +118,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                                 &mut time_query,
                                 &mut time_update,
                                 &mut sum_dist,
+                                &mut num_runs,
                                 &mut total_time_potential,
                                 &mut total_time_query,
                                 &mut total_time_update,
@@ -222,6 +224,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                                 &mut time_query,
                                 &mut time_update,
                                 &mut sum_dist,
+                                &mut num_runs,
                                 &mut total_time_potential,
                                 &mut total_time_query,
                                 &mut total_time_update,
@@ -290,6 +293,7 @@ fn execute_query<Pot: TDPotential>(
     time_query: &mut Duration,
     time_update: &mut Duration,
     sum_dist: &mut u64,
+    num_runs: &mut u64,
     total_time_potential: &mut Duration,
     total_time_query: &mut Duration,
     total_time_update: &mut Duration,
@@ -298,7 +302,11 @@ fn execute_query<Pot: TDPotential>(
     *time_potential = time_potential.add(query_result.distance_result.time_potential);
     *time_query = time_query.add(query_result.distance_result.time_query);
     *time_update = time_update.add(query_result.update_time);
-    *sum_dist += query_result.query_result.map(|x| x.distance).unwrap_or(0) as u64;
+
+    if let Some(distance) = query_result.query_result.map(|r| r.distance) {
+        *sum_dist += distance as u64;
+        *num_runs += 1;
+    }
 
     *total_time_query = total_time_query.add(query_result.distance_result.time_query);
     *total_time_potential = total_time_potential.add(query_result.distance_result.time_potential);
@@ -306,19 +314,21 @@ fn execute_query<Pot: TDPotential>(
 
     if (idx + 1) % 1000 == 0 {
         println!(
-            "{}: Finished {} queries. Last step: {}s pot init, {}s query, {}s ttf update - avg dist: {}",
+            "{}: Finished {} queries. Last step: {}s pot init, {}s query, {}s ttf update - avg dist: {}, {} valid runs",
             name,
             idx + 1,
             time_potential.as_secs_f64(),
             time_query.as_secs_f64(),
             time_update.as_secs_f64(),
-            *sum_dist / 1000
+            *sum_dist / *num_runs,
+            *num_runs
         );
 
         *time_potential = Duration::ZERO;
         *time_query = Duration::ZERO;
         *time_update = Duration::ZERO;
         *sum_dist = 0;
+        *num_runs = 0;
     }
 }
 
