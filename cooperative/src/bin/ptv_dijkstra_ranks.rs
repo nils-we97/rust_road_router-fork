@@ -107,7 +107,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     drop(graph);
 
     let file_name = format!("{}.csv", output_name);
-    write_results(&query_results, &path.join("queries").join(file_name))
+    write_results(&query_results, &query_path.join(&file_name))
 }
 
 fn execute_queries<Customized>(

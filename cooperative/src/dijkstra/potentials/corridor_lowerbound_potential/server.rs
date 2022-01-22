@@ -6,6 +6,7 @@ use crate::dijkstra::potentials::TDPotential;
 use crate::dijkstra::server::CapacityServerOps;
 use crate::graph::capacity_graph::CapacityGraph;
 use crate::graph::ModifiableWeight;
+use rust_road_router::algo::customizable_contraction_hierarchy::CCH;
 use rust_road_router::algo::dijkstra::{DijkstraData, DijkstraOps, Label, State};
 use rust_road_router::algo::{GenQuery, TDQuery};
 use rust_road_router::datastr::graph::time_dependent::Timestamp;
@@ -51,8 +52,8 @@ impl CorridorLowerboundPotentialServer {
         self.requires_pot_update = false;
     }
 
-    pub fn customize_upper_bound(&mut self) {
-        // todo add upper bound update
+    pub fn customize_upper_bound(&mut self, cch: &CCH) {
+        self.customized.customize_upper_bound(cch, &self.graph);
         self.requires_pot_update = false;
     }
 }
@@ -123,7 +124,7 @@ impl CapacityServerOps for CorridorLowerboundPotentialServer {
         // for now, a slight modification of the generic dijkstra code should suffice
 
         // prepro: initialize potential
-        let mut pot = CorridorLowerboundPotential::prepare(self.customized.borrow_mut());
+        let mut pot = CorridorLowerboundPotential::prepare_capacity(self.customized.borrow_mut());
         let (_, time_potential) = measure(|| pot.init(from, to, query.departure));
 
         let start = Instant::now();

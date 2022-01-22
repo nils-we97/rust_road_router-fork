@@ -180,7 +180,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                                 if last_update_step == current_idx {
                                     panic!("Failed twice in the same step! Query: {:?}", &queries[current_idx as usize]);
                                 } else {
-                                    let (_, time) = measure(|| server.customize_upper_bound());
+                                    let (_, time) = measure(|| server.customize_upper_bound(&cch));
                                     total_time_reinit = total_time_reinit.add(time);
                                 }
 

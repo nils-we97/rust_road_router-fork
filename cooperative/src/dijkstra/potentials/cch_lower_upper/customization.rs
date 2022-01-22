@@ -76,11 +76,6 @@ impl CustomizedLowerUpper {
             &self.downward,
         )
     }
-
-    pub fn scale_upper_bounds(&mut self) {
-        self.upward.iter_mut().for_each(|(_, upper)| *upper *= 2);
-        self.downward.iter_mut().for_each(|(_, upper)| *upper *= 2);
-    }
 }
 
 // subroutines

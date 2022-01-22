@@ -145,7 +145,7 @@ impl PTVQueryServer<CustomizedMultiMetrics> {
 
 impl PTVQueryServer<CustomizedCorridorLowerbound> {
     pub fn query(&mut self, query: &TDQuery<Timestamp>) -> PTVQueryResult {
-        let mut pot = CorridorLowerboundPotential::prepare(&mut self.customized);
+        let mut pot = CorridorLowerboundPotential::prepare_ptv(&mut self.customized);
         Self::query_internal(&self.graph, &mut self.dijkstra, query, &mut pot, &mut self.sum_potentials)
     }
 }

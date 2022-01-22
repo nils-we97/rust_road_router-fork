@@ -1,4 +1,5 @@
 use crate::dijkstra::potentials::cch_lower_upper::bounded_potential::BoundedLowerUpperPotentialContext;
+use crate::dijkstra::potentials::cch_lower_upper::customization::CustomizedLowerUpper;
 use crate::dijkstra::potentials::corridor_lowerbound_potential::customization_catchup::customize_td_graph;
 use crate::dijkstra::potentials::corridor_lowerbound_potential::shortcut::ShortcutWrapper;
 use crate::dijkstra::potentials::corridor_lowerbound_potential::CorridorLowerboundPotentialContext;
@@ -12,6 +13,7 @@ use rust_road_router::datastr::graph::{
 use rust_road_router::report::measure;
 use scoped_tls::scoped_thread_local;
 use std::cell::RefCell;
+use std::cmp::min;
 
 // One mapping of node id to weight for each thread during the scope of the customization.
 scoped_thread_local!(static UPWARD_WORKSPACE: RefCell<Vec<Vec<TTFPoint>>>);
@@ -26,6 +28,7 @@ pub struct CustomizedCorridorLowerbound {
     pub num_intervals: u32,
     pub potential_context: CorridorLowerboundPotentialContext,
     pub corridor_context: BoundedLowerUpperPotentialContext,
+    pub customized_bounds: Option<CustomizedLowerUpper>,
 }
 
 impl CustomizedCorridorLowerbound {
@@ -50,7 +53,9 @@ impl CustomizedCorridorLowerbound {
 
         let td_graph = TDGraph::new(graph.first_out().to_vec(), graph.head().to_vec(), first_ipp_of_arc, departure, travel_time);
 
-        Self::run_customization(cch, &td_graph, num_intervals)
+        let mut ret = Self::run_customization(cch, &td_graph, num_intervals);
+        ret.customize_upper_bound(cch, graph);
+        ret
     }
 
     pub fn new_from_ptv(cch: &CCH, graph: &TDGraph, num_intervals: u32) -> Self {
@@ -102,7 +107,18 @@ impl CustomizedCorridorLowerbound {
             num_intervals,
             potential_context: CorridorLowerboundPotentialContext::new(num_nodes),
             corridor_context: BoundedLowerUpperPotentialContext::new(num_nodes),
+            customized_bounds: None,
         }
+    }
+
+    pub fn customize_upper_bound(&mut self, cch: &CCH, graph: &CapacityGraph) {
+        let mut customized = CustomizedLowerUpper::new(cch, graph.travel_time());
+
+        // scale upper bound
+        customized.upward.iter_mut().for_each(|(_, upper)| *upper = min(INFINITY, (*upper / 2) * 3));
+        customized.downward.iter_mut().for_each(|(_, upper)| *upper = min(INFINITY, (*upper / 2) * 3));
+
+        self.customized_bounds = Some(customized);
     }
 
     pub fn forward_graph(&self) -> (UnweightedFirstOutGraph<&[EdgeId], &[NodeId]>, &Vec<u32>, &Vec<(u32, u32)>) {

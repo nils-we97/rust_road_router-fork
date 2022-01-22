@@ -47,7 +47,33 @@ pub struct CorridorLowerboundPotential<'a> {
 }
 
 impl<'a> CorridorLowerboundPotential<'a> {
-    pub fn prepare(customized: &'a mut CustomizedCorridorLowerbound) -> Self {
+    pub fn prepare_capacity(customized: &'a mut CustomizedCorridorLowerbound) -> Self {
+        let forward_cch_graph = UnweightedFirstOutGraph::new(customized.cch.borrow().forward_first_out(), customized.cch.borrow().forward_head());
+        let backward_cch_graph = UnweightedFirstOutGraph::new(customized.cch.borrow().backward_first_out(), customized.cch.borrow().backward_head());
+
+        let customized_bounds = customized.customized_bounds.as_ref().unwrap();
+
+        let forward_potential = BoundedLowerUpperPotential::prepare(
+            &customized_bounds.cch,
+            &customized_bounds.upward,
+            &customized_bounds.downward,
+            &mut customized.corridor_context,
+        );
+
+        Self {
+            cch: &customized.cch,
+            forward_cch_graph,
+            forward_cch_weights: &customized.upward_intervals,
+            backward_cch_graph,
+            backward_cch_weights: &customized.downward_intervals,
+            forward_potential,
+            interval_length: MAX_BUCKETS / customized.num_intervals,
+            num_intervals: customized.num_intervals,
+            context: &mut customized.potential_context,
+        }
+    }
+
+    pub fn prepare_ptv(customized: &'a mut CustomizedCorridorLowerbound) -> Self {
         let forward_cch_graph = UnweightedFirstOutGraph::new(customized.cch.borrow().forward_first_out(), customized.cch.borrow().forward_head());
         let backward_cch_graph = UnweightedFirstOutGraph::new(customized.cch.borrow().backward_first_out(), customized.cch.borrow().backward_head());
 
@@ -70,75 +96,6 @@ impl<'a> CorridorLowerboundPotential<'a> {
             context: &mut customized.potential_context,
         }
     }
-
-    pub fn prepare_ptv(customized: &'a mut CustomizedCorridorLowerbound) -> Self {
-        // todo for ptv graphs, we use the same cch structure
-        Self::prepare(customized)
-    }
-
-    /*pub fn new(customized: &'a CustomizedCorridorLowerbound) -> Self {
-        let (forward_cch_graph, forward_cch_weights, forward_cch_bounds) = customized.forward_graph();
-        let (backward_cch_graph, backward_cch_weights, backward_cch_bounds) = customized.backward_graph();
-        let n = forward_cch_graph.num_nodes();
-
-        let forward_potential = BoundedLowerUpperPotential::new(&customized.cch, forward_cch_bounds.clone(), backward_cch_bounds.clone());
-        let interval_length = MAX_BUCKETS / customized.num_intervals;
-
-        let context = CorridorLowerboundPotentialContext {
-            num_pot_computations: 0,
-            query_start: 0,
-            target_dist_bounds: None,
-            backward_distances: TimestampedVector::new(n),
-            stack: Vec::new(),
-            potentials: TimestampedVector::new(n),
-        };
-
-        Self {
-            customized,
-            forward_cch_graph,
-            forward_cch_weights,
-            backward_cch_graph,
-            backward_cch_weights,
-            forward_potential,
-            interval_length,
-            context,
-        }
-    }*/
-
-    /*pub fn new_with_separate_bounds(customized_ttf: &'a CustomizedCorridorLowerbound<DirectedCCH>, customized_bounds: &'a CustomizedLowerUpper) -> Self {
-        // init main pot structs
-        let (forward_cch_graph, forward_cch_weights, _) = customized_ttf.forward_graph();
-        let (backward_cch_graph, backward_cch_weights, _) = customized_ttf.backward_graph();
-
-        let n = customized_ttf.cch.forward_first_out().len() - 1;
-        let interval_length = MAX_BUCKETS / customized_ttf.num_intervals;
-        let context = CorridorLowerboundPotentialContext {
-            num_pot_computations: 0,
-            query_start: 0,
-            target_dist_bounds: None,
-            backward_distances: TimestampedVector::new(n),
-            stack: Vec::new(),
-            potentials: TimestampedVector::new(n),
-        };
-
-        // init corridor pot structs
-        let forward_potential = BoundedLowerUpperPotential::new(&customized_bounds.cch, customized_bounds.upward.clone(), customized_bounds.downward.clone());
-
-        Self {
-            customized: customized_ttf,
-            forward_cch_graph,
-            forward_cch_weights,
-            backward_cch_graph,
-            backward_cch_weights,
-            forward_potential,
-            interval_length,
-            context,
-        }
-    }
-
-    pub fn refresh_bounds(&mut self, customized_bounds: &'a CustomizedLowerUpper) {
-        self.forward_potential = BoundedLowerUpperPotential::new(&customized_bounds.cch, customized_bounds.upward.clone(), customized_bounds.downward.clone());
-    }*/
 
     pub fn num_pot_computations(&self) -> usize {
         self.context.num_pot_computations

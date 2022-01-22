@@ -53,6 +53,7 @@ pub fn load_interval_minima(directory: &Path) -> Result<CustomizedCorridorLowerb
         num_intervals,
         potential_context: CorridorLowerboundPotentialContext::new(num_nodes),
         corridor_context: BoundedLowerUpperPotentialContext::new(num_nodes),
+        customized_bounds: None,
     })
 }
 
