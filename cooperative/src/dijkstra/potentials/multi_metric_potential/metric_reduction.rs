@@ -1,11 +1,10 @@
-use std::cmp::Ordering;
+use std::cmp::{min, Ordering};
 use std::time::Instant;
 
 use rayon::prelude::*;
 use rust_road_router::datastr::graph::time_dependent::Timestamp;
 use rust_road_router::datastr::graph::Weight;
 
-use crate::dijkstra::potentials::multi_level_bucket_potential::bucket_tree::{evaluate_metric_differences, merge_metrics};
 use rust_road_router::datastr::index_heap::{IndexdMinHeap, Indexing};
 use rust_road_router::datastr::rank_select_map::{BitVec, RankSelectMap};
 
@@ -247,4 +246,41 @@ pub fn reduce_metrics(data: &mut Vec<Vec<Weight>>, entries: &mut Vec<MetricEntry
 
     // number of remaining metrics: all those who haven't been deactivated
     metric_deactivated.iter().filter(|&&v| !v).count()
+}
+
+/// merge metric `metric_idx` with `other_metric_idx`, i.e. take the minimum and store it on `metric_idx`
+fn merge_metrics(metrics: &mut Vec<Vec<Weight>>, metric_idx: usize, other_metric_idx: usize) {
+    metrics
+        .iter_mut()
+        .for_each(|edge_metrics| edge_metrics[metric_idx] = min(edge_metrics[metric_idx], edge_metrics[other_metric_idx]));
+}
+
+fn evaluate_metric_differences(metrics: &Vec<Vec<Weight>>, metric1: usize, metric2: usize, use_parallel_iter: bool) -> u64 {
+    if use_parallel_iter {
+        metrics
+            .par_iter()
+            .map(|edge_metrics: &Vec<u32>| {
+                let abs_diff = if edge_metrics[metric1] < edge_metrics[metric2] {
+                    edge_metrics[metric2] - edge_metrics[metric1]
+                } else {
+                    edge_metrics[metric1] - edge_metrics[metric2]
+                };
+
+                (abs_diff as u64 / 500).pow(2)
+            })
+            .sum()
+    } else {
+        metrics
+            .iter()
+            .map(|edge_metrics| {
+                let abs_diff = if edge_metrics[metric1] < edge_metrics[metric2] {
+                    edge_metrics[metric2] - edge_metrics[metric1]
+                } else {
+                    edge_metrics[metric1] - edge_metrics[metric2]
+                };
+
+                (abs_diff as u64 / 500).pow(2)
+            })
+            .sum()
+    }
 }

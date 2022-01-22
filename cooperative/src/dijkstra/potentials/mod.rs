@@ -2,15 +2,11 @@ use rust_road_router::algo::a_star::Potential;
 use rust_road_router::datastr::graph::time_dependent::Timestamp;
 use rust_road_router::datastr::graph::{NodeId, Weight};
 
-pub mod backward_profile;
 pub mod cch_lower_upper;
 pub mod cch_parallelization_util;
 pub mod corridor_lowerbound_potential;
-pub mod directed_partial_backward_profile;
 pub mod init_cch_potential;
-pub mod multi_level_bucket_potential;
 pub mod multi_metric_potential;
-pub mod partial_backward_profile;
 
 pub trait TDPotential {
     fn init(&mut self, source: NodeId, target: NodeId, timestamp: Timestamp);
