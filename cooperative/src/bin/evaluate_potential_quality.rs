@@ -1,6 +1,5 @@
-use cooperative::dijkstra::potentials::cch_lower_upper::customization::CustomizedLowerUpper;
 use cooperative::dijkstra::potentials::corridor_lowerbound_potential::customization::CustomizedCorridorLowerbound;
-use cooperative::dijkstra::potentials::corridor_lowerbound_potential::CorridorLowerboundPotential;
+use cooperative::dijkstra::potentials::corridor_lowerbound_potential::server::CorridorLowerboundPotentialServer;
 use cooperative::dijkstra::potentials::multi_metric_potential::customization::CustomizedMultiMetrics;
 use cooperative::dijkstra::potentials::multi_metric_potential::interval_patterns::balanced_interval_pattern;
 use cooperative::dijkstra::potentials::multi_metric_potential::server::MultiMetricPotentialServer;
@@ -74,7 +73,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         .par_iter()
         .cloned()
         .chain(customization_breakpoints.par_iter().map(|&p| (PotentialType::MultiMetrics, p)))
-        //.chain(customization_breakpoints.iter().map(|&p| (PotentialType::CorridorLowerbound, p)))
+        .chain(customization_breakpoints.par_iter().map(|&p| (PotentialType::CorridorLowerbound, p)))
         .flat_map(|(potential_type, update_frequency)| {
             let heuristic_name = format!("{}-{}", update_frequency, potential_type.to_string());
 
@@ -137,13 +136,11 @@ fn main() -> Result<(), Box<dyn Error>> {
                     }
                 }
                 PotentialType::CorridorLowerbound => {
-                    /*let init_start = Instant::now();
-                    let mut customized_ttf = CustomizedApproximatedPeriodicTTF::new_from_capacity(&cch, &graph, 72);
-                    let mut customized_bounds = CustomizedLowerUpper::new(&cch, graph.travel_time());
-                    customized_bounds.scale_upper_bounds();
-
-                    let potential = CorridorLowerboundPotential::new_with_separate_bounds(&customized_ttf, &customized_bounds);
-                    let mut server = CapacityServer::new_with_potential(graph, potential);
+                    let mut last_update_step = 0;
+                    // init server
+                    let init_start = Instant::now();
+                    let customized = CustomizedCorridorLowerbound::new_from_capacity(&cch, &graph, 72);
+                    let mut server = CorridorLowerboundPotentialServer::new(graph, customized);
                     total_time_reinit = total_time_reinit.add(init_start.elapsed());
 
                     // execute all queries
@@ -160,6 +157,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                                 &mut time_query,
                                 &mut time_update,
                                 &mut sum_dist,
+                                &mut num_runs,
                                 &mut total_time_potential,
                                 &mut total_time_query,
                                 &mut total_time_update,
@@ -167,25 +165,26 @@ fn main() -> Result<(), Box<dyn Error>> {
 
                             if (current_idx + 1) % update_frequency == 0 {
                                 let reinit_start = Instant::now();
-                                let (graph, pot) = server.decompose();
-                                drop(pot);
-
-                                {
-                                    customized_ttf = CustomizedApproximatedPeriodicTTF::new_from_capacity(&cch, &graph, 72);
-                                    customized_bounds = CustomizedLowerUpper::new(&cch, graph.travel_time());
-                                    customized_bounds.scale_upper_bounds();
-                                }
-
-                                let potential = CorridorLowerboundPotential::new_with_separate_bounds(&customized_ttf, &customized_bounds);
-                                server = CapacityServer::new_with_potential(graph, potential);
+                                let customized = CustomizedCorridorLowerbound::new_from_capacity(&cch, &server.borrow_graph(), 72);
+                                server.customize(customized);
                                 total_time_reinit = total_time_reinit.add(reinit_start.elapsed());
 
-                                current_idx += 1;
+                                if !server.requires_pot_update() {
+                                    current_idx += 1;
+                                }
                             } else if server.requires_pot_update() {
-                                customized_bounds = CustomizedLowerUpper::new(&cch, server.borrow_graph().travel_time());
-                                customized_bounds.scale_upper_bounds();
-                                let (_, time) = measure(|| server.update_potential_bounds(&customized_bounds));
-                                total_time_reinit = total_time_reinit.add(time);
+                                println!("\n\n--------------------------");
+                                println!("REINIT IN STEP {}", current_idx);
+                                println!("--------------------------\n\n");
+
+                                if last_update_step == current_idx {
+                                    panic!("Failed twice in the same step! Query: {:?}", &queries[current_idx as usize]);
+                                } else {
+                                    let (_, time) = measure(|| server.customize_upper_bound());
+                                    total_time_reinit = total_time_reinit.add(time);
+                                }
+
+                                last_update_step = current_idx;
                             } else {
                                 current_idx += 1;
                             }
@@ -199,7 +198,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                             total_time_update,
                             total_time_reinit,
                         ));
-                    }*/
+                    }
                 }
                 PotentialType::MultiMetrics => {
                     let mut last_update_step = 0;

@@ -1,4 +1,4 @@
-use cooperative::dijkstra::potentials::corridor_lowerbound_potential::customization::CustomizedApproximatedPeriodicTTF;
+use cooperative::dijkstra::potentials::corridor_lowerbound_potential::customization::CustomizedCorridorLowerbound;
 use cooperative::dijkstra::potentials::corridor_lowerbound_potential::customization_catchup::convert_to_td_graph;
 use cooperative::dijkstra::potentials::multi_metric_potential::customization::CustomizedMultiMetrics;
 use cooperative::dijkstra::potentials::multi_metric_potential::interval_patterns::balanced_interval_pattern;
@@ -62,7 +62,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             let num_intervals = parse_arg_optional(&mut remaining_args, 72);
 
             let graph = convert_to_td_graph(&graph);
-            let (customized, time) = measure(|| CustomizedApproximatedPeriodicTTF::new_from_ptv(&cch, &graph, num_intervals));
+            let (customized, time) = measure(|| CustomizedCorridorLowerbound::new_from_ptv(&cch, &graph, num_intervals));
             println!("Complete customization took {} ms", time.as_secs_f64() * 1000.0);
 
             let mem_usage = customized.cch.mem_size()

@@ -71,6 +71,11 @@ impl<'a> CorridorLowerboundPotential<'a> {
         }
     }
 
+    pub fn prepare_ptv(customized: &'a mut CustomizedCorridorLowerbound) -> Self {
+        // todo for ptv graphs, we use the same cch structure
+        Self::prepare(customized)
+    }
+
     /*pub fn new(customized: &'a CustomizedCorridorLowerbound) -> Self {
         let (forward_cch_graph, forward_cch_weights, forward_cch_bounds) = customized.forward_graph();
         let (backward_cch_graph, backward_cch_weights, backward_cch_bounds) = customized.backward_graph();
@@ -250,6 +255,16 @@ impl<'a> TDPotential for CorridorLowerboundPotential<'a> {
     }
 
     fn verify_result(&self, distance: Weight) -> bool {
-        distance == INFINITY || self.context.target_dist_bounds.unwrap().1 >= distance
+        let result = distance == INFINITY || self.context.target_dist_bounds.unwrap().1 >= distance;
+
+        if !result {
+            println!(
+                "Result: {}, Bounds: {:?}",
+                distance,
+                self.context.target_dist_bounds.unwrap_or((INFINITY, INFINITY))
+            );
+        }
+
+        result
     }
 }
