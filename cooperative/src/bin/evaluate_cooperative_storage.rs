@@ -56,7 +56,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             let mut statistics = Vec::with_capacity(query_breakpoints.len() - 1);
 
             let graph = load_capacity_graph(graph_path, num_buckets, BPRTrafficFunction::default()).unwrap();
-            let mut server = CapacityServer::new_with_potential(graph, cch_pot_data.forward_potential());
+            let mut server = CapacityServer::new(graph, cch_pot_data.forward_potential());
             println!("{} buckets - starting queries!", num_buckets);
 
             let mut query_time = Instant::now();
@@ -77,30 +77,45 @@ fn main() -> Result<(), Box<dyn Error>> {
                             query_time = Instant::now();
                         }
 
-                        server.query(*query, true);
+                        server.query(query, true);
                     });
 
-                let bucket_usage =
-                    server.borrow_graph().get_bucket_usage() as f64 / (server.borrow_graph().num_buckets() * server.borrow_graph().num_arcs() as u32) as f64;
-                let memory_usage = server.borrow_graph().get_mem_size();
+                let (num_used_edges, num_used_buckets) = server.borrow_graph().get_bucket_usage();
 
-                statistics.push((num_buckets, i[1], bucket_usage, server.borrow_graph().get_bucket_usage(), memory_usage));
+                statistics.push(EvaluateCoopStorageStatisticEntry::new(
+                    num_buckets,
+                    i[1],
+                    num_used_buckets as f64 / (server.borrow_graph().num_buckets() * server.borrow_graph().num_arcs() as u32) as f64,
+                    num_used_buckets,
+                    num_used_edges as f64 / server.borrow_graph().num_arcs() as f64,
+                    num_used_edges,
+                    server.borrow_graph().get_mem_size(),
+                ));
             }
             statistics
         })
-        .collect::<Vec<(u32, u32, f64, usize, usize)>>();
+        .collect::<Vec<EvaluateCoopStorageStatisticEntry>>();
 
     write_results(&usage_statistics, &query_path.join("evaluate_cooperative_storage.csv"))
 }
 
-fn write_results(results: &Vec<(u32, u32, f64, usize, usize)>, path: &Path) -> Result<(), Box<dyn Error>> {
+fn write_results(results: &Vec<EvaluateCoopStorageStatisticEntry>, path: &Path) -> Result<(), Box<dyn Error>> {
     let mut file = File::create(path)?;
 
-    let header = "num_buckets,num_queries,bucket_usage_rel,bucket_usage_abs,memory_usage\n";
+    let header = "num_buckets,num_queries,bucket_usage_rel,bucket_usage_abs,edge_usage_rel,edge_usage_absmemory_usage\n";
     file.write(header.as_bytes())?;
 
-    for (num_buckets, num_queries, bucket_usage_rel, bucket_usage_abs, memory_usage) in results {
-        let line = format!("{},{},{},{},{}\n", num_buckets, num_queries, bucket_usage_rel, bucket_usage_abs, memory_usage);
+    for entry in results {
+        let line = format!(
+            "{},{},{},{},{},{},{}\n",
+            entry.num_buckets,
+            entry.num_queries,
+            entry.bucket_usage_rel,
+            entry.bucket_usage_abs,
+            entry.edge_usage_rel,
+            entry.edge_usage_abs,
+            entry.memory_usage
+        );
         file.write(line.as_bytes())?;
     }
 
@@ -132,4 +147,36 @@ fn parse_args() -> Result<(String, String, Vec<u32>, Vec<u32>), Box<dyn Error>> 
     graph_bucket_counts.dedup();
 
     Ok((graph_directory, query_directory, query_breakpoints, graph_bucket_counts))
+}
+
+struct EvaluateCoopStorageStatisticEntry {
+    pub num_buckets: u32,
+    pub num_queries: u32,
+    pub bucket_usage_rel: f64,
+    pub bucket_usage_abs: usize,
+    pub edge_usage_rel: f64,
+    pub edge_usage_abs: usize,
+    pub memory_usage: usize,
+}
+
+impl EvaluateCoopStorageStatisticEntry {
+    pub fn new(
+        num_buckets: u32,
+        num_queries: u32,
+        bucket_usage_rel: f64,
+        bucket_usage_abs: usize,
+        edge_usage_rel: f64,
+        edge_usage_abs: usize,
+        memory_usage: usize,
+    ) -> Self {
+        Self {
+            num_buckets,
+            num_queries,
+            bucket_usage_rel,
+            bucket_usage_abs,
+            edge_usage_rel,
+            edge_usage_abs,
+            memory_usage,
+        }
+    }
 }

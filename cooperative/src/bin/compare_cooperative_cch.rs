@@ -216,15 +216,16 @@ fn main() -> Result<(), Box<dyn Error>> {
             num_runs_coop,
             coop_distance / num_runs_coop as u64
         );
-        csv_results.push((
-            "cooperative",
+
+        csv_results.push(CompareCooperativeCCHStatisticEntry::new(
+            "cooperative".to_string(),
             0,
-            total_time_coop.as_secs_f64(),
-            cust_time_coop.as_secs_f64(),
+            total_time_coop,
+            cust_time_coop,
             coop_distance,
             num_runs_coop,
             a[1],
-            coop_distance / num_runs_coop as u64,
+            coop_distance / num_runs_cch as u64,
         ));
 
         for i in 0..cch_frequencies.len() {
@@ -236,18 +237,18 @@ fn main() -> Result<(), Box<dyn Error>> {
                 cust_time_cch[i].as_secs_f64(),
                 cch_distances[i],
                 num_runs_cch[i],
-                cch_distances[i] / num_runs_cch[i] as u64
+                cch_distances[i] / num_runs_cch[i].clone() as u64
             );
 
-            csv_results.push((
-                "cch",
+            csv_results.push(CompareCooperativeCCHStatisticEntry::new(
+                "cch".to_string(),
                 cch_frequencies[i],
-                total_time_cch[i].as_secs_f64(),
-                cust_time_cch[i].as_secs_f64(),
+                total_time_cch[i],
+                cust_time_cch[i],
                 cch_distances[i],
-                num_runs_cch[i],
+                num_runs_cch[i].clone(),
                 a[1],
-                cch_distances[i] / num_runs_cch[i] as u64,
+                cch_distances[i] / num_runs_cch[i].clone() as u64,
             ));
         }
         println!("------------------------------------------");
@@ -256,16 +257,23 @@ fn main() -> Result<(), Box<dyn Error>> {
     write_results(&csv_results, &query_path)
 }
 
-fn write_results(results: &Vec<(&str, u32, f64, f64, u64, usize, u32, u64)>, path: &Path) -> Result<(), Box<dyn Error>> {
+fn write_results(results: &Vec<CompareCooperativeCCHStatisticEntry>, path: &Path) -> Result<(), Box<dyn Error>> {
     let mut file = File::create(&path.join("coop_vs_cch_results.csv"))?;
 
     let header = "type,refresh_interval,time,cust_time,total_dist,num_runs,num_actual_runs,avg_dist\n";
     file.write(header.as_bytes())?;
 
-    for &(algorithm, refresh_interval, time, customization_time, total_distance, num_runs, num_actual_runs, avg_distance) in results {
+    for entry in results {
         let line = format!(
             "{},{},{},{},{},{},{},{}\n",
-            algorithm, refresh_interval, time, customization_time, total_distance, num_runs, num_actual_runs, avg_distance
+            entry.query_type,
+            entry.refresh_interval,
+            entry.query_time.as_secs_f64(),
+            entry.customization_time.as_secs_f64(),
+            entry.total_dist,
+            entry.num_runs,
+            entry.num_actual_runs,
+            entry.avg_dist
         );
         file.write(line.as_bytes())?;
     }
@@ -308,4 +316,39 @@ fn parse_args() -> Result<(String, String, u32, u32, Vec<u32>, Vec<u32>), Box<dy
         evaluation_breakpoints,
         cch_frequency,
     ))
+}
+
+struct CompareCooperativeCCHStatisticEntry {
+    pub query_type: String,
+    pub refresh_interval: u32,
+    pub query_time: Duration,
+    pub customization_time: Duration,
+    pub total_dist: u64,
+    pub num_runs: usize,
+    pub num_actual_runs: u32,
+    pub avg_dist: u64,
+}
+
+impl CompareCooperativeCCHStatisticEntry {
+    pub fn new(
+        query_type: String,
+        refresh_interval: u32,
+        query_time: Duration,
+        customization_time: Duration,
+        total_dist: u64,
+        num_runs: usize,
+        num_actual_runs: u32,
+        avg_dist: u64,
+    ) -> Self {
+        Self {
+            query_type,
+            refresh_interval,
+            query_time,
+            customization_time,
+            total_dist,
+            num_runs,
+            num_actual_runs,
+            avg_dist,
+        }
+    }
 }

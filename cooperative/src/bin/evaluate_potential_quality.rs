@@ -123,7 +123,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                             // no re-customization required!
                         }
 
-                        statistics.push((
+                        statistics.push(EvaluatePotentialQualityStatisticEntry::new(
                             heuristic_name.clone(),
                             a[1],
                             total_time_potential,
@@ -188,7 +188,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                             }
                         }
 
-                        statistics.push((
+                        statistics.push(EvaluatePotentialQualityStatisticEntry::new(
                             heuristic_name.clone(),
                             a[1],
                             total_time_potential,
@@ -257,7 +257,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                             }
                         }
 
-                        statistics.push((
+                        statistics.push(EvaluatePotentialQualityStatisticEntry::new(
                             heuristic_name.clone(),
                             a[1],
                             total_time_potential,
@@ -272,7 +272,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
             statistics
         })
-        .collect::<Vec<(String, u32, Duration, Duration, Duration, Duration)>>();
+        .collect::<Vec<EvaluatePotentialQualityStatisticEntry>>();
 
     // output data and write csv
     write_results(&results, &query_path.join("evaluate_pot_quality.csv"))
@@ -326,32 +326,32 @@ fn execute_query<Server: CapacityServerOps>(
     }
 }
 
-fn write_results(results: &Vec<(String, u32, Duration, Duration, Duration, Duration)>, path: &Path) -> Result<(), Box<dyn Error>> {
+fn write_results(results: &Vec<EvaluatePotentialQualityStatisticEntry>, path: &Path) -> Result<(), Box<dyn Error>> {
     let mut file = File::create(path)?;
 
     let header = "name,query_count,time_potential,time_query,time_update,time_reinit\n";
     file.write(header.as_bytes())?;
 
-    for (name, query_count, time_pot, time_query, time_update, time_reinit) in results {
+    for entry in results {
         let line = format!(
             "{},{},{},{},{},{}\n",
-            name,
-            query_count,
-            time_pot.as_secs_f64() * 1000.0,
-            time_query.as_secs_f64() * 1000.0,
-            time_update.as_secs_f64() * 1000.0,
-            time_reinit.as_secs_f64() * 1000.0
+            entry.pot_name,
+            entry.num_queries,
+            entry.time_potential.as_secs_f64() * 1000.0,
+            entry.time_query.as_secs_f64() * 1000.0,
+            entry.time_update.as_secs_f64() * 1000.0,
+            entry.time_reinit.as_secs_f64() * 1000.0
         );
         file.write(line.as_bytes())?;
 
         println!("------------------------------------");
-        println!("Runtime Statistics for {} after {} queries", name, query_count);
+        println!("Runtime Statistics for {} after {} queries", entry.pot_name, entry.num_queries);
         println!(
             "Potential init: {}, query: {}, update: {}, reinit: {}",
-            time_pot.as_secs_f64(),
-            time_query.as_secs_f64(),
-            time_update.as_secs_f64(),
-            time_reinit.as_secs_f64()
+            entry.time_potential.as_secs_f64(),
+            entry.time_query.as_secs_f64(),
+            entry.time_update.as_secs_f64(),
+            entry.time_reinit.as_secs_f64()
         );
     }
 
@@ -396,4 +396,26 @@ fn parse_args() -> Result<(String, String, u32, u32, Vec<u32>, Vec<u32>), Box<dy
         evaluation_breakpoints,
         customization_breakpoints,
     ))
+}
+
+struct EvaluatePotentialQualityStatisticEntry {
+    pub pot_name: String,
+    pub num_queries: u32,
+    pub time_potential: Duration,
+    pub time_query: Duration,
+    pub time_update: Duration,
+    pub time_reinit: Duration,
+}
+
+impl EvaluatePotentialQualityStatisticEntry {
+    pub fn new(pot_name: String, num_queries: u32, time_potential: Duration, time_query: Duration, time_update: Duration, time_reinit: Duration) -> Self {
+        Self {
+            pot_name,
+            num_queries,
+            time_potential,
+            time_query,
+            time_update,
+            time_reinit,
+        }
+    }
 }

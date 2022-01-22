@@ -125,19 +125,20 @@ fn main() -> Result<(), Box<dyn Error>> {
                     .zip(query_starts.iter())
                     .map(|(path, query_start)| evaluation_server.path_distance(path, *query_start) as u64)
                     .sum::<u64>();
-                (num_buckets, i[1], updates, sum_dist, sum_dist / paths.len() as u64)
+
+                EvaluateStaticCooperativeStatisticEntry::new(num_buckets, i[1], updates, sum_dist, sum_dist / paths.len() as u64);
             })
-            .collect::<Vec<(u32, u32, bool, u64, u64)>>();
+            .collect::<Vec<EvaluateStaticCooperativeStatisticEntry>>();
 
         perf_statistics.extend_from_slice(&results);
 
-        for (num_buckets, num_queries, cooperative, sum_distance, avg_distance) in results {
+        for entry in results {
             println!("--------------------------------------");
             println!(
                 "Statistics for {} buckets (cooperative {}) after {} queries:",
-                num_buckets, cooperative, num_queries
+                entry.num_buckets, entry.cooperative, entry.num_queries
             );
-            println!("Distance sum: {} (avg: {})", sum_distance, avg_distance);
+            println!("Distance sum: {} (avg: {})", entry.sum_distance, entry.avg_distance);
         }
         println!("--------------------------------------");
     }
@@ -145,14 +146,17 @@ fn main() -> Result<(), Box<dyn Error>> {
     write_results(&perf_statistics, &query_path.join("evaluate_static_cooperative.csv"))
 }
 
-fn write_results(results: &Vec<(u32, u32, bool, u64, u64)>, path: &Path) -> Result<(), Box<dyn Error>> {
+fn write_results(results: &Vec<EvaluateStaticCooperativeStatisticEntry>, path: &Path) -> Result<(), Box<dyn Error>> {
     let mut file = File::create(path)?;
 
     let header = "num_buckets,num_queries,cooperative,sum_distance,avg_distance\n";
     file.write(header.as_bytes())?;
 
-    for (num_buckets, num_queries, cooperative, sum_distance, avg_distance) in results {
-        let line = format!("{},{},{},{},{}\n", num_buckets, num_queries, *cooperative as u32, sum_distance, avg_distance);
+    for entry in results {
+        let line = format!(
+            "{},{},{},{},{}\n",
+            entry.num_buckets, entry.num_queries, entry.cooperative as u32, entry.sum_distance, entry.avg_distance
+        );
         file.write(line.as_bytes())?;
     }
 
@@ -184,4 +188,24 @@ fn parse_args() -> Result<(String, String, Vec<u32>, Vec<u32>), Box<dyn Error>> 
     graph_bucket_counts.dedup();
 
     Ok((graph_directory, query_directory, query_breakpoints, graph_bucket_counts))
+}
+
+struct EvaluateStaticCooperativeStatisticEntry {
+    pub num_buckets: u32,
+    pub num_queries: u32,
+    pub cooperative: bool,
+    pub sum_distance: u64,
+    pub avg_distance: u64,
+}
+
+impl EvaluateStaticCooperativeStatisticEntry {
+    pub fn new(num_buckets: u32, num_queries: u32, cooperative: bool, sum_distance: u64, avg_distance: u64) -> Self {
+        Self {
+            num_buckets,
+            num_queries,
+            cooperative,
+            sum_distance,
+            avg_distance,
+        }
+    }
 }

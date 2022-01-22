@@ -210,15 +210,23 @@ impl CapacityGraph {
         static_graph_size + capacity_bucket_size + speed_bucket_size + ttf_size
     }
 
-    /// get the number of used buckets
-    pub fn get_bucket_usage(&self) -> usize {
-        self.used_capacity
+    /// get the number of used buckets (and edges)
+    pub fn get_bucket_usage(&self) -> (usize, usize) {
+        let mut num_used_edges = 0;
+
+        let num_used_buckets = self
+            .used_capacity
             .iter()
             .map(|buckets| match buckets {
                 CapacityBuckets::Unused => 0,
-                CapacityBuckets::Used(data) => data.len(),
+                CapacityBuckets::Used(data) => {
+                    num_used_edges += 1;
+                    data.len()
+                }
             })
-            .sum()
+            .sum::<usize>();
+
+        (num_used_edges, num_used_buckets)
     }
 
     pub fn num_buckets(&self) -> u32 {

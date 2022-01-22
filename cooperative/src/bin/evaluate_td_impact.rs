@@ -97,7 +97,7 @@ fn get_query_paths<Pot: TDPotential>(server: &mut CapacityServer<Pot>, queries: 
                 last_start = Instant::now();
             }
 
-            server.query(*query, true).map(|result| (result.path.edge_path, query.departure))
+            server.query(query, true).map(|result| (result.path.edge_path, query.departure))
         })
         .collect::<Vec<(Vec<EdgeId>, Timestamp)>>()
 }
