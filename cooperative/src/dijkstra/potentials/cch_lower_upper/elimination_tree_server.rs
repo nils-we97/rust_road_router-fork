@@ -4,82 +4,34 @@ use rust_road_router::datastr::timestamped_vector::TimestampedVector;
 use rust_road_router::util::in_range_option::InRangeOption;
 use std::borrow::Borrow;
 use std::cmp::min;
+use std::marker::PhantomData;
 
-pub struct CorridorEliminationTreeServer<'a, CCH, W> {
-    cch: &'a CCH,
-    forward_graph: UnweightedFirstOutGraph<&'a [EdgeId], &'a [NodeId]>,
-    forward_weights: W,
-    backward_graph: UnweightedFirstOutGraph<&'a [EdgeId], &'a [NodeId]>,
-    backward_weights: W,
-    fw_distances: TimestampedVector<(Weight, Weight)>,
-    bw_distances: TimestampedVector<(Weight, Weight)>,
-}
+pub struct CorridorEliminationTreeServer<CCH>(PhantomData<CCH>);
 
-impl<'a, CCH: CCHT, W: AsRef<Vec<(Weight, Weight)>>> CorridorEliminationTreeServer<'a, CCH, W> {
-    pub fn new(
-        cch: &'a CCH,
-        forward_graph: UnweightedFirstOutGraph<&'a [EdgeId], &'a [NodeId]>,
-        forward_weights: W,
-        backward_graph: UnweightedFirstOutGraph<&'a [EdgeId], &'a [NodeId]>,
-        backward_weights: W,
-    ) -> Self {
-        let num_nodes = cch.forward_first_out().len() - 1;
-        Self {
-            cch,
-            forward_graph,
-            forward_weights,
-            backward_graph,
-            backward_weights,
-            fw_distances: TimestampedVector::new(num_nodes),
-            bw_distances: TimestampedVector::new(num_nodes),
-        }
-    }
+impl<CCH: CCHT> CorridorEliminationTreeServer<CCH> {
+    pub fn query(
+        cch: &CCH,
+        forward_graph: &UnweightedFirstOutGraph<&[EdgeId], &[NodeId]>,
+        forward_weights: &Vec<(Weight, Weight)>,
+        backward_graph: &UnweightedFirstOutGraph<&[EdgeId], &[NodeId]>,
+        backward_weights: &Vec<(Weight, Weight)>,
+        fw_distances: &mut TimestampedVector<(Weight, Weight)>,
+        bw_distances: &mut TimestampedVector<(Weight, Weight)>,
+        from: NodeId,
+        to: NodeId,
+    ) -> Option<(Weight, Weight)> {
+        // 1. get node ranks
+        let from = cch.node_order().rank(from);
+        let to = cch.node_order().rank(to);
 
-    pub fn forward_distances(&self) -> &TimestampedVector<(Weight, Weight)> {
-        &self.fw_distances
-    }
-
-    pub fn backward_distances(&self) -> &TimestampedVector<(Weight, Weight)> {
-        &self.bw_distances
-    }
-
-    pub fn update_upper_bounds(&mut self, upper_forward: &Vec<Weight>, upper_backward: &Vec<Weight>) {
-        assert_eq!(upper_forward.len(), self.fw_distances.len());
-        assert_eq!(upper_backward.len(), self.bw_distances.len());
-
-        for i in 0..upper_forward.len() {
-            self.fw_distances[i].1 = upper_forward[i];
-        }
-        for i in 0..upper_backward.len() {
-            self.bw_distances[i].1 = upper_backward[i];
-        }
-    }
-
-    pub fn query(&mut self, from: NodeId, to: NodeId) -> Option<(Weight, Weight)> {
-        // get ranks
-        let from = self.cch.node_order().rank(from);
-        let to = self.cch.node_order().rank(to);
-
-        // initialize query datastructures
+        // 2. initialize tentative_distance
         let mut tentative_distance = (INFINITY, INFINITY);
 
         // initialize forward elimination tree walk
-        let mut fw_walk = CorridorEliminationTreeWalk::init(
-            &self.forward_graph,
-            self.forward_weights.as_ref(),
-            self.cch.borrow().elimination_tree(),
-            &mut self.fw_distances,
-            from,
-        );
+        let mut fw_walk = CorridorEliminationTreeWalk::init(forward_graph, forward_weights, cch.borrow().elimination_tree(), fw_distances, from);
 
         // initialize backward elimination tree walk
-        let mut bw_walk = CorridorEliminationTreeWalk::init(
-            &self.backward_graph,
-            self.backward_weights.as_ref(),
-            self.cch.borrow().elimination_tree(),
-            &mut self.bw_distances,
-            to,
-        );
+        let mut bw_walk = CorridorEliminationTreeWalk::init(backward_graph, backward_weights, cch.borrow().elimination_tree(), bw_distances, to);
 
         loop {
             match (fw_walk.peek(), bw_walk.peek()) {

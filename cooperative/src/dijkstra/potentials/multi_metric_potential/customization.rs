@@ -1,5 +1,6 @@
 use crate::dijkstra::potentials::cch_parallelization_util::SeparatorBasedParallelCustomization;
 use crate::dijkstra::potentials::multi_metric_potential::metric_reduction::{reduce_metrics, MetricEntry};
+use crate::dijkstra::potentials::multi_metric_potential::potential::MultiMetricPotentialContext;
 use crate::graph::capacity_graph::CapacityGraph;
 use crate::graph::MAX_BUCKETS;
 use rayon::prelude::*;
@@ -19,22 +20,26 @@ scoped_thread_local!(static DOWNWARD_WORKSPACE: RefCell<Vec<Vec<Weight>>>);
 const LOWERBOUND_METRIC: usize = 0;
 const UPPERBOUND_METRIC: usize = 1;
 
-pub struct CustomizedMultiMetrics<'a> {
-    pub cch: &'a CCH,
+pub struct CustomizedMultiMetrics {
+    pub cch: CCH,
     pub upward: Vec<Weight>,
     pub downward: Vec<Weight>,
     pub metric_entries: Vec<MetricEntry>,
     pub num_metrics: usize,
+
+    pub potential_context: MultiMetricPotentialContext,
+    pub forward_cch_bounds: Vec<(Weight, Weight)>,
+    pub backward_cch_bounds: Vec<(Weight, Weight)>,
 }
 
-impl<'a> CustomizedMultiMetrics<'a> {
-    pub fn new_from_capacity(cch: &'a CCH, graph: &CapacityGraph, intervals: &Vec<(Timestamp, Timestamp)>, num_max_metrics: usize) -> Self {
+impl CustomizedMultiMetrics {
+    pub fn new_from_capacity(cch: CCH, graph: &CapacityGraph, intervals: &Vec<(Timestamp, Timestamp)>, num_max_metrics: usize) -> Self {
         debug_assert!(!intervals.is_empty(), "Intervals must not be empty!");
 
         Self::new(cch, graph.departure(), graph.travel_time(), intervals, num_max_metrics, true)
     }
 
-    pub fn new_from_ptv(cch: &'a CCH, graph: &TDGraph, intervals: &Vec<(Timestamp, Timestamp)>, num_max_metrics: usize) -> Self {
+    pub fn new_from_ptv(cch: CCH, graph: &TDGraph, intervals: &Vec<(Timestamp, Timestamp)>, num_max_metrics: usize) -> Self {
         debug_assert!(!intervals.is_empty(), "Intervals must not be empty!");
 
         // extract departures and travel times from the graph
@@ -61,8 +66,36 @@ impl<'a> CustomizedMultiMetrics<'a> {
         Self::new(cch, &departures, &travel_times, intervals, num_max_metrics, false)
     }
 
+    pub fn restore(cch: CCH, upward: Vec<Weight>, downward: Vec<Weight>, metric_entries: Vec<MetricEntry>, num_metrics: usize) -> Self {
+        let m = cch.num_arcs();
+
+        let forward_cch_bounds = upward[..m]
+            .iter()
+            .zip(upward[m..2 * m].iter())
+            .map(|(&lower, &upper)| (lower, upper))
+            .collect::<Vec<(Weight, Weight)>>();
+
+        let backward_cch_bounds = downward[..m]
+            .iter()
+            .zip(downward[m..2 * m].iter())
+            .map(|(&lower, &upper)| (lower, upper))
+            .collect::<Vec<(Weight, Weight)>>();
+
+        let num_nodes = cch.num_nodes();
+        Self {
+            cch,
+            upward,
+            downward,
+            metric_entries,
+            num_metrics,
+            potential_context: MultiMetricPotentialContext::new(num_nodes),
+            forward_cch_bounds,
+            backward_cch_bounds,
+        }
+    }
+
     fn new(
-        cch: &'a CCH,
+        cch: CCH,
         departures: &Vec<Vec<Timestamp>>,
         travel_times: &Vec<Vec<Weight>>,
         intervals: &Vec<(Timestamp, Timestamp)>,
@@ -88,22 +121,67 @@ impl<'a> CustomizedMultiMetrics<'a> {
         let mut downward_weights = vec![vec![INFINITY; num_metrics]; m];
 
         // 4. initialize upward and downward weights with correct lower/upper bound
-        prepare_weights(cch, &mut upward_weights, &mut downward_weights, &metrics);
+        prepare_weights(&cch, &mut upward_weights, &mut downward_weights, &metrics);
 
         // 5. run basic customization
-        customize_basic(cch, &mut upward_weights, &mut downward_weights);
+        customize_basic(&cch, &mut upward_weights, &mut downward_weights);
 
         // 6. reorder weights, scale upper bounds graceful for cooperative graphs
         let upward_weights = reorder_weights(&upward_weights, num_metrics, cooperative);
         let downward_weights = reorder_weights(&downward_weights, num_metrics, cooperative);
 
+        // 7. initialize additional structs required for potential
+        let forward_cch_bounds = upward_weights[..m]
+            .iter()
+            .zip(upward_weights[m..2 * m].iter())
+            .map(|(&lower, &upper)| (lower, upper))
+            .collect::<Vec<(Weight, Weight)>>();
+
+        let backward_cch_bounds = downward_weights[..m]
+            .iter()
+            .zip(downward_weights[m..2 * m].iter())
+            .map(|(&lower, &upper)| (lower, upper))
+            .collect::<Vec<(Weight, Weight)>>();
+
+        let num_nodes = cch.num_nodes();
         Self {
             cch,
             upward: upward_weights,
             downward: downward_weights,
             metric_entries,
             num_metrics,
+            potential_context: MultiMetricPotentialContext::new(num_nodes),
+            forward_cch_bounds,
+            backward_cch_bounds,
         }
+    }
+
+    pub fn customize_upper_bound(&mut self, graph: &CapacityGraph) {
+        let upper_bound = (0..graph.num_arcs())
+            .into_iter()
+            .map(|e| vec![*graph.travel_time()[e].iter().max().unwrap()])
+            .collect::<Vec<Vec<Weight>>>();
+
+        let mut upwards = vec![vec![INFINITY; 1]; self.cch.num_arcs()];
+        let mut downwards = vec![vec![INFINITY; 1]; self.cch.num_arcs()];
+
+        // run customization on upper bounds
+        prepare_weights(&self.cch, &mut upwards, &mut downwards, &upper_bound);
+        customize_basic(&self.cch, &mut upwards, &mut downwards);
+
+        // scale upper bounds
+        let upwards = upwards.iter().map(|v| min(INFINITY, (v[0] / 2) * 3)).collect::<Vec<Weight>>();
+        let downwards = downwards.iter().map(|v| min(INFINITY, (v[0] / 2) * 3)).collect::<Vec<Weight>>();
+
+        // update bound entries
+        self.forward_cch_bounds
+            .iter_mut()
+            .zip(upwards.iter())
+            .for_each(|((_, upper), new_upper)| *upper = *new_upper);
+        self.backward_cch_bounds
+            .iter_mut()
+            .zip(downwards.iter())
+            .for_each(|((_, upper), new_upper)| *upper = *new_upper);
     }
 
     pub fn forward_graph(&self) -> (UnweightedFirstOutGraph<&[EdgeId], &[NodeId]>, &Vec<Weight>) {
@@ -120,22 +198,8 @@ impl<'a> CustomizedMultiMetrics<'a> {
         )
     }
 
-    pub fn coop_fix_upper_bound(&self, graph: &CapacityGraph) -> (Vec<Weight>, Vec<Weight>) {
-        let upper_bound = (0..graph.num_arcs())
-            .into_iter()
-            .map(|e| vec![*graph.travel_time()[e].iter().max().unwrap()])
-            .collect::<Vec<Vec<Weight>>>();
-
-        let mut upwards = vec![vec![INFINITY; 1]; self.cch.num_arcs()];
-        let mut downwards = vec![vec![INFINITY; 1]; self.cch.num_arcs()];
-
-        prepare_weights(self.cch, &mut upwards, &mut downwards, &upper_bound);
-        customize_basic(self.cch, &mut upwards, &mut downwards);
-
-        (
-            upwards.iter().map(|v| min(INFINITY, (v[0] / 2) * 3)).collect(),
-            downwards.iter().map(|v| min(INFINITY, (v[0] / 2) * 3)).collect(),
-        )
+    pub fn decompose(self) -> CCH {
+        self.cch
     }
 }
 

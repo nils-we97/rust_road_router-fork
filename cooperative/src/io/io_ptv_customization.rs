@@ -1,4 +1,6 @@
-use crate::dijkstra::potentials::corridor_lowerbound_potential::customization::CustomizedApproximatedPeriodicTTF;
+use crate::dijkstra::potentials::cch_lower_upper::bounded_potential::BoundedLowerUpperPotentialContext;
+use crate::dijkstra::potentials::corridor_lowerbound_potential::customization::CustomizedCorridorLowerbound;
+use crate::dijkstra::potentials::corridor_lowerbound_potential::CorridorLowerboundPotentialContext;
 use crate::dijkstra::potentials::multi_metric_potential::customization::CustomizedMultiMetrics;
 use crate::dijkstra::potentials::multi_metric_potential::metric_reduction::MetricEntry;
 use rust_road_router::algo::customizable_contraction_hierarchy::{DirectedCCH, CCH};
@@ -8,7 +10,7 @@ use rust_road_router::report::measure;
 use std::error::Error;
 use std::path::Path;
 
-pub fn load_interval_minima(directory: &Path) -> Result<CustomizedApproximatedPeriodicTTF<DirectedCCH>, Box<dyn Error>> {
+pub fn load_interval_minima(directory: &Path) -> Result<CustomizedCorridorLowerbound, Box<dyn Error>> {
     let num_intervals = *Vec::<u32>::load_from(&directory.join("num_intervals")).unwrap().first().unwrap();
     println!("Number of intervals: {}", num_intervals);
 
@@ -40,17 +42,21 @@ pub fn load_interval_minima(directory: &Path) -> Result<CustomizedApproximatedPe
     let (cch, time) = measure(|| DirectedCCH::reconstruct_from(&directory.join("cch")).unwrap());
     println!("Reconstructed directed CCH in {} ms", time.as_secs_f64() * 1000.0);
 
-    Ok(CustomizedApproximatedPeriodicTTF {
+    let num_nodes = cch.num_nodes();
+
+    Ok(CustomizedCorridorLowerbound {
         cch,
         upward_intervals,
         downward_intervals,
         upward_bounds,
         downward_bounds,
         num_intervals,
+        potential_context: CorridorLowerboundPotentialContext::new(num_nodes),
+        corridor_context: BoundedLowerUpperPotentialContext::new(num_nodes),
     })
 }
 
-pub fn store_interval_minima(directory: &Path, customized: &CustomizedApproximatedPeriodicTTF<DirectedCCH>) -> Result<(), Box<dyn Error>> {
+pub fn store_interval_minima(directory: &Path, customized: &CustomizedCorridorLowerbound) -> Result<(), Box<dyn Error>> {
     if !directory.exists() {
         std::fs::create_dir(directory)?;
     }
@@ -79,7 +85,7 @@ pub fn store_interval_minima(directory: &Path, customized: &CustomizedApproximat
 
 /* ----------------------------------------------------------------------------------------*/
 
-pub fn load_multiple_metrics<'a>(directory: &Path, cch: &'a CCH) -> Result<CustomizedMultiMetrics<'a>, Box<dyn Error>> {
+pub fn load_multiple_metrics(directory: &Path, cch: CCH) -> Result<CustomizedMultiMetrics, Box<dyn Error>> {
     let upward = Vec::<u32>::load_from(&directory.join("upward_weights"))?;
     let downward = Vec::<u32>::load_from(&directory.join("downward_weights"))?;
 
@@ -102,13 +108,7 @@ pub fn load_multiple_metrics<'a>(directory: &Path, cch: &'a CCH) -> Result<Custo
         .map(|((&start, &end), &id)| MetricEntry::new(start, end, id as usize))
         .collect::<Vec<MetricEntry>>();
 
-    Ok(CustomizedMultiMetrics {
-        cch,
-        upward,
-        downward,
-        metric_entries,
-        num_metrics,
-    })
+    Ok(CustomizedMultiMetrics::restore(cch, upward, downward, metric_entries, num_metrics))
 }
 
 pub fn store_multiple_metrics(directory: &Path, customized: &CustomizedMultiMetrics) -> Result<(), Box<dyn Error>> {

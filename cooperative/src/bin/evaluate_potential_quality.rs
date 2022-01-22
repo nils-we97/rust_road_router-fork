@@ -1,10 +1,9 @@
 use cooperative::dijkstra::potentials::cch_lower_upper::customization::CustomizedLowerUpper;
-use cooperative::dijkstra::potentials::corridor_lowerbound_potential::customization::CustomizedApproximatedPeriodicTTF;
+use cooperative::dijkstra::potentials::corridor_lowerbound_potential::customization::CustomizedCorridorLowerbound;
 use cooperative::dijkstra::potentials::corridor_lowerbound_potential::CorridorLowerboundPotential;
 use cooperative::dijkstra::potentials::multi_metric_potential::customization::CustomizedMultiMetrics;
 use cooperative::dijkstra::potentials::multi_metric_potential::interval_patterns::balanced_interval_pattern;
-use cooperative::dijkstra::potentials::multi_metric_potential::potential::MultiMetricPotential;
-use cooperative::dijkstra::potentials::TDPotential;
+use cooperative::dijkstra::potentials::multi_metric_potential::server::MultiMetricPotentialServer;
 use cooperative::dijkstra::server::{CapacityServer, CapacityServerOps};
 use cooperative::experiments::queries::permutate_queries;
 use cooperative::experiments::types::PotentialType;
@@ -19,6 +18,7 @@ use rust_road_router::algo::customizable_contraction_hierarchy::CCH;
 use rust_road_router::algo::TDQuery;
 use rust_road_router::datastr::graph::time_dependent::Timestamp;
 use rust_road_router::report::measure;
+use std::cmp::max;
 use std::env;
 use std::error::Error;
 use std::fs::File;
@@ -70,11 +70,6 @@ fn main() -> Result<(), Box<dyn Error>> {
     // load cch
     let temp_graph = load_capacity_graph(graph_path, num_buckets, BPRTrafficFunction::default())?;
 
-    let order = load_node_order(graph_path)?;
-    let (cch, time) = measure(|| CCH::fix_order_and_build(&temp_graph, order));
-    drop(temp_graph);
-    println!("CCH created in {} ms", time.as_secs_f64() * 1000.0);
-
     let results = [(PotentialType::CCHPot, *customization_breakpoints.last().unwrap())]
         .par_iter()
         .cloned()
@@ -86,6 +81,11 @@ fn main() -> Result<(), Box<dyn Error>> {
             // load graph
             let graph = load_capacity_graph(&graph_path, num_buckets, BPRTrafficFunction::default()).unwrap();
             println!("{}: Graph initialized!", heuristic_name);
+
+            // init cch
+            let order = load_node_order(graph_path).unwrap();
+            let (cch, time) = measure(|| CCH::fix_order_and_build(&temp_graph, order));
+            println!("{}: CCH created in {} ms", heuristic_name, time.as_secs_f64() * 1000.0);
 
             let mut total_time_query = Duration::ZERO;
             let mut total_time_potential = Duration::ZERO;
@@ -205,9 +205,8 @@ fn main() -> Result<(), Box<dyn Error>> {
                     let mut last_update_step = 0;
                     // init server
                     let init_start = Instant::now();
-                    let customized = CustomizedMultiMetrics::new_from_capacity(&cch, &graph, &balanced_interval_pattern(), mm_num_metrics as usize);
-                    let potential = MultiMetricPotential::new(customized);
-                    let mut server = CapacityServer::new_with_potential(graph, potential);
+                    let customized = CustomizedMultiMetrics::new_from_capacity(cch, &graph, &balanced_interval_pattern(), mm_num_metrics as usize);
+                    let mut server = MultiMetricPotentialServer::new(graph, customized);
                     total_time_reinit = total_time_reinit.add(init_start.elapsed());
 
                     // execute all queries
@@ -232,19 +231,17 @@ fn main() -> Result<(), Box<dyn Error>> {
 
                             if (current_idx + 1) % update_frequency == 0 {
                                 let reinit_start = Instant::now();
-                                let customized = CustomizedMultiMetrics::new_from_capacity(
-                                    &cch,
-                                    server.borrow_graph(),
-                                    &balanced_interval_pattern(),
-                                    mm_num_metrics as usize,
-                                );
+                                let (graph, customized) = server.decompose();
+                                let cch = customized.decompose();
 
-                                let potential = MultiMetricPotential::new(customized);
-                                server.update_potential(potential);
+                                let customized = CustomizedMultiMetrics::new_from_capacity(cch, &graph, &balanced_interval_pattern(), mm_num_metrics as usize);
+                                server = MultiMetricPotentialServer::new(graph, customized);
                                 total_time_reinit = total_time_reinit.add(reinit_start.elapsed());
                                 last_update_step = current_idx;
 
-                                current_idx += 1;
+                                if !server.requires_pot_update() {
+                                    current_idx += 1;
+                                }
                             } else if server.requires_pot_update() {
                                 println!("\n\n--------------------------");
                                 println!("REINIT IN STEP {}", current_idx);
@@ -253,7 +250,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                                 if last_update_step == current_idx {
                                     panic!("Failed twice in the same step! Query: {:?}", &queries[current_idx as usize]);
                                 } else {
-                                    let (_, time) = measure(|| server.update_potential_bounds());
+                                    let (_, time) = measure(|| server.customize_upper_bound());
                                     total_time_reinit = total_time_reinit.add(time);
                                 }
 
@@ -284,8 +281,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     write_results(&results, &query_path.join("evaluate_pot_quality.csv"))
 }
 
-fn execute_query<Pot: TDPotential>(
-    server: &mut CapacityServer<Pot>,
+fn execute_query<Server: CapacityServerOps>(
+    server: &mut Server,
     name: &str,
     query: &TDQuery<Timestamp>,
     idx: usize,
@@ -320,7 +317,7 @@ fn execute_query<Pot: TDPotential>(
             time_potential.as_secs_f64(),
             time_query.as_secs_f64(),
             time_update.as_secs_f64(),
-            *sum_dist / *num_runs,
+            *sum_dist / max(*num_runs, 1),
             *num_runs
         );
 

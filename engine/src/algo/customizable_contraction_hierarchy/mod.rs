@@ -441,7 +441,7 @@ impl DirectedCCH {
         }
     }
 
-    fn num_nodes(&self) -> usize {
+    pub fn num_nodes(&self) -> usize {
         self.forward_first_out.len() - 1
     }
 

@@ -1,45 +1,35 @@
-use rust_road_router::algo::a_star::ZeroPotential;
+use crate::dijkstra::capacity_dijkstra_ops::CapacityDijkstraOps;
+use crate::dijkstra::model::{CapacityQueryResult, DistanceMeasure, MeasuredCapacityQueryResult, PathResult};
+use crate::dijkstra::potentials::multi_metric_potential::customization::CustomizedMultiMetrics;
+use crate::dijkstra::potentials::multi_metric_potential::potential::MultiMetricPotential;
+use crate::dijkstra::potentials::TDPotential;
+use crate::dijkstra::server::CapacityServerOps;
+use crate::graph::capacity_graph::CapacityGraph;
+use crate::graph::ModifiableWeight;
 use rust_road_router::algo::dijkstra::{DijkstraData, DijkstraOps, Label, State};
 use rust_road_router::algo::{GenQuery, TDQuery};
 use rust_road_router::datastr::graph::time_dependent::Timestamp;
 use rust_road_router::datastr::graph::{Arc, EdgeId, EdgeIdT, Graph, LinkIterable, NodeIdT, Weight, INFINITY};
 use rust_road_router::datastr::index_heap::Indexing;
-use rust_road_router::report;
-use rust_road_router::report::*;
+use rust_road_router::report::measure;
+use std::borrow::BorrowMut;
 use std::time::{Duration, Instant};
 
-use crate::dijkstra::capacity_dijkstra_ops::CapacityDijkstraOps;
-use crate::dijkstra::model::{CapacityQueryResult, DistanceMeasure, MeasuredCapacityQueryResult, PathResult};
-use crate::dijkstra::potentials::TDPotential;
-use crate::graph::capacity_graph::CapacityGraph;
-use crate::graph::ModifiableWeight;
-
-pub struct CapacityServer<Pot = ZeroPotential> {
+pub struct MultiMetricPotentialServer {
     graph: CapacityGraph,
     dijkstra: DijkstraData<Weight, EdgeIdT, Weight>,
-    potential: Pot,
+    customized: CustomizedMultiMetrics,
     requires_pot_update: bool,
 }
 
-impl<Pot: TDPotential> CapacityServer<Pot> {
-    pub fn new(graph: CapacityGraph) -> CapacityServer {
-        let nodes = graph.num_nodes();
+impl MultiMetricPotentialServer {
+    pub fn new(graph: CapacityGraph, customized: CustomizedMultiMetrics) -> Self {
+        let n = graph.num_nodes();
 
-        CapacityServer {
+        Self {
             graph,
-            dijkstra: DijkstraData::new(nodes),
-            potential: ZeroPotential(),
-            requires_pot_update: false,
-        }
-    }
-
-    pub fn new_with_potential(graph: CapacityGraph, potential: Pot) -> CapacityServer<Pot> {
-        let nodes = graph.num_nodes();
-
-        CapacityServer {
-            graph,
-            dijkstra: DijkstraData::new(nodes),
-            potential,
+            dijkstra: DijkstraData::new(n),
+            customized,
             requires_pot_update: false,
         }
     }
@@ -48,30 +38,26 @@ impl<Pot: TDPotential> CapacityServer<Pot> {
         self.requires_pot_update
     }
 
-    pub fn update_potential(&mut self, mut potential: Pot) {
-        std::mem::swap(&mut self.potential, &mut potential);
-        self.requires_pot_update = false;
-    }
-
-    pub fn decompose(self) -> (CapacityGraph, Pot) {
-        (self.graph, self.potential)
+    pub fn decompose(self) -> (CapacityGraph, CustomizedMultiMetrics) {
+        (self.graph, self.customized)
     }
 
     pub fn borrow_graph(&self) -> &CapacityGraph {
         &self.graph
     }
+
+    pub fn customize(&mut self) {
+        //std::mem::swap(&mut self.customized, &mut customized);
+        self.requires_pot_update = false;
+    }
+
+    pub fn customize_upper_bound(&mut self) {
+        self.customized.customize_upper_bound(&self.graph);
+        self.requires_pot_update = false;
+    }
 }
 
-pub trait CapacityServerOps {
-    fn query(&mut self, query: TDQuery<Timestamp>, update: bool) -> Option<CapacityQueryResult>;
-    fn query_measured(&mut self, query: TDQuery<Timestamp>, update: bool) -> MeasuredCapacityQueryResult;
-    fn update(&mut self, path: &PathResult);
-    fn distance(&mut self, query: TDQuery<Timestamp>) -> DistanceMeasure;
-    fn path(&self, query: TDQuery<Timestamp>) -> PathResult;
-    fn path_distance(&self, edge_path: &Vec<EdgeId>, query_start: Timestamp) -> Weight;
-}
-
-impl<Pot: TDPotential> CapacityServerOps for CapacityServer<Pot> {
+impl CapacityServerOps for MultiMetricPotentialServer {
     fn query(&mut self, query: TDQuery<Timestamp>, update: bool) -> Option<CapacityQueryResult> {
         let query_result = self.distance(query.clone());
 
@@ -124,8 +110,6 @@ impl<Pot: TDPotential> CapacityServerOps for CapacityServer<Pot> {
     }
 
     fn distance(&mut self, query: TDQuery<Timestamp>) -> DistanceMeasure {
-        report!("algo", "TD Dijkstra with Capacities");
-
         let from = query.from();
         let init = query.initial_state();
         let to = query.to();
@@ -139,8 +123,8 @@ impl<Pot: TDPotential> CapacityServerOps for CapacityServer<Pot> {
         // for now, a slight modification of the generic dijkstra code should suffice
 
         // prepro: initialize potential
-        let (_, time_potential) = measure(|| self.potential.init(from, to, query.departure));
-        let pot = &mut self.potential;
+        let mut pot = MultiMetricPotential::prepare(self.customized.borrow_mut());
+        let (_, time_potential) = measure(|| pot.init(from, to, query.departure));
 
         let start = Instant::now();
         let mut ops = CapacityDijkstraOps::default();
@@ -199,32 +183,15 @@ impl<Pot: TDPotential> CapacityServerOps for CapacityServer<Pot> {
             !pot.verify_result(result.unwrap_or(INFINITY)) || result.unwrap_or(INFINITY + 1) < pot.potential(from, init).unwrap_or(INFINITY);
         if self.requires_pot_update {
             println!(
-                "Result: {}, Potential: {}",
+                "Lower-Bound property violated on query {:?}: Result: {}, Potential: {}",
+                &query,
                 result.unwrap_or(INFINITY),
                 pot.potential(from, init).unwrap_or(INFINITY)
             );
         }
 
-        /*println!(
-            "Query results: {}, potential: {}",
-            result.unwrap_or(INFINITY),
-            pot.potential(from, init).unwrap()
-        );
-        println!(
-            "Query times: Potential: {}, Query: {}",
-            time_potential.to_std().unwrap().as_nanos() as f64 / 1_000_000.0,
-            time_query.to_std().unwrap().as_nanos() as f64 / 1_000_000.0
-        );*/
-        debug_assert!(
-            result.unwrap_or(INFINITY) >= pot.potential(from, init).unwrap_or(INFINITY) || self.requires_pot_update,
-            "{:#?} {:#?} {:#?}",
-            &result,
-            &pot.potential(from, init),
-            (from, to, init)
-        );
-
         DistanceMeasure {
-            distance: result,
+            distance: result.filter(|_| !self.requires_pot_update),
             time_potential,
             time_query,
             num_queue_pushs,

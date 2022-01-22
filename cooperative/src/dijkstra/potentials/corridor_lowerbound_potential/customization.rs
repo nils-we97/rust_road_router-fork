@@ -1,5 +1,7 @@
+use crate::dijkstra::potentials::cch_lower_upper::bounded_potential::BoundedLowerUpperPotentialContext;
 use crate::dijkstra::potentials::corridor_lowerbound_potential::customization_catchup::customize_td_graph;
 use crate::dijkstra::potentials::corridor_lowerbound_potential::shortcut::ShortcutWrapper;
+use crate::dijkstra::potentials::corridor_lowerbound_potential::CorridorLowerboundPotentialContext;
 use crate::graph::capacity_graph::CapacityGraph;
 use crate::graph::MAX_BUCKETS;
 use rust_road_router::algo::customizable_contraction_hierarchy::{DirectedCCH, CCH, CCHT};
@@ -15,16 +17,18 @@ use std::cell::RefCell;
 scoped_thread_local!(static UPWARD_WORKSPACE: RefCell<Vec<Vec<TTFPoint>>>);
 scoped_thread_local!(static DOWNWARD_WORKSPACE: RefCell<Vec<Vec<TTFPoint>>>);
 
-pub struct CustomizedApproximatedPeriodicTTF<CCH> {
-    pub cch: CCH,
+pub struct CustomizedCorridorLowerbound {
+    pub cch: DirectedCCH,
     pub upward_intervals: Vec<u32>,
     pub downward_intervals: Vec<u32>,
     pub upward_bounds: Vec<(u32, u32)>,
     pub downward_bounds: Vec<(u32, u32)>,
     pub num_intervals: u32,
+    pub potential_context: CorridorLowerboundPotentialContext,
+    pub corridor_context: BoundedLowerUpperPotentialContext,
 }
 
-impl CustomizedApproximatedPeriodicTTF<DirectedCCH> {
+impl CustomizedCorridorLowerbound {
     pub fn new_from_capacity(cch: &CCH, graph: &CapacityGraph, num_intervals: u32) -> Self {
         // basic workaround: convert to TD-Graph, then run PTV customization
         let mut first_ipp_of_arc = vec![0];
@@ -88,6 +92,7 @@ impl CustomizedApproximatedPeriodicTTF<DirectedCCH> {
         });
         println!("Re-Building new CCH graph took {} ms", time.as_secs_f64() * 1000.0);
 
+        let num_nodes = cch.num_nodes();
         Self {
             cch,
             upward_intervals,
@@ -95,11 +100,11 @@ impl CustomizedApproximatedPeriodicTTF<DirectedCCH> {
             upward_bounds,
             downward_bounds,
             num_intervals,
+            potential_context: CorridorLowerboundPotentialContext::new(num_nodes),
+            corridor_context: BoundedLowerUpperPotentialContext::new(num_nodes),
         }
     }
-}
 
-impl<CCH: CCHT> CustomizedApproximatedPeriodicTTF<CCH> {
     pub fn forward_graph(&self) -> (UnweightedFirstOutGraph<&[EdgeId], &[NodeId]>, &Vec<u32>, &Vec<(u32, u32)>) {
         (
             UnweightedFirstOutGraph::new(self.cch.forward_first_out(), self.cch.forward_head()),
