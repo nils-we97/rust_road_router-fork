@@ -12,10 +12,10 @@ use rust_road_router::datastr::index_heap::Indexing;
 use rust_road_router::report::measure;
 use std::time::{Duration, Instant};
 
-pub struct PTVQueryServer<Customized> {
+pub struct PTVQueryServer<PotCustomized> {
     graph: TDGraph,
     dijkstra: DijkstraData<Weight, (), Weight>,
-    customized: Customized,
+    customized: PotCustomized,
     pub sum_potentials: u64,
 }
 
@@ -28,8 +28,8 @@ pub struct PTVQueryResult {
     pub num_queue_pushs: u32,
 }
 
-impl<Customized> PTVQueryServer<Customized> {
-    pub fn new(graph: TDGraph, customized: Customized) -> Self {
+impl<PotCustomized> PTVQueryServer<PotCustomized> {
+    pub fn new(graph: TDGraph, customized: PotCustomized) -> Self {
         let n = graph.num_nodes();
 
         Self {
@@ -41,7 +41,7 @@ impl<Customized> PTVQueryServer<Customized> {
     }
 
     // borrow/decompose functions
-    pub fn decompose(self) -> (TDGraph, Customized) {
+    pub fn decompose(self) -> (TDGraph, PotCustomized) {
         (self.graph, self.customized)
     }
     pub fn borrow_graph(&self) -> &TDGraph {
@@ -150,7 +150,7 @@ impl PTVQueryServer<CustomizedCorridorLowerbound> {
     }
 }
 
-impl<Customized: TDPotential> PTVQueryServer<Customized> {
+impl<PotCustomized: TDPotential> PTVQueryServer<PotCustomized> {
     pub fn query(&mut self, query: &TDQuery<Timestamp>) -> PTVQueryResult {
         Self::query_internal(&self.graph, &mut self.dijkstra, query, &mut self.customized, &mut self.sum_potentials)
     }

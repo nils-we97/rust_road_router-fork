@@ -1,8 +1,6 @@
 use cooperative::dijkstra::potentials::corridor_lowerbound_potential::customization::CustomizedCorridorLowerbound;
-use cooperative::dijkstra::potentials::corridor_lowerbound_potential::server::CorridorLowerboundPotentialServer;
 use cooperative::dijkstra::potentials::multi_metric_potential::customization::CustomizedMultiMetrics;
 use cooperative::dijkstra::potentials::multi_metric_potential::interval_patterns::balanced_interval_pattern;
-use cooperative::dijkstra::potentials::multi_metric_potential::server::MultiMetricPotentialServer;
 use cooperative::dijkstra::server::{CapacityServer, CapacityServerOps};
 use cooperative::experiments::queries::permutate_queries;
 use cooperative::experiments::types::PotentialType;
@@ -103,7 +101,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 PotentialType::CCHPot => {
                     let init_start = Instant::now();
                     let cch_pot_data = CCHPotData::new(&cch, &graph);
-                    let mut server = CapacityServer::new_with_potential(graph, cch_pot_data.forward_potential());
+                    let mut server = CapacityServer::new(graph, cch_pot_data.forward_potential());
                     total_time_reinit = total_time_reinit.add(init_start.elapsed());
 
                     for a in evaluation_breakpoints.windows(2) {
@@ -140,7 +138,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                     // init server
                     let init_start = Instant::now();
                     let customized = CustomizedCorridorLowerbound::new_from_capacity(&cch, &graph, 72);
-                    let mut server = CorridorLowerboundPotentialServer::new(graph, customized);
+                    let mut server = CapacityServer::new(graph, customized);
                     total_time_reinit = total_time_reinit.add(init_start.elapsed());
 
                     // execute all queries
@@ -205,7 +203,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                     // init server
                     let init_start = Instant::now();
                     let customized = CustomizedMultiMetrics::new_from_capacity(cch, &graph, &balanced_interval_pattern(), mm_num_metrics as usize);
-                    let mut server = MultiMetricPotentialServer::new(graph, customized);
+                    let mut server = CapacityServer::new(graph, customized);
                     total_time_reinit = total_time_reinit.add(init_start.elapsed());
 
                     // execute all queries
@@ -234,7 +232,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                                 let cch = customized.decompose();
 
                                 let customized = CustomizedMultiMetrics::new_from_capacity(cch, &graph, &balanced_interval_pattern(), mm_num_metrics as usize);
-                                server = MultiMetricPotentialServer::new(graph, customized);
+                                server = CapacityServer::new(graph, customized);
                                 total_time_reinit = total_time_reinit.add(reinit_start.elapsed());
                                 last_update_step = current_idx;
 
@@ -294,7 +292,7 @@ fn execute_query<Server: CapacityServerOps>(
     total_time_query: &mut Duration,
     total_time_update: &mut Duration,
 ) {
-    let query_result = server.query_measured(*query, true);
+    let query_result = server.query_measured(query, true);
     *time_potential = time_potential.add(query_result.distance_result.time_potential);
     *time_query = time_query.add(query_result.distance_result.time_query);
     *time_update = time_update.add(query_result.update_time);
