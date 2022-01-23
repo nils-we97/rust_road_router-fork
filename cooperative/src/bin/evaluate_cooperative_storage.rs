@@ -1,3 +1,5 @@
+use cooperative::dijkstra::potentials::multi_metric_potential::customization::CustomizedMultiMetrics;
+use cooperative::dijkstra::potentials::multi_metric_potential::interval_patterns::balanced_interval_pattern;
 use cooperative::dijkstra::server::{CapacityServer, CapacityServerOps};
 use cooperative::experiments::queries::permutate_queries;
 use cooperative::graph::traffic_functions::BPRTrafficFunction;
@@ -6,10 +8,8 @@ use cooperative::io::io_node_order::load_node_order;
 use cooperative::io::io_queries::load_queries;
 use cooperative::util::cli_args::{parse_arg_optional, parse_arg_required};
 use rayon::prelude::*;
-use rust_road_router::algo::ch_potentials::CCHPotData;
 use rust_road_router::algo::customizable_contraction_hierarchy::CCH;
-use rust_road_router::datastr::graph::{Graph, OwnedGraph};
-use rust_road_router::io::Load;
+use rust_road_router::datastr::graph::Graph;
 use std::env;
 use std::error::Error;
 use std::fs::File;
@@ -20,6 +20,7 @@ use std::time::Instant;
 
 /// Evaluates the memory consumption of a cooperative routing approach.
 /// After a given number of queries, the current memory consumption is evaluated, before further processing occurs.
+/// Queries are accelerated with a default Multi-Metric potential which is updated after 50000 queries each
 ///
 /// Additional parameters: <path_to_graph> <path_to_queries> <query_breakpoints, comma-separated> <buckets = 50,200,600>
 fn main() -> Result<(), Box<dyn Error>> {
@@ -39,46 +40,52 @@ fn main() -> Result<(), Box<dyn Error>> {
     // bring queries into disorder -> required to enable faster traffic distribution
     permutate_queries(&mut queries);
 
-    // init cch potential, use lowerbound graph
-    let first_out = Vec::<u32>::load_from(&graph_path.join("first_out"))?;
-    let head = Vec::<u32>::load_from(&graph_path.join("head"))?;
-    let weight = Vec::<u32>::load_from(&graph_path.join("travel_time"))?;
-    let lower_bound = OwnedGraph::new(first_out, head, weight);
-
-    let order = load_node_order(&graph_path)?;
-    let cch = CCH::fix_order_and_build(&lower_bound, order);
-    let cch_pot_data = CCHPotData::new(&cch, &lower_bound);
-
     // initialize graphs and evaluate memory consumption
     let usage_statistics = graph_bucket_counts
         .par_iter()
         .flat_map(|&num_buckets| {
             let mut statistics = Vec::with_capacity(query_breakpoints.len() - 1);
 
+            // init graph and cch
             let graph = load_capacity_graph(graph_path, num_buckets, BPRTrafficFunction::default()).unwrap();
-            let mut server = CapacityServer::new(graph, cch_pot_data.forward_potential());
+            let order = load_node_order(graph_path).unwrap();
+            let cch = CCH::fix_order_and_build(&graph, order);
+
+            // run initial customization, init server
+            let customized = CustomizedMultiMetrics::new_from_capacity(cch, &graph, &balanced_interval_pattern(), 20);
+            let mut server = CapacityServer::new(graph, customized);
             println!("{} buckets - starting queries!", num_buckets);
 
             let mut query_time = Instant::now();
 
             for i in query_breakpoints.windows(2) {
-                (i[0] as usize..i[1] as usize)
-                    .into_iter()
-                    .zip(queries[i[0] as usize..i[1] as usize].iter())
-                    .for_each(|(idx, query)| {
-                        if (idx + 1) % 10000 == 0 {
-                            println!(
-                                "{} buckets - finished {} of {} queries - last step took {}s",
-                                num_buckets,
-                                idx + 1,
-                                queries.len(),
-                                query_time.elapsed().as_secs_f64()
-                            );
-                            query_time = Instant::now();
-                        }
+                for idx in i[0] as usize..i[1] as usize {
+                    server.query(&queries[idx], true);
 
-                        server.query(query, true);
-                    });
+                    if (idx + 1) % 10000 == 0 {
+                        println!(
+                            "{} buckets - finished {} of {} queries - last step took {}s",
+                            num_buckets,
+                            idx + 1,
+                            queries.len(),
+                            query_time.elapsed().as_secs_f64()
+                        );
+                        query_time = Instant::now();
+                    }
+
+                    // check if the potential has to be updated
+                    if (idx + 1) % 50000 == 0 {
+                        // regular re-customization
+                        let (graph, customized) = server.decompose();
+                        let cch = customized.decompose();
+                        let customized = CustomizedMultiMetrics::new_from_capacity(cch, &graph, &balanced_interval_pattern(), 20);
+                        server = CapacityServer::new(graph, customized);
+                    } else if !server.result_valid() || !server.update_valid() {
+                        // re-customization of upper bounds
+                        println!("-- {} - potential update after {} steps", num_buckets, idx + 1);
+                        server.customize_upper_bound();
+                    }
+                }
 
                 let (num_used_edges, num_used_buckets) = server.borrow_graph().get_bucket_usage();
 
