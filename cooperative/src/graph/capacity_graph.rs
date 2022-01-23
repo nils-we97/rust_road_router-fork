@@ -3,7 +3,7 @@ use rust_road_router::datastr::graph::{EdgeId, Graph, NodeId, Weight, INFINITY};
 
 use crate::graph::edge_buckets::{CapacityBuckets, SpeedBuckets};
 use crate::graph::traffic_functions::BPRTrafficFunction;
-use crate::graph::{Capacity, ExportableCapacity, ModifiableWeight, MAX_BUCKETS};
+use crate::graph::{Capacity, ExportableCapacity, MAX_BUCKETS};
 use conversion::speed_profile_to_tt_profile;
 use std::cmp::{max, min};
 
@@ -273,41 +273,49 @@ impl CapacityGraph {
             self.travel_time[edge_id] = travel_time;
         }
     }
-}
 
-impl ModifiableWeight for CapacityGraph {
-    fn increase_weights(&mut self, edges: &[EdgeId], departure: &[Timestamp]) {
-        edges.iter().zip(departure.iter()).for_each(|(&edge_id, &timestamp)| {
-            let edge_id = edge_id as usize;
+    pub fn increase_weights(&mut self, edges: &[EdgeId], departure: &[Timestamp]) -> Vec<(EdgeId, Weight, Weight)> {
+        edges
+            .iter()
+            .zip(departure.iter())
+            .map(|(&edge_id, &timestamp)| {
+                let edge_id = edge_id as usize;
 
-            if self.num_buckets == 1 {
-                // special case treatment for single-bucket graph
-                let prev_capacity = match &self.used_capacity[edge_id] {
-                    CapacityBuckets::Unused => 0,
-                    CapacityBuckets::Used(data) => {
-                        debug_assert!(data.len() == 1 && data[0].0 == 0);
-                        data[0].1
-                    }
-                };
+                if self.num_buckets == 1 {
+                    // special case treatment for single-bucket graph
+                    let prev_capacity = match &self.used_capacity[edge_id] {
+                        CapacityBuckets::Unused => 0,
+                        CapacityBuckets::Used(data) => {
+                            debug_assert!(data.len() == 1 && data[0].0 == 0);
+                            data[0].1
+                        }
+                    };
 
-                self.used_capacity[edge_id] = CapacityBuckets::Used(vec![(0, prev_capacity + 1)]);
-            } else {
-                // find suitable bucket in which to insert, then update capacity and adjust speed profile
-                let ts_rounded = self.round_timestamp(timestamp);
-                let next_ts = (ts_rounded + (MAX_BUCKETS / self.num_buckets)) % MAX_BUCKETS;
+                    self.used_capacity[edge_id] = CapacityBuckets::Used(vec![(0, prev_capacity + 1)]);
+                } else {
+                    // find suitable bucket in which to insert, then update capacity and adjust speed profile
+                    let ts_rounded = self.round_timestamp(timestamp);
+                    let next_ts = (ts_rounded + (MAX_BUCKETS / self.num_buckets)) % MAX_BUCKETS;
 
-                let adjusted_capacity = self.used_capacity[edge_id].increment(ts_rounded);
+                    let adjusted_capacity = self.used_capacity[edge_id].increment(ts_rounded);
 
-                let adjusted_speed = self
-                    .traffic_function
-                    .speed(self.free_flow_speed_kmh[edge_id], self.max_capacity[edge_id], adjusted_capacity);
-                self.used_speeds[edge_id].update(ts_rounded, adjusted_speed, next_ts, self.free_flow_speed_kmh[edge_id]);
-            }
-            self.rebuild_travel_time_profile(edge_id);
-        });
+                    let adjusted_speed = self
+                        .traffic_function
+                        .speed(self.free_flow_speed_kmh[edge_id], self.max_capacity[edge_id], adjusted_capacity);
+                    self.used_speeds[edge_id].update(ts_rounded, adjusted_speed, next_ts, self.free_flow_speed_kmh[edge_id]);
+                }
+                self.rebuild_travel_time_profile(edge_id);
+
+                (
+                    edge_id as EdgeId,
+                    self.travel_time[edge_id].iter().min().cloned().unwrap(),
+                    self.travel_time[edge_id].iter().max().cloned().unwrap(),
+                )
+            })
+            .collect()
     }
 
-    fn reset_weights(&mut self) {
+    pub fn reset_weights(&mut self) {
         for edge_id in 0..self.num_arcs() {
             self.used_capacity[edge_id] = CapacityBuckets::Unused;
             self.departure[edge_id] = vec![0, MAX_BUCKETS];

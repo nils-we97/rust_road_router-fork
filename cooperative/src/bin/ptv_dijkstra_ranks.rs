@@ -8,7 +8,7 @@ use rust_road_router::algo::ch_potentials::{BorrowedCCHPot, CCHPotData};
 use rust_road_router::algo::customizable_contraction_hierarchy::CCH;
 use rust_road_router::algo::TDQuery;
 use rust_road_router::datastr::graph::time_dependent::{TDGraph, Timestamp};
-use rust_road_router::datastr::graph::FirstOutGraph;
+use rust_road_router::datastr::graph::{FirstOutGraph, Graph};
 use rust_road_router::datastr::node_order::NodeOrder;
 use rust_road_router::io::{Load, Reconstruct};
 use rust_road_router::report::measure;
@@ -70,7 +70,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     // ----------------------------------------------------------------------------- //
     // 2nd potential: Multi-Metric Potential
     let customized_path = path.join("customized").join(&customized_mm);
-    let (customized_multi_metric, time) = measure(|| load_multiple_metrics(&customized_path, cch).unwrap());
+    let (customized_multi_metric, time) = measure(|| load_multiple_metrics(&customized_path, cch, graph.num_arcs()).unwrap());
     println!("Loaded customized data in {} ms", time.as_secs_f64() * 1000.0);
 
     let mut server = PTVQueryServer::new(graph, customized_multi_metric);

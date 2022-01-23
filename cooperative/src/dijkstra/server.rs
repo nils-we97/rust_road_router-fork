@@ -15,14 +15,14 @@ use crate::dijkstra::potentials::multi_metric_potential::customization::Customiz
 use crate::dijkstra::potentials::multi_metric_potential::potential::MultiMetricPotential;
 use crate::dijkstra::potentials::TDPotential;
 use crate::graph::capacity_graph::CapacityGraph;
-use crate::graph::ModifiableWeight;
 use rust_road_router::algo::customizable_contraction_hierarchy::CCH;
 
 pub struct CapacityServer<PotCustomized> {
     graph: CapacityGraph,
     dijkstra: DijkstraData<Weight, EdgeIdT, Weight>,
     customized: PotCustomized,
-    requires_pot_update: bool,
+    result_valid: bool,
+    update_valid: bool,
 }
 
 impl<PotCustomized> CapacityServer<PotCustomized> {
@@ -33,12 +33,17 @@ impl<PotCustomized> CapacityServer<PotCustomized> {
             graph,
             dijkstra: DijkstraData::new(n),
             customized,
-            requires_pot_update: false,
+            result_valid: true,
+            update_valid: true,
         }
     }
 
-    pub fn requires_pot_update(&self) -> bool {
-        self.requires_pot_update
+    pub fn result_valid(&self) -> bool {
+        self.result_valid
+    }
+
+    pub fn update_valid(&self) -> bool {
+        self.update_valid
     }
 
     pub fn decompose(self) -> (CapacityGraph, PotCustomized) {
@@ -53,15 +58,16 @@ impl<PotCustomized> CapacityServer<PotCustomized> {
         dijkstra: &mut DijkstraData<Weight, EdgeIdT, Weight>,
         graph: &CapacityGraph,
         pot: &mut Pot,
-        requires_pot_update: &mut bool,
+        result_valid: &mut bool,
         query: &TDQuery<Timestamp>,
     ) -> DistanceMeasure {
         report!("algo", "TD Dijkstra with Capacities");
 
-        // if the potential requires an update, block the query execution
-        if *requires_pot_update {
+        // if the latest result was not valid, block the query execution
+        if !*result_valid {
             return DistanceMeasure {
                 distance: None,
+                potential: None,
                 time_potential: Duration::ZERO,
                 time_query: Duration::ZERO,
                 num_queue_pushs: 0,
@@ -131,20 +137,20 @@ impl<PotCustomized> CapacityServer<PotCustomized> {
 
         let time_query = start.elapsed();
 
-        *requires_pot_update = match result {
+        *result_valid = match result {
             None => {
                 // case that should not happen: not reachable, but potential says so
-                pot.potential(query.from, query.departure).is_some()
+                pot.potential(query.from, query.departure).is_none()
             }
             Some(1) => {
                 // nasty edge cases, caused by our graph preprocessing -> everything okay here
                 println!("-- WARNING: Distance 1, Potential: {:?}", &pot.potential(query.from, query.departure));
-                false
+                true
             }
-            Some(dist) => dist < pot.potential(query.from, query.departure).unwrap_or(INFINITY),
+            Some(dist) => dist >= pot.potential(query.from, query.departure).unwrap_or(INFINITY) && pot.verify_result(dist),
         };
 
-        if *requires_pot_update {
+        if !*result_valid {
             println!(
                 "Result: {}, Potential: {}",
                 result.unwrap_or(INFINITY),
@@ -153,17 +159,14 @@ impl<PotCustomized> CapacityServer<PotCustomized> {
         }
 
         DistanceMeasure {
-            distance: result.filter(|_| !*requires_pot_update),
+            distance: result.filter(|_| *result_valid),
+            potential: pot.potential(query.from, query.departure),
             time_potential,
             time_query,
             num_queue_pushs,
             num_queue_pops,
             num_relaxed_arcs,
         }
-    }
-
-    fn update_internal(&mut self, path: &PathResult) {
-        self.graph.increase_weights(&path.edge_path, &path.departure);
     }
 
     fn path_internal(&self, query: &TDQuery<Timestamp>) -> PathResult {
@@ -219,24 +222,22 @@ impl<PotCustomized> CapacityServer<PotCustomized> {
 impl CapacityServer<CustomizedCorridorLowerbound> {
     pub fn customize(&mut self, mut customized: CustomizedCorridorLowerbound) {
         std::mem::swap(&mut self.customized, &mut customized);
-        self.requires_pot_update = false;
+        self.result_valid = true;
+        self.update_valid = true;
     }
 
     pub fn customize_upper_bound(&mut self, cch: &CCH) {
         self.customized.customize_upper_bound(cch, &self.graph);
-        self.requires_pot_update = false;
+        self.result_valid = true;
+        self.update_valid = true;
     }
 }
 
 impl CapacityServer<CustomizedMultiMetrics> {
-    pub fn customize(&mut self) {
-        //std::mem::swap(&mut self.customized, &mut customized);
-        self.requires_pot_update = false;
-    }
-
     pub fn customize_upper_bound(&mut self) {
         self.customized.customize_upper_bound(&self.graph);
-        self.requires_pot_update = false;
+        self.result_valid = true;
+        self.update_valid = true;
     }
 }
 
@@ -293,11 +294,11 @@ pub trait CapacityServerOps {
 
 impl<PotCustomized: TDPotential> CapacityServerOps for CapacityServer<PotCustomized> {
     fn distance(&mut self, query: &TDQuery<u32>) -> DistanceMeasure {
-        Self::distance_internal(&mut self.dijkstra, &self.graph, &mut self.customized, &mut self.requires_pot_update, query)
+        Self::distance_internal(&mut self.dijkstra, &self.graph, &mut self.customized, &mut self.result_valid, query)
     }
 
     fn update(&mut self, path: &PathResult) {
-        self.update_internal(path);
+        self.graph.increase_weights(&path.edge_path, &path.departure);
     }
 
     fn path(&self, query: &TDQuery<Timestamp>) -> PathResult {
@@ -313,11 +314,37 @@ impl CapacityServerOps for CapacityServer<CustomizedMultiMetrics> {
     fn distance(&mut self, query: &TDQuery<Timestamp>) -> DistanceMeasure {
         let mut pot = MultiMetricPotential::prepare(&mut self.customized);
 
-        Self::distance_internal(&mut self.dijkstra, &self.graph, &mut pot, &mut self.requires_pot_update, query)
+        Self::distance_internal(&mut self.dijkstra, &self.graph, &mut pot, &mut self.result_valid, query)
     }
 
     fn update(&mut self, path: &PathResult) {
-        self.update_internal(path);
+        self.update_valid = self
+            .graph
+            .increase_weights(&path.edge_path, &path.departure)
+            .iter()
+            .all(|&(edge_id, edge_lower, edge_upper)| {
+                if let Some(shortcut_id) = self.customized.orig_edge_to_forward_shortcut[edge_id as usize] {
+                    let (lower_bound, upper_bound) = self.customized.forward_cch_bounds[shortcut_id as usize];
+
+                    debug_assert!(lower_bound <= edge_lower);
+                    if upper_bound < edge_upper {
+                        println!("Bound violated: Found {}, expected <= {}", edge_upper, upper_bound);
+                        return false;
+                    }
+                }
+
+                if let Some(shortcut_id) = self.customized.orig_edge_to_backward_shortcut[edge_id as usize] {
+                    let (lower_bound, upper_bound) = self.customized.backward_cch_bounds[shortcut_id as usize];
+
+                    debug_assert!(lower_bound <= edge_lower);
+                    if upper_bound < edge_upper {
+                        println!("Bound violated: Found {}, expected <= {}", edge_upper, upper_bound);
+                        return false;
+                    }
+                }
+
+                true
+            });
     }
 
     fn path(&self, query: &TDQuery<Timestamp>) -> PathResult {
@@ -333,11 +360,43 @@ impl CapacityServerOps for CapacityServer<CustomizedCorridorLowerbound> {
     fn distance(&mut self, query: &TDQuery<Timestamp>) -> DistanceMeasure {
         let mut pot = CorridorLowerboundPotential::prepare_capacity(&mut self.customized);
 
-        Self::distance_internal(&mut self.dijkstra, &self.graph, &mut pot, &mut self.requires_pot_update, query)
+        Self::distance_internal(&mut self.dijkstra, &self.graph, &mut pot, &mut self.result_valid, query)
     }
 
     fn update(&mut self, path: &PathResult) {
-        self.update_internal(path);
+        debug_assert!(self.customized.customized_bounds.is_some());
+        let customized_bounds = self.customized.customized_bounds.as_ref().unwrap();
+
+        self.update_valid = self
+            .graph
+            .increase_weights(&path.edge_path, &path.departure)
+            .iter()
+            .all(|&(edge_id, lower_bound, upper_bound)| {
+                debug_assert!(upper_bound > 0);
+                if let Some(shortcut_id) = customized_bounds.orig_edge_to_forward_shortcut[edge_id as usize] {
+                    debug_assert!(customized_bounds.upward[shortcut_id as usize].0 <= lower_bound);
+                    if customized_bounds.upward[shortcut_id as usize].1 < upper_bound {
+                        println!(
+                            "Bound violated: Found {}, expected <= {}",
+                            upper_bound, customized_bounds.upward[shortcut_id as usize].1
+                        );
+                        return false;
+                    }
+                }
+
+                if let Some(shortcut_id) = customized_bounds.orig_edge_to_backward_shortcut[edge_id as usize] {
+                    debug_assert!(customized_bounds.downward[shortcut_id as usize].0 <= lower_bound);
+                    if customized_bounds.downward[shortcut_id as usize].1 < upper_bound {
+                        println!(
+                            "Bound violated: Found {}, expected <= {}",
+                            upper_bound, customized_bounds.downward[shortcut_id as usize].1
+                        );
+                        return false;
+                    }
+                }
+
+                true
+            });
     }
 
     fn path(&self, query: &TDQuery<Timestamp>) -> PathResult {

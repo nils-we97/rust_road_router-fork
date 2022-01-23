@@ -69,84 +69,9 @@ impl<'a> MultiMetricPotential<'a> {
         }
     }
 
-    /*pub fn new(customized: &'a CustomizedMultiMetrics<'a>) -> Self {
-        let forward_cch_graph = UnweightedFirstOutGraph::new(&customized.cch.forward_first_out()[..], &customized.cch.forward_head()[..]);
-        let backward_cch_graph = UnweightedFirstOutGraph::new(&customized.cch.backward_first_out()[..], &customized.cch.backward_head()[..]);
-
-        let n = customized.cch.num_nodes();
-        let m = customized.cch.num_arcs();
-
-        let interval_query_server = Self::init_elimination_tree_server(
-            customized.cch,
-            &customized.upward[..m],
-            &customized.upward[m..2 * m],
-            &customized.downward[..m],
-            &customized.downward[m..2 * m],
-        );
-
-        let context = MultiLevelBucketPotentialContext {
-            stack: Vec::new(),
-            potentials: TimestampedVector::new(n),
-            backward_distances: TimestampedVector::new(n),
-            current_metric: 0,
-            latest_arrival_dist: None,
-            query_start: 0,
-            num_pot_computations: 0,
-        };
-
-        Self {
-            customized,
-            forward_cch_graph,
-            backward_cch_graph,
-            interval_query_server,
-            context,
-        }
-    }*/
-
     pub fn num_pot_computations(&self) -> usize {
         self.context.num_pot_computations
     }
-
-    /*pub fn refresh_bounds(&mut self, graph: &CapacityGraph) {
-        let m = self.customized.cch.num_arcs();
-        let (upper_forward, upper_backward) = self.customized.coop_fix_upper_bound(graph);
-
-        debug_assert_eq!(m, upper_forward.len());
-        debug_assert_eq!(m, upper_backward.len());
-
-        self.interval_query_server = Self::init_elimination_tree_server(
-            self.customized.cch,
-            &self.customized.upward[..m],
-            &upper_forward,
-            &self.customized.downward[..m],
-            &upper_backward,
-        );
-    }
-
-    fn init_elimination_tree_server(
-        cch: &'a CCH,
-        upward_lower: &[Weight],
-        upward_upper: &[Weight],
-        downward_lower: &[Weight],
-        downward_upper: &[Weight],
-    ) -> CorridorEliminationTreeServer<'a, CCH, Vec<(Weight, Weight)>> {
-        let m = cch.num_arcs();
-
-        let forward_graph = UnweightedFirstOutGraph::new(&cch.forward_first_out()[..], &cch.forward_head()[..]);
-        let backward_graph = UnweightedFirstOutGraph::new(&cch.backward_first_out()[..], &cch.backward_head()[..]);
-
-        let pot_forward_weights = (0..m)
-            .into_iter()
-            .map(|edge_id| (upward_lower[edge_id], upward_upper[edge_id]))
-            .collect::<Vec<(Weight, Weight)>>();
-
-        let pot_backward_weights = (0..m)
-            .into_iter()
-            .map(|edge_id| (downward_lower[edge_id], downward_upper[edge_id]))
-            .collect::<Vec<(Weight, Weight)>>();
-
-        CorridorEliminationTreeServer::new(cch, forward_graph, pot_forward_weights, backward_graph, pot_backward_weights)
-    }*/
 }
 
 impl<'a> TDPotential for MultiMetricPotential<'a> {

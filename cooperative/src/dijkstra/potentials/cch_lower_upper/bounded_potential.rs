@@ -75,19 +75,6 @@ impl<'a, CCH: CCHT> BoundedLowerUpperPotential<'a, CCH> {
         );
 
         // forward search space is already initialized -> nothing to do here :)
-        /*if self.context.target_bounds.is_some() {
-            // 2. initialize forward-upward search space with distances from interval query
-            let source = self.cch.node_order().rank(source);
-            let query_forward_distances = self.elimination_tree_server.forward_distances();
-
-            // updating the distances is straightforward and we do not have to relax any edges!
-            let mut cur_node = Some(source);
-            while let Some(node) = cur_node {
-                cur_node = self.cch.elimination_tree()[node as usize].value();
-                self.forward_distances[node as usize] = query_forward_distances[node as usize];
-            }
-        }*/
-
         self.context.target_bounds
     }
 

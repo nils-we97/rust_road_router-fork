@@ -20,7 +20,8 @@ pub struct CustomizedLowerUpper {
     pub cch: DirectedCCH,
     pub upward: Vec<(Weight, Weight)>,
     pub downward: Vec<(Weight, Weight)>,
-    pub _phantom: std::marker::PhantomData<DirectedCCH>,
+    pub orig_edge_to_forward_shortcut: Vec<Option<EdgeId>>,
+    pub orig_edge_to_backward_shortcut: Vec<Option<EdgeId>>,
 }
 
 impl CustomizedLowerUpper {
@@ -47,7 +48,8 @@ impl CustomizedLowerUpper {
         println!("Sizes after basic: {} {}", upward_weights.len(), downward_weights.len());
 
         // run perfect customization
-        let directed_cch = customize_perfect(cch, &mut upward_weights, &mut downward_weights);
+        let (directed_cch, orig_edge_to_forward, orig_edge_to_backward) =
+            customize_perfect(cch, &mut upward_weights, &mut downward_weights, travel_times.len());
 
         println!("Sizes after perfect: {} {}", upward_weights.len(), downward_weights.len());
 
@@ -59,7 +61,8 @@ impl CustomizedLowerUpper {
             cch: directed_cch,
             upward: upward_weights,
             downward: downward_weights,
-            _phantom: Default::default(),
+            orig_edge_to_forward_shortcut: orig_edge_to_forward,
+            orig_edge_to_backward_shortcut: orig_edge_to_backward,
         }
     }
 
@@ -184,7 +187,12 @@ fn customize_basic(cch: &CCH, upward_weights: &mut Vec<(Weight, Weight)>, downwa
 }
 
 // perfect customization
-fn customize_perfect(cch: &CCH, upward_weights: &mut Vec<(Weight, Weight)>, downward_weights: &mut Vec<(Weight, Weight)>) -> DirectedCCH {
+fn customize_perfect(
+    cch: &CCH,
+    upward_weights: &mut Vec<(Weight, Weight)>,
+    downward_weights: &mut Vec<(Weight, Weight)>,
+    num_orig_edges: usize,
+) -> (DirectedCCH, Vec<Option<EdgeId>>, Vec<Option<EdgeId>>) {
     let n = cch.num_nodes();
     let m = cch.num_arcs();
     // Routine for perfect precustomization.
@@ -332,7 +340,27 @@ fn customize_perfect(cch: &CCH, upward_weights: &mut Vec<(Weight, Weight)>, down
         *downward_weights = backward_weight;
         *upward_weights = forward_weight;
 
-        DirectedCCH::new(
+        // create reverse entry for forward/backward shortcuts
+        let mut orig_edge_to_forward_shortcut = vec![None; num_orig_edges];
+        let mut orig_edge_to_backward_shortcut = vec![None; num_orig_edges];
+
+        forward_cch_edge_to_orig_arc.iter().enumerate().for_each(|(idx, outgoing)| {
+            debug_assert!(outgoing.len() <= 1);
+            outgoing.iter().for_each(|&EdgeIdT(orig_edge_id)| {
+                debug_assert!(orig_edge_to_forward_shortcut[orig_edge_id as usize].is_none());
+                orig_edge_to_forward_shortcut[orig_edge_id as usize] = Some(idx as EdgeId);
+            });
+        });
+
+        backward_cch_edge_to_orig_arc.iter().enumerate().for_each(|(idx, outgoing)| {
+            debug_assert!(outgoing.len() <= 1);
+            outgoing.iter().for_each(|&EdgeIdT(orig_edge_id)| {
+                debug_assert!(orig_edge_to_backward_shortcut[orig_edge_id as usize].is_none());
+                orig_edge_to_backward_shortcut[orig_edge_id as usize] = Some(idx as EdgeId);
+            });
+        });
+
+        let cch = DirectedCCH::new(
             forward_first_out,
             forward_head,
             backward_first_out,
@@ -343,6 +371,8 @@ fn customize_perfect(cch: &CCH, upward_weights: &mut Vec<(Weight, Weight)>, down
             elimination_tree,
             forward_inverted,
             backward_inverted,
-        )
+        );
+
+        (cch, orig_edge_to_forward_shortcut, orig_edge_to_backward_shortcut)
     })
 }

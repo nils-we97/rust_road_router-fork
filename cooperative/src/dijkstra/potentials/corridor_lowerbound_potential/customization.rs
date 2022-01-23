@@ -13,7 +13,7 @@ use rust_road_router::datastr::graph::{
 use rust_road_router::report::measure;
 use scoped_tls::scoped_thread_local;
 use std::cell::RefCell;
-use std::cmp::min;
+use std::cmp::{max, min};
 
 // One mapping of node id to weight for each thread during the scope of the customization.
 scoped_thread_local!(static UPWARD_WORKSPACE: RefCell<Vec<Vec<TTFPoint>>>);
@@ -115,8 +115,14 @@ impl CustomizedCorridorLowerbound {
         let mut customized = CustomizedLowerUpper::new(cch, graph.travel_time());
 
         // scale upper bound
-        customized.upward.iter_mut().for_each(|(_, upper)| *upper = min(INFINITY, (*upper / 2) * 3));
-        customized.downward.iter_mut().for_each(|(_, upper)| *upper = min(INFINITY, (*upper / 2) * 3));
+        customized.upward.iter_mut().for_each(|(_, upper)| {
+            //*lower = (*lower as f64 * 0.9) as u32;
+            *upper = min(INFINITY, max((*upper / 2) * 3, 1))
+        });
+        customized.downward.iter_mut().for_each(|(_, upper)| {
+            //*lower = (*lower as f64 * 0.9) as u32;
+            *upper = min(INFINITY, max((*upper / 2) * 3, 1))
+        });
 
         self.customized_bounds = Some(customized);
     }

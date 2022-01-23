@@ -24,6 +24,7 @@ pub struct MeasuredCapacityQueryResult {
 #[derive(Clone, Debug)]
 pub struct DistanceMeasure {
     pub distance: Option<Weight>,
+    pub potential: Option<Weight>,
     pub time_potential: Duration,
     pub time_query: Duration,
     pub num_queue_pushs: u32,

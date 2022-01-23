@@ -86,7 +86,7 @@ pub fn store_interval_minima(directory: &Path, customized: &CustomizedCorridorLo
 
 /* ----------------------------------------------------------------------------------------*/
 
-pub fn load_multiple_metrics(directory: &Path, cch: CCH) -> Result<CustomizedMultiMetrics, Box<dyn Error>> {
+pub fn load_multiple_metrics(directory: &Path, cch: CCH, num_orig_edges: usize) -> Result<CustomizedMultiMetrics, Box<dyn Error>> {
     let upward = Vec::<u32>::load_from(&directory.join("upward_weights"))?;
     let downward = Vec::<u32>::load_from(&directory.join("downward_weights"))?;
 
@@ -109,7 +109,14 @@ pub fn load_multiple_metrics(directory: &Path, cch: CCH) -> Result<CustomizedMul
         .map(|((&start, &end), &id)| MetricEntry::new(start, end, id as usize))
         .collect::<Vec<MetricEntry>>();
 
-    Ok(CustomizedMultiMetrics::restore(cch, upward, downward, metric_entries, num_metrics))
+    Ok(CustomizedMultiMetrics::restore(
+        cch,
+        upward,
+        downward,
+        metric_entries,
+        num_metrics,
+        num_orig_edges,
+    ))
 }
 
 pub fn store_multiple_metrics(directory: &Path, customized: &CustomizedMultiMetrics) -> Result<(), Box<dyn Error>> {

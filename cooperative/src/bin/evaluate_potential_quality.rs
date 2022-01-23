@@ -162,27 +162,30 @@ fn main() -> Result<(), Box<dyn Error>> {
                             );
 
                             if (current_idx + 1) % update_frequency == 0 {
+                                // regular re-customization
+                                current_idx += server.result_valid() as u32;
+
                                 let reinit_start = Instant::now();
                                 let customized = CustomizedCorridorLowerbound::new_from_capacity(&cch, &server.borrow_graph(), 72);
                                 server.customize(customized);
                                 total_time_reinit = total_time_reinit.add(reinit_start.elapsed());
-
-                                if !server.requires_pot_update() {
-                                    current_idx += 1;
-                                }
-                            } else if server.requires_pot_update() {
-                                println!("\n\n--------------------------");
-                                println!("REINIT IN STEP {}", current_idx);
-                                println!("--------------------------\n\n");
-
+                            } else if !server.result_valid() || !server.update_valid() {
+                                // avoid infinity loops - panic if the bounds are not updated properly
                                 if last_update_step == current_idx {
                                     panic!("Failed twice in the same step! Query: {:?}", &queries[current_idx as usize]);
                                 } else {
+                                    last_update_step = current_idx;
+
+                                    println!("\n\n--------------------------");
+                                    println!("Corridor-Lowerbound: Update Bounds in step {}", current_idx);
+                                    println!("--------------------------\n\n");
+
                                     let (_, time) = measure(|| server.customize_upper_bound(&cch));
                                     total_time_reinit = total_time_reinit.add(time);
-                                }
 
-                                last_update_step = current_idx;
+                                    // update violated some internal bounds, but the result is still valid
+                                    current_idx += server.result_valid() as u32;
+                                }
                             } else {
                                 current_idx += 1;
                             }
@@ -227,6 +230,9 @@ fn main() -> Result<(), Box<dyn Error>> {
                             );
 
                             if (current_idx + 1) % update_frequency == 0 {
+                                // regular re-customization
+                                current_idx += server.result_valid() as u32;
+
                                 let reinit_start = Instant::now();
                                 let (graph, customized) = server.decompose();
                                 let cch = customized.decompose();
@@ -235,23 +241,23 @@ fn main() -> Result<(), Box<dyn Error>> {
                                 server = CapacityServer::new(graph, customized);
                                 total_time_reinit = total_time_reinit.add(reinit_start.elapsed());
                                 last_update_step = current_idx;
-
-                                if !server.requires_pot_update() {
-                                    current_idx += 1;
-                                }
-                            } else if server.requires_pot_update() {
-                                println!("\n\n--------------------------");
-                                println!("REINIT IN STEP {}", current_idx);
-                                println!("--------------------------\n\n");
-
+                            } else if !server.result_valid() || !server.update_valid() {
+                                // avoid infinity loops - panic if the bounds are not updated properly
                                 if last_update_step == current_idx {
                                     panic!("Failed twice in the same step! Query: {:?}", &queries[current_idx as usize]);
                                 } else {
+                                    last_update_step = current_idx;
+
+                                    println!("\n\n--------------------------");
+                                    println!("Multi-Metric: Update Bounds in step {}", current_idx);
+                                    println!("--------------------------\n\n");
+
                                     let (_, time) = measure(|| server.customize_upper_bound());
                                     total_time_reinit = total_time_reinit.add(time);
-                                }
 
-                                last_update_step = current_idx;
+                                    // update violated some internal bounds, but the result is still valid
+                                    current_idx += server.result_valid() as u32;
+                                }
                             } else {
                                 current_idx += 1;
                             }
@@ -306,6 +312,10 @@ fn execute_query<Server: CapacityServerOps>(
     *total_time_potential = total_time_potential.add(query_result.distance_result.time_potential);
     *total_time_update = total_time_update.add(query_result.update_time);
 
+    /*println!(
+        "{} - query result: {:?}, potential: {:?}",
+        name, &query_result.distance_result.distance, &query_result.distance_result.potential
+    );*/
     if (idx + 1) % 1000 == 0 {
         println!(
             "{}: Finished {} queries. Last step: {}s pot init, {}s query, {}s ttf update - avg dist: {}, {} valid runs",

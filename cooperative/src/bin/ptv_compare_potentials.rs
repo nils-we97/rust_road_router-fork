@@ -78,7 +78,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     // ----------------------------------------------------------------------------- //
     // 2nd potential: Multi-Metric Potential
-    let (customized_multi_metric, time) = measure(|| load_multiple_metrics(&path.join("customized").join(customized_mm), cch).unwrap());
+    let (customized_multi_metric, time) = measure(|| load_multiple_metrics(&path.join("customized").join(customized_mm), cch, graph.num_arcs()).unwrap());
     println!("Loaded customized data in {} ms", time.as_secs_f64() * 1000.0);
 
     let mut server = PTVQueryServer::new(graph, customized_multi_metric);

@@ -10,7 +10,7 @@ use rust_road_router::datastr::graph::{EdgeId, EdgeIdT, Graph, LinkIterable, Nod
 use rust_road_router::report::{measure, report_time, report_time_with_key};
 use scoped_tls::scoped_thread_local;
 use std::cell::RefCell;
-use std::cmp::min;
+use std::cmp::{max, min};
 use std::ops::Range;
 
 // One mapping of node id to weight for each thread during the scope of the customization.
@@ -30,6 +30,8 @@ pub struct CustomizedMultiMetrics {
     pub potential_context: MultiMetricPotentialContext,
     pub forward_cch_bounds: Vec<(Weight, Weight)>,
     pub backward_cch_bounds: Vec<(Weight, Weight)>,
+    pub orig_edge_to_forward_shortcut: Vec<Option<EdgeId>>,
+    pub orig_edge_to_backward_shortcut: Vec<Option<EdgeId>>,
 }
 
 impl CustomizedMultiMetrics {
@@ -66,7 +68,7 @@ impl CustomizedMultiMetrics {
         Self::new(cch, &departures, &travel_times, intervals, num_max_metrics, false)
     }
 
-    pub fn restore(cch: CCH, upward: Vec<Weight>, downward: Vec<Weight>, metric_entries: Vec<MetricEntry>, num_metrics: usize) -> Self {
+    pub fn restore(cch: CCH, upward: Vec<Weight>, downward: Vec<Weight>, metric_entries: Vec<MetricEntry>, num_metrics: usize, num_orig_edges: usize) -> Self {
         let m = cch.num_arcs();
 
         let forward_cch_bounds = upward[..m]
@@ -81,6 +83,8 @@ impl CustomizedMultiMetrics {
             .map(|(&lower, &upper)| (lower, upper))
             .collect::<Vec<(Weight, Weight)>>();
 
+        let (orig_edge_to_forward_shortcut, orig_edge_to_backward_shortcut) = retrieve_orig_edge_to_shortcut_mapping(&cch, num_orig_edges);
+
         let num_nodes = cch.num_nodes();
         Self {
             cch,
@@ -91,6 +95,8 @@ impl CustomizedMultiMetrics {
             potential_context: MultiMetricPotentialContext::new(num_nodes),
             forward_cch_bounds,
             backward_cch_bounds,
+            orig_edge_to_forward_shortcut,
+            orig_edge_to_backward_shortcut,
         }
     }
 
@@ -144,6 +150,9 @@ impl CustomizedMultiMetrics {
             .collect::<Vec<(Weight, Weight)>>();
 
         let num_nodes = cch.num_nodes();
+
+        let (orig_edge_to_forward_shortcut, orig_edge_to_backward_shortcut) = retrieve_orig_edge_to_shortcut_mapping(&cch, departures.len());
+
         Self {
             cch,
             upward: upward_weights,
@@ -153,6 +162,8 @@ impl CustomizedMultiMetrics {
             potential_context: MultiMetricPotentialContext::new(num_nodes),
             forward_cch_bounds,
             backward_cch_bounds,
+            orig_edge_to_forward_shortcut,
+            orig_edge_to_backward_shortcut,
         }
     }
 
@@ -170,8 +181,8 @@ impl CustomizedMultiMetrics {
         customize_basic(&self.cch, &mut upwards, &mut downwards);
 
         // scale upper bounds
-        let upwards = upwards.iter().map(|v| min(INFINITY, (v[0] / 2) * 3)).collect::<Vec<Weight>>();
-        let downwards = downwards.iter().map(|v| min(INFINITY, (v[0] / 2) * 3)).collect::<Vec<Weight>>();
+        let upwards = upwards.iter().map(|v| min(INFINITY, max((v[0] / 2) * 3, 1))).collect::<Vec<Weight>>();
+        let downwards = downwards.iter().map(|v| min(INFINITY, max((v[0] / 2) * 3, 1))).collect::<Vec<Weight>>();
 
         // update bound entries
         self.forward_cch_bounds
@@ -227,7 +238,7 @@ fn reorder_weights(weights: &Vec<Vec<Weight>>, num_metrics: usize, scale_upper_b
 
     if scale_upper_bound {
         for edge_id in 0..weights.len() {
-            ret[UPPERBOUND_METRIC * weights.len() + edge_id] = min(INFINITY, (ret[UPPERBOUND_METRIC * weights.len() + edge_id] / 2) * 3);
+            ret[UPPERBOUND_METRIC * weights.len() + edge_id] = min(INFINITY, max((ret[UPPERBOUND_METRIC * weights.len() + edge_id] / 2) * 3, 1));
         }
     }
 
@@ -376,4 +387,35 @@ fn customize_basic(cch: &CCH, upward_weights: &mut Vec<Vec<Weight>>, downward_we
             // everything will be dropped here
         });
     });
+}
+
+fn retrieve_orig_edge_to_shortcut_mapping(cch: &CCH, num_orig_edges: usize) -> (Vec<Option<EdgeId>>, Vec<Option<EdgeId>>) {
+    let mut orig_edge_to_forward_shortcut = vec![None; num_orig_edges];
+    let mut orig_edge_to_backward_shortcut = vec![None; num_orig_edges];
+
+    cch.forward_cch_edge_to_orig_arc.iter().enumerate().for_each(|(idx, outgoing)| {
+        debug_assert!(outgoing.len() <= 1);
+        outgoing.iter().for_each(|&EdgeIdT(orig_edge_id)| {
+            debug_assert!(orig_edge_to_forward_shortcut[orig_edge_id as usize].is_none());
+            orig_edge_to_forward_shortcut[orig_edge_id as usize] = Some(idx as EdgeId);
+        });
+    });
+
+    cch.backward_cch_edge_to_orig_arc.iter().enumerate().for_each(|(idx, outgoing)| {
+        debug_assert!(outgoing.len() <= 1);
+        outgoing.iter().for_each(|&EdgeIdT(orig_edge_id)| {
+            debug_assert!(orig_edge_to_backward_shortcut[orig_edge_id as usize].is_none());
+            orig_edge_to_backward_shortcut[orig_edge_id as usize] = Some(idx as EdgeId);
+        });
+    });
+
+    // no pruning takes place here -> each edge should either have a forward or backward shortcut
+    let num_missing_edges = orig_edge_to_forward_shortcut
+        .iter()
+        .zip(orig_edge_to_backward_shortcut.iter())
+        .filter(|&(backward, forward)| backward.is_none() && forward.is_none())
+        .count();
+    println!("Shortcut mapping - no entries for {} of {} edges", num_missing_edges, num_orig_edges);
+
+    (orig_edge_to_forward_shortcut, orig_edge_to_backward_shortcut)
 }
