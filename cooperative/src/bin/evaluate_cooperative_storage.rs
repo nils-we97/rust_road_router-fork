@@ -67,7 +67,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                             "{} buckets - finished {} of {} queries - last step took {}s",
                             num_buckets,
                             idx + 1,
-                            queries.len(),
+                            query_breakpoints.last().unwrap(),
                             query_time.elapsed().as_secs_f64()
                         );
                         query_time = Instant::now();
@@ -76,10 +76,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                     // check if the potential has to be updated
                     if (idx + 1) % 50000 == 0 {
                         // regular re-customization
-                        let (graph, customized) = server.decompose();
-                        let cch = customized.decompose();
-                        let customized = CustomizedMultiMetrics::new_from_capacity(cch, &graph, &balanced_interval_pattern(), 20);
-                        server = CapacityServer::new(graph, customized);
+                        server.customize(&balanced_interval_pattern(), 20);
                     } else if !server.result_valid() || !server.update_valid() {
                         // re-customization of upper bounds
                         println!("-- {} - potential update after {} steps", num_buckets, idx + 1);

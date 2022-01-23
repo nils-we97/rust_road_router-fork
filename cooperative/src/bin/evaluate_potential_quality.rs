@@ -146,6 +146,16 @@ fn main() -> Result<(), Box<dyn Error>> {
                         let mut current_idx = a[0];
 
                         while current_idx < a[1] {
+                            // check if regular re-customization must be executed before query
+                            if (current_idx + 1) % update_frequency == 0 {
+                                let (_, time) = measure(|| {
+                                    let customized = CustomizedCorridorLowerbound::new_from_capacity(&cch, &server.borrow_graph(), 72);
+                                    server.customize(customized);
+                                });
+                                total_time_reinit = total_time_reinit.add(time);
+                                last_update_step = current_idx;
+                            }
+
                             execute_query(
                                 &mut server,
                                 heuristic_name.as_str(),
@@ -161,15 +171,8 @@ fn main() -> Result<(), Box<dyn Error>> {
                                 &mut total_time_update,
                             );
 
-                            if (current_idx + 1) % update_frequency == 0 {
-                                // regular re-customization
-                                current_idx += server.result_valid() as u32;
-
-                                let reinit_start = Instant::now();
-                                let customized = CustomizedCorridorLowerbound::new_from_capacity(&cch, &server.borrow_graph(), 72);
-                                server.customize(customized);
-                                total_time_reinit = total_time_reinit.add(reinit_start.elapsed());
-                            } else if !server.result_valid() || !server.update_valid() {
+                            // check if the potential requires update
+                            if !server.result_valid() || !server.update_valid() {
                                 // avoid infinity loops - panic if the bounds are not updated properly
                                 if last_update_step == current_idx {
                                     panic!("Failed twice in the same step! Query: {:?}", &queries[current_idx as usize]);
@@ -182,13 +185,11 @@ fn main() -> Result<(), Box<dyn Error>> {
 
                                     let (_, time) = measure(|| server.customize_upper_bound(&cch));
                                     total_time_reinit = total_time_reinit.add(time);
-
-                                    // update violated some internal bounds, but the result is still valid
-                                    current_idx += server.result_valid() as u32;
                                 }
-                            } else {
-                                current_idx += 1;
                             }
+
+                            // even if the update step violated some bounds, the result might still be valid
+                            current_idx += server.result_valid() as u32;
                         }
 
                         statistics.push(EvaluatePotentialQualityStatisticEntry::new(
@@ -214,6 +215,13 @@ fn main() -> Result<(), Box<dyn Error>> {
                         let mut current_idx = a[0];
 
                         while current_idx < a[1] {
+                            // check if regular re-customization must be executed before query
+                            if (current_idx + 1) % update_frequency == 0 {
+                                let (_, time) = measure(|| server.customize(&balanced_interval_pattern(), mm_num_metrics as usize));
+                                total_time_reinit = total_time_reinit.add(time);
+                                last_update_step = current_idx;
+                            }
+
                             execute_query(
                                 &mut server,
                                 heuristic_name.as_str(),
@@ -229,19 +237,8 @@ fn main() -> Result<(), Box<dyn Error>> {
                                 &mut total_time_update,
                             );
 
-                            if (current_idx + 1) % update_frequency == 0 {
-                                // regular re-customization
-                                current_idx += server.result_valid() as u32;
-
-                                let reinit_start = Instant::now();
-                                let (graph, customized) = server.decompose();
-                                let cch = customized.decompose();
-
-                                let customized = CustomizedMultiMetrics::new_from_capacity(cch, &graph, &balanced_interval_pattern(), mm_num_metrics as usize);
-                                server = CapacityServer::new(graph, customized);
-                                total_time_reinit = total_time_reinit.add(reinit_start.elapsed());
-                                last_update_step = current_idx;
-                            } else if !server.result_valid() || !server.update_valid() {
+                            // check if the potential requires update
+                            if !server.result_valid() || !server.update_valid() {
                                 // avoid infinity loops - panic if the bounds are not updated properly
                                 if last_update_step == current_idx {
                                     panic!("Failed twice in the same step! Query: {:?}", &queries[current_idx as usize]);
@@ -254,13 +251,11 @@ fn main() -> Result<(), Box<dyn Error>> {
 
                                     let (_, time) = measure(|| server.customize_upper_bound());
                                     total_time_reinit = total_time_reinit.add(time);
-
-                                    // update violated some internal bounds, but the result is still valid
-                                    current_idx += server.result_valid() as u32;
                                 }
-                            } else {
-                                current_idx += 1;
                             }
+
+                            // even if the update step violated some bounds, the result might still be valid
+                            current_idx += server.result_valid() as u32;
                         }
 
                         statistics.push(EvaluatePotentialQualityStatisticEntry::new(
