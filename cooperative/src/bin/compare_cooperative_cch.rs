@@ -1,5 +1,5 @@
 use cooperative::dijkstra::potentials::multi_metric_potential::customization::CustomizedMultiMetrics;
-use cooperative::dijkstra::potentials::multi_metric_potential::interval_patterns::balanced_interval_pattern;
+use cooperative::dijkstra::potentials::multi_metric_potential::interval_patterns::complete_balanced_interval_pattern;
 use cooperative::dijkstra::server::{CapacityServer, CapacityServerOps};
 use cooperative::graph::traffic_functions::BPRTrafficFunction;
 use cooperative::io::io_graph::load_capacity_graph;
@@ -58,7 +58,8 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     // init coop server, move CCH
     let coop_cch = CCH::fix_order_and_build(&coop_graph, order);
-    let customized = CustomizedMultiMetrics::new_from_capacity(coop_cch, &coop_graph, &balanced_interval_pattern(), num_pot_metrics as usize);
+    let interval_pattern = complete_balanced_interval_pattern();
+    let customized = CustomizedMultiMetrics::new_from_capacity(coop_cch, &coop_graph, &interval_pattern, num_pot_metrics as usize);
     let mut server = CapacityServer::new(coop_graph, customized);
     println!("Initialized cooperative server");
 
@@ -98,7 +99,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
                 // check for regular customization of coop server
                 if (idx as u32 + 1) % coop_update_frequency == 0 {
-                    let (_, time) = measure(|| server.customize(&balanced_interval_pattern(), 20));
+                    let (_, time) = measure(|| server.customize(&interval_pattern, 20));
                     cust_time_coop = cust_time_coop.add(time);
                     coop_updated = true;
                 }

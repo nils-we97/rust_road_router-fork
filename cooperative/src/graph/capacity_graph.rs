@@ -186,8 +186,8 @@ impl CapacityGraph {
             .used_capacity
             .iter()
             .map(|buckets| match buckets {
-                CapacityBuckets::Unused => 0,
-                CapacityBuckets::Used(data) => data.capacity() * 8,
+                CapacityBuckets::Unused => std::mem::size_of_val(&CapacityBuckets::Unused),
+                CapacityBuckets::Used(data) => std::mem::size_of_val(&buckets) + data.capacity() * 8,
             })
             .sum::<usize>();
 
@@ -195,8 +195,8 @@ impl CapacityGraph {
             .used_speeds
             .iter()
             .map(|buckets| match buckets {
-                SpeedBuckets::Unused => 0,
-                SpeedBuckets::Used(data) => data.capacity() * 8,
+                SpeedBuckets::Unused => std::mem::size_of_val(&SpeedBuckets::Unused),
+                SpeedBuckets::Used(data) => std::mem::size_of_val(&buckets) + data.capacity() * 8,
             })
             .sum::<usize>();
 

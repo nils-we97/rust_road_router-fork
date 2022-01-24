@@ -32,6 +32,16 @@ pub fn balanced_interval_pattern() -> Vec<(Timestamp, Timestamp)> {
     a
 }
 
+pub fn complete_balanced_interval_pattern() -> Vec<(Timestamp, Timestamp)> {
+    (0..5)
+        .into_iter()
+        .map(|i| (ts_from(i * 4, 0), ts_from(i * 4 + 8, 0)))
+        .chain((0..11).into_iter().map(|i| (ts_from(i * 2, 0), ts_from(i * 2 + 4, 0))))
+        .chain((0..23).into_iter().map(|i| (ts_from(i, 0), ts_from(i + 2, 0))))
+        .chain((0..47).into_iter().map(|i| (ts_from(0, i * 30), ts_from(0, (i + 1) * 30))))
+        .collect()
+}
+
 pub fn rush_hour_pattern() -> Vec<(Timestamp, Timestamp)> {
     vec![
         (ts_from(0, 0), ts_from(6, 0)),

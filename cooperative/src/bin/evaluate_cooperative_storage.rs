@@ -1,5 +1,5 @@
 use cooperative::dijkstra::potentials::multi_metric_potential::customization::CustomizedMultiMetrics;
-use cooperative::dijkstra::potentials::multi_metric_potential::interval_patterns::balanced_interval_pattern;
+use cooperative::dijkstra::potentials::multi_metric_potential::interval_patterns::complete_balanced_interval_pattern;
 use cooperative::dijkstra::server::{CapacityServer, CapacityServerOps};
 use cooperative::experiments::queries::permutate_queries;
 use cooperative::graph::traffic_functions::BPRTrafficFunction;
@@ -40,6 +40,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     // bring queries into disorder -> required to enable faster traffic distribution
     permutate_queries(&mut queries);
 
+    let interval_pattern = complete_balanced_interval_pattern();
+
     // initialize graphs and evaluate memory consumption
     let usage_statistics = graph_bucket_counts
         .par_iter()
@@ -52,7 +54,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             let cch = CCH::fix_order_and_build(&graph, order);
 
             // run initial customization, init server
-            let customized = CustomizedMultiMetrics::new_from_capacity(cch, &graph, &balanced_interval_pattern(), 20);
+            let customized = CustomizedMultiMetrics::new_from_capacity(cch, &graph, &interval_pattern, 20);
             let mut server = CapacityServer::new(graph, customized);
             println!("{} buckets - starting queries!", num_buckets);
 
@@ -76,7 +78,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                     // check if the potential has to be updated
                     if (idx + 1) % 50000 == 0 {
                         // regular re-customization
-                        server.customize(&balanced_interval_pattern(), 20);
+                        server.customize(&interval_pattern, 20);
                     } else if !server.result_valid() || !server.update_valid() {
                         // re-customization of upper bounds
                         println!("-- {} - potential update after {} steps", num_buckets, idx + 1);

@@ -2,15 +2,14 @@ use std::env;
 use std::error::Error;
 use std::path::Path;
 
-use cooperative::dijkstra::potentials::init_cch_potential::init_cch_potential;
 use cooperative::dijkstra::server::{CapacityServer, CapacityServerOps};
 use cooperative::graph::traffic_functions::BPRTrafficFunction;
 use cooperative::io::io_coordinates::load_coords;
 use cooperative::io::io_graph::load_capacity_graph;
-use cooperative::io::io_node_order::load_node_order;
 use cooperative::io::io_queries::load_queries;
 use cooperative::util::cli_args::{parse_arg_optional, parse_arg_required};
 use cooperative::util::query_path_visualization::print_path_coords;
+use rust_road_router::algo::a_star::ZeroPotential;
 use rust_road_router::report::measure;
 
 /// Runs a given set of pre-generated queries on a given graph.
@@ -31,17 +30,12 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     // load queries
     let queries = load_queries(&graph_directory.join("queries").join(query_directory))?;
-
-    // init cch potential
-    let order = load_node_order(graph_directory)?;
-    let cch_pot_data = init_cch_potential(&graph, order);
-
-    let mut server = CapacityServer::new_with_potential(graph, cch_pot_data.forward_potential());
+    let mut server = CapacityServer::new(graph, ZeroPotential());
 
     // generate and run queries, print resulting path coordinates
-    queries
+    queries[..10]
         .iter()
-        .filter_map(|query| server.query(*query, true).map(|result| result.path))
+        .filter_map(|query| server.query(query, true).map(|result| result.path))
         .for_each(|path| print_path_coords(&path.node_path, &lat, &lon));
 
     Ok(())

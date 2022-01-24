@@ -1,5 +1,5 @@
 use cooperative::dijkstra::potentials::multi_metric_potential::customization::CustomizedMultiMetrics;
-use cooperative::dijkstra::potentials::multi_metric_potential::interval_patterns::balanced_interval_pattern;
+use cooperative::dijkstra::potentials::multi_metric_potential::interval_patterns::complete_balanced_interval_pattern;
 use cooperative::dijkstra::server::{CapacityServer, CapacityServerOps};
 use cooperative::experiments::queries::permutate_queries;
 use cooperative::graph::traffic_functions::BPRTrafficFunction;
@@ -54,6 +54,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut path_results = vec![Vec::<Vec<EdgeId>>::with_capacity(queries.len()); graph_attributes.len()];
     let mut query_starts = vec![Vec::<Timestamp>::with_capacity(queries.len()); graph_attributes.len()];
 
+    let interval_pattern = complete_balanced_interval_pattern();
+
     let mut servers = graph_attributes
         .iter()
         .map(|&(num_buckets, _)| {
@@ -61,7 +63,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             let order = load_node_order(&graph_path).unwrap();
             let cch = CCH::fix_order_and_build(&graph, order);
 
-            let customized = CustomizedMultiMetrics::new_from_capacity(cch, &graph, &balanced_interval_pattern(), 20);
+            let customized = CustomizedMultiMetrics::new_from_capacity(cch, &graph, &interval_pattern, 20);
             CapacityServer::new(graph, customized)
         })
         .collect::<Vec<CapacityServer<CustomizedMultiMetrics>>>();
@@ -95,7 +97,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
                     // check if regular re-customization must be executed before query
                     if (idx + 1) % 50000 == 0 {
-                        server.customize(&balanced_interval_pattern(), 20);
+                        server.customize(&interval_pattern, 20);
                         last_update = idx;
                     }
 

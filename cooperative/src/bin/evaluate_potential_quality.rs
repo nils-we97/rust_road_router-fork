@@ -1,6 +1,6 @@
 use cooperative::dijkstra::potentials::corridor_lowerbound_potential::customization::CustomizedCorridorLowerbound;
 use cooperative::dijkstra::potentials::multi_metric_potential::customization::CustomizedMultiMetrics;
-use cooperative::dijkstra::potentials::multi_metric_potential::interval_patterns::balanced_interval_pattern;
+use cooperative::dijkstra::potentials::multi_metric_potential::interval_patterns::complete_balanced_interval_pattern;
 use cooperative::dijkstra::server::{CapacityServer, CapacityServerOps};
 use cooperative::experiments::queries::permutate_queries;
 use cooperative::experiments::types::PotentialType;
@@ -66,6 +66,8 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     // load cch
     let temp_graph = load_capacity_graph(graph_path, num_buckets, BPRTrafficFunction::default())?;
+
+    let interval_pattern = complete_balanced_interval_pattern();
 
     let results = [(PotentialType::CCHPot, *customization_breakpoints.last().unwrap())]
         .par_iter()
@@ -206,7 +208,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                     let mut last_update_step = 0;
                     // init server
                     let init_start = Instant::now();
-                    let customized = CustomizedMultiMetrics::new_from_capacity(cch, &graph, &balanced_interval_pattern(), mm_num_metrics as usize);
+                    let customized = CustomizedMultiMetrics::new_from_capacity(cch, &graph, &interval_pattern, mm_num_metrics as usize);
                     let mut server = CapacityServer::new(graph, customized);
                     total_time_reinit = total_time_reinit.add(init_start.elapsed());
 
@@ -217,7 +219,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                         while current_idx < a[1] {
                             // check if regular re-customization must be executed before query
                             if (current_idx + 1) % update_frequency == 0 {
-                                let (_, time) = measure(|| server.customize(&balanced_interval_pattern(), mm_num_metrics as usize));
+                                let (_, time) = measure(|| server.customize(&interval_pattern, mm_num_metrics as usize));
                                 total_time_reinit = total_time_reinit.add(time);
                                 last_update_step = current_idx;
                             }

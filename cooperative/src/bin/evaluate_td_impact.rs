@@ -2,7 +2,7 @@ use std::env;
 use std::error::Error;
 
 use cooperative::dijkstra::potentials::multi_metric_potential::customization::CustomizedMultiMetrics;
-use cooperative::dijkstra::potentials::multi_metric_potential::interval_patterns::balanced_interval_pattern;
+use cooperative::dijkstra::potentials::multi_metric_potential::interval_patterns::complete_balanced_interval_pattern;
 use cooperative::dijkstra::server::{CapacityServer, CapacityServerOps};
 use cooperative::graph::traffic_functions::BPRTrafficFunction;
 use cooperative::io::io_graph::load_capacity_graph;
@@ -40,6 +40,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     let query_path = path.join("queries").join(query_directory);
     let queries = load_queries(&query_path)?;
 
+    let interval_pattern = complete_balanced_interval_pattern();
+
     // init servers
     let mut servers = bucket_counts
         .iter()
@@ -48,7 +50,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             let order = load_node_order(&path).unwrap();
             let cch = CCH::fix_order_and_build(&graph, order);
 
-            let customized = CustomizedMultiMetrics::new_from_capacity(cch, &graph, &balanced_interval_pattern(), 20);
+            let customized = CustomizedMultiMetrics::new_from_capacity(cch, &graph, &interval_pattern, 20);
             CapacityServer::new(graph, customized)
         })
         .collect::<Vec<CapacityServer<CustomizedMultiMetrics>>>();
@@ -86,7 +88,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
                     // check if regular re-customization must be executed before query
                     if (idx + 1) % 50000 == 0 {
-                        let (_, time) = measure(|| server.customize(&balanced_interval_pattern(), 20));
+                        let (_, time) = measure(|| server.customize(&interval_pattern, 20));
                         *total_time = total_time.add(time);
                         last_update = idx;
                     }
