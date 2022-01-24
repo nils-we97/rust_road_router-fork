@@ -16,6 +16,7 @@ use rust_road_router::datastr::graph::EdgeId;
 use rust_road_router::report::measure;
 use std::fs::File;
 use std::io::Write;
+use std::ops::Add;
 use std::path::Path;
 use std::str::FromStr;
 use std::time::{Duration, Instant};
@@ -35,7 +36,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let path = Path::new(&graph_directory);
 
     // load queries
-    // queries will explicitely not be permutated! Otherwise, the time-dependent impact might be neglected
+    // queries will explicitly not be permuted! Otherwise, the time-dependent impact might be neglected
     let query_path = path.join("queries").join(query_directory);
     let queries = load_queries(&query_path)?;
 
@@ -139,7 +140,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                     .map(|(path, query_start)| evaluation_server.path_distance(path, *query_start) as u64)
                     .sum::<u64>();
 
-                EvaluateTDImpactStatisticEntry::new(num_buckets, i[1], sum_dist, sum_dist / paths.len() as u64, paths.len())
+                EvaluateTDImpactStatisticEntry::new(num_buckets, i[1], sum_dist, sum_dist / paths.len() as u64, paths.len(), *time)
             })
             .collect::<Vec<EvaluateTDImpactStatisticEntry>>();
 

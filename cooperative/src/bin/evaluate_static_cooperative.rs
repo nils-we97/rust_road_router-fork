@@ -35,7 +35,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let graph_path = Path::new(&graph_directory);
     let query_path = graph_path.join("queries").join(&query_directory);
 
-    // init queries
+    // init queries, do NOT permute them
     let mut queries = load_queries(&query_path)?;
     assert!(
         queries.len() as u32 >= *query_breakpoints.last().unwrap(),
@@ -43,8 +43,6 @@ fn main() -> Result<(), Box<dyn Error>> {
         query_breakpoints.last().unwrap(),
         queries.len()
     );
-    // bring queries into disorder -> required to enable faster traffic distribution
-    permutate_queries(&mut queries);
 
     // initialize graphs and store paths
     let graph_attributes = [(1, false)]

@@ -30,7 +30,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let graph_path = Path::new(&graph_directory);
     let query_path = graph_path.join("queries").join(&query_directory);
 
-    // queries will explicitely not be permutated! Otherwise, the time-dependent impact might be neglected
+    // queries will explicitly not be permuted! Otherwise, the time-dependent impact might be neglected
     let queries = load_queries(&query_path)?;
 
     // init capacity graph for cooperative routing
