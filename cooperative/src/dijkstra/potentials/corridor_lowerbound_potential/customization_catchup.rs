@@ -9,7 +9,7 @@ use rust_road_router::algo::customizable_contraction_hierarchy::CCH;
 use rust_road_router::datastr::graph::floating_time_dependent::shortcut::Sources;
 use rust_road_router::datastr::graph::floating_time_dependent::shortcut_source::ShortcutSource;
 use rust_road_router::datastr::graph::floating_time_dependent::{
-    FlWeight, MergeBuffers, PeriodicATTF, PeriodicPiecewiseLinearFunction, Shortcut, TDGraph, TTFPoint, Timestamp, PLF,
+    FlWeight, MergeBuffers, PeriodicATTF, PeriodicPiecewiseLinearFunction, Shortcut, TDGraph, TTFPoint, Timestamp, EPSILON, PLF,
 };
 use rust_road_router::datastr::graph::{EdgeId, EdgeIdT, Graph, LinkIterable, NodeId, NodeIdT, Reversed, INFINITY};
 use rust_road_router::report;
@@ -349,11 +349,11 @@ pub fn customize_td_graph(cch: &CCH, metric: &TDGraph, num_intervals: u32) -> (V
 
     // adjust upper bounds
     upward.iter_mut().for_each(|wrapper| {
-        wrapper.bounds.1 = min(wrapper.bounds.1, convert_timestamp_f64_to_u32(wrapper.shortcut.upper_bound.0));
+        wrapper.bounds.1 = min(wrapper.bounds.1, convert_timestamp_f64_to_u32(wrapper.shortcut.upper_bound.0 + EPSILON));
     });
 
     downward.iter_mut().for_each(|wrapper| {
-        wrapper.bounds.1 = min(wrapper.bounds.1, convert_timestamp_f64_to_u32(wrapper.shortcut.upper_bound.0));
+        wrapper.bounds.1 = min(wrapper.bounds.1, convert_timestamp_f64_to_u32(wrapper.shortcut.upper_bound.0 + EPSILON));
     });
 
     (upward, downward)
