@@ -98,7 +98,6 @@ fn main() -> Result<(), Box<dyn Error>> {
             store_multiple_metrics(&output_path, &customized_multi_metric)?;
             println!("Stored customized struct in {}", output_path.display());
         }
-        PotentialType::MultiLevelBucket => unimplemented!(),
     }
 
     Ok(())

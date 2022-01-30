@@ -102,7 +102,7 @@ impl Indexing for MetricItem {
     }
 }
 
-/// reduce the given metrics until only `num_metrics` remain. Use the square sum approach from the `MultiLevelBucket` potential
+/// reduce the given metrics until only `num_metrics` remain, use a square sum approach
 pub fn reduce_metrics(data: &mut Vec<Vec<Weight>>, entries: &mut Vec<MetricEntry>, num_allowed_metrics: usize) -> usize {
     // insert all entry pairs into the priority queue
     let num_metrics = data[0].len();

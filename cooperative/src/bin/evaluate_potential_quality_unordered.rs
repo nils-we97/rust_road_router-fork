@@ -182,8 +182,6 @@ fn main() -> Result<(), Box<dyn Error>> {
                             while current_idx < a[1] {
                                 // check if regular re-customization must be executed before query
                                 if (current_idx + 1) % mm_update_frequency == 0 && current_idx as usize + 1 < queries.len() {
-                                    dbg!(current_idx, mm_update_frequency);
-
                                     let (_, time) = measure(|| server.customize(&interval_pattern, mm_num_metrics as usize));
                                     total_time = total_time.add(time);
                                     last_update_step = current_idx;
@@ -225,7 +223,6 @@ fn main() -> Result<(), Box<dyn Error>> {
                         })
                         .collect::<Vec<EvaluatePotQualityEntry>>()
                 }
-                _ => unimplemented!(),
             }
         })
         .collect::<Vec<EvaluatePotQualityEntry>>();

@@ -207,7 +207,6 @@ fn main() -> Result<(), Box<dyn Error>> {
                             current_idx += server.result_valid() as usize;
                         }
                     }
-                    _ => unimplemented!(),
                 }
 
                 // push an entry for all different measures
