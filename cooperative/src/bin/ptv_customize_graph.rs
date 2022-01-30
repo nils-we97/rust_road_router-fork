@@ -83,7 +83,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             let output_path = create_output_directory(&graph_directory, output_directory)?;
 
             let num_metrics = parse_arg_optional(&mut remaining_args, 20);
-            let (customized_multi_metric, time) = measure(|| CustomizedMultiMetrics::new_from_ptv(&cch, &graph, &balanced_interval_pattern(), num_metrics));
+            let (customized_multi_metric, time) = measure(|| CustomizedMultiMetrics::new_from_ptv(cch, &graph, &balanced_interval_pattern(), num_metrics));
             println!("Complete customization took {} ms", time.as_secs_f64() * 1000.0);
 
             let memory_usage = std::mem::size_of_val(&*customized_multi_metric.upward)
