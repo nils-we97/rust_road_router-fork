@@ -35,5 +35,8 @@ pub fn convert_timestamp_u32_to_f64(ts_old: u32) -> f64 {
 }
 
 pub fn convert_timestamp_f64_to_u32(ts_old: f64) -> u32 {
+    // avoid floating point errors -> round by 4 decimal places before conversion
+    // (by construction, there won't be more than 3 decimal places)
+    let ts_old = (ts_old * 10000.0).round() / 10000.0;
     (1000.0 * ts_old) as u32
 }
