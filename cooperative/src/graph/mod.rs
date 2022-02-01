@@ -1,4 +1,3 @@
-use rust_road_router::datastr::graph::time_dependent::Timestamp;
 use rust_road_router::datastr::graph::Weight;
 
 pub mod capacity_graph;
@@ -10,11 +9,6 @@ pub mod travel_time_function;
 pub type Capacity = u32;
 pub type Velocity = u32;
 pub const MAX_BUCKETS: u32 = 86400000; //max timestamp
-
-pub trait ExportableCapacity {
-    fn export_capacities(&self) -> Vec<Vec<(Timestamp, Capacity)>>;
-    fn update_capacities(&mut self, capacities: Vec<Vec<(Timestamp, Capacity)>>);
-}
 
 #[inline(always)]
 pub fn travel_time(speed_km_h: u32, len_m: u32) -> Weight {

@@ -3,7 +3,7 @@ use rust_road_router::datastr::graph::{EdgeId, Graph, NodeId, Weight, INFINITY};
 
 use crate::graph::edge_buckets::{CapacityBuckets, SpeedBuckets};
 use crate::graph::traffic_functions::BPRTrafficFunction;
-use crate::graph::{Capacity, ExportableCapacity, MAX_BUCKETS};
+use crate::graph::{Capacity, MAX_BUCKETS};
 use conversion::speed_profile_to_tt_profile;
 use std::cmp::{max, min};
 
@@ -22,6 +22,9 @@ pub struct CapacityGraph {
     used_speeds: Vec<SpeedBuckets>,
     departure: Vec<Vec<Timestamp>>,
     travel_time: Vec<Vec<Weight>>,
+
+    // historic values, used as additional prediction for future traffic conditions
+    historic_speeds: Option<Vec<SpeedBuckets>>,
 
     // static values
     distance: Vec<Weight>,
@@ -126,6 +129,7 @@ impl CapacityGraph {
             max_capacity,
             free_flow_travel_time,
             traffic_function,
+            historic_speeds: None,
         }
     }
 
@@ -229,6 +233,7 @@ impl CapacityGraph {
         (num_used_edges, num_used_buckets)
     }
 
+    #[inline(always)]
     pub fn num_buckets(&self) -> u32 {
         self.num_buckets
     }
@@ -241,36 +246,81 @@ impl CapacityGraph {
     }
 
     fn rebuild_travel_time_profile(&mut self, edge_id: usize) {
-        if self.max_capacity[edge_id] == 0 {
-            // zero-capacity edges must not be traversed at all!
-            debug_assert_eq!(self.departure[edge_id].len(), 2);
-            debug_assert_eq!(min(self.travel_time[edge_id][0], self.travel_time[edge_id][1]), INFINITY);
-        } else if !self.used_capacity[edge_id].is_used() || self.free_flow_travel_time[edge_id] < 100 {
-            // unused edges can be kept at their free-flow time
-            // dummy edges with extremely short distances (e.g. at junctions) won't be penalized either
-            debug_assert_eq!(self.departure[edge_id].len(), 2);
-            debug_assert_eq!(
-                max(self.travel_time[edge_id][0], self.travel_time[edge_id][1]),
-                self.free_flow_travel_time[edge_id]
-            );
-        } else if self.num_buckets == 1 {
-            // special-case treatment for single-bucket graphs -> updating the capacities and ttf is straightforward
-            let travel_time = self.traffic_function.travel_time(
-                self.free_flow_travel_time[edge_id],
-                self.max_capacity[edge_id],
-                self.used_capacity[edge_id].inner()[0].1,
-            );
+        match self.historic_speeds.as_ref().map(|v| &v[edge_id]) {
+            None | Some(SpeedBuckets::Unused) => {
+                if self.max_capacity[edge_id] == 0 {
+                    // zero-capacity edges must not be traversed at all!
+                    debug_assert_eq!(self.departure[edge_id].len(), 2);
+                    debug_assert_eq!(min(self.travel_time[edge_id][0], self.travel_time[edge_id][1]), INFINITY);
+                } else if !self.used_capacity[edge_id].is_used() || self.free_flow_travel_time[edge_id] < 100 {
+                    // unused edges can be kept at their free-flow time
+                    // dummy edges with extremely short distances (e.g. at junctions) won't be penalized either
+                    debug_assert_eq!(self.departure[edge_id].len(), 2);
+                    debug_assert_eq!(
+                        max(self.travel_time[edge_id][0], self.travel_time[edge_id][1]),
+                        self.free_flow_travel_time[edge_id]
+                    );
+                } else if self.num_buckets == 1 {
+                    // special-case treatment for single-bucket graphs -> updating the capacities and ttf is straightforward
+                    let travel_time = self.traffic_function.travel_time(
+                        self.free_flow_travel_time[edge_id],
+                        self.max_capacity[edge_id],
+                        self.used_capacity[edge_id].inner()[0].1,
+                    );
 
-            self.departure[edge_id] = vec![0, MAX_BUCKETS];
-            self.travel_time[edge_id] = vec![travel_time, travel_time];
-        } else {
-            // convert speed to tt profile
-            let (departure, travel_time) = speed_profile_to_tt_profile(self.used_speeds[edge_id].inner(), self.distance[edge_id])
-                .iter()
-                .cloned()
-                .unzip();
-            self.departure[edge_id] = departure;
-            self.travel_time[edge_id] = travel_time;
+                    self.departure[edge_id] = vec![0, MAX_BUCKETS];
+                    self.travel_time[edge_id] = vec![travel_time, travel_time];
+                } else {
+                    // convert speed to tt profile
+                    let (departure, travel_time) = speed_profile_to_tt_profile(self.used_speeds[edge_id].inner(), self.distance[edge_id])
+                        .iter()
+                        .cloned()
+                        .unzip();
+                    self.departure[edge_id] = departure;
+                    self.travel_time[edge_id] = travel_time;
+                }
+            }
+            Some(SpeedBuckets::Used(historic_speeds)) => {
+                // iterate over used speed buckets, combine with historic data
+                let (departure, travel_time) = if let SpeedBuckets::Used(speed_coop) = &self.used_speeds[edge_id] {
+                    let mut speeds = vec![];
+                    let mut coop_idx = 0;
+                    let mut hist_idx = 0;
+
+                    loop {
+                        match (historic_speeds.get(hist_idx), speed_coop.get(coop_idx)) {
+                            (Some((hist_ts, hist_val)), Some((coop_ts, coop_val))) => {
+                                if hist_ts < coop_ts {
+                                    speeds.push((*hist_ts, *hist_val));
+                                    hist_idx += 1;
+                                } else if hist_ts == coop_ts {
+                                    speeds.push((*hist_ts, min(*hist_val, *coop_val)));
+                                    hist_idx += 1;
+                                    coop_idx += 1;
+                                } else {
+                                    speeds.push((*coop_ts, *coop_val));
+                                    coop_idx += 1;
+                                }
+                            }
+                            (Some((hist_ts, hist_val)), None) => {
+                                speeds.push((*hist_ts, *hist_val));
+                                hist_idx += 1;
+                            }
+                            (None, Some((coop_ts, coop_val))) => {
+                                speeds.push((*coop_ts, *coop_val));
+                                coop_idx += 1;
+                            }
+                            (None, None) => break,
+                        }
+                    }
+                    speed_profile_to_tt_profile(&speeds, self.distance[edge_id]).iter().cloned().unzip()
+                } else {
+                    speed_profile_to_tt_profile(historic_speeds, self.distance[edge_id]).iter().cloned().unzip()
+                };
+
+                self.departure[edge_id] = departure;
+                self.travel_time[edge_id] = travel_time;
+            }
         }
     }
 
@@ -322,38 +372,23 @@ impl CapacityGraph {
             self.travel_time[edge_id] = vec![self.free_flow_travel_time[edge_id], self.free_flow_travel_time[edge_id]];
         }
     }
-}
 
-impl ExportableCapacity for CapacityGraph {
-    fn export_capacities(&self) -> Vec<Vec<(u32, u32)>> {
-        self.used_capacity
+    pub fn export_speeds(&self) -> Vec<Vec<(u32, u32)>> {
+        self.used_speeds
             .iter()
             .map(|bucket| match bucket {
-                CapacityBuckets::Unused => Vec::new(),
-                CapacityBuckets::Used(inner) => inner.clone(),
+                SpeedBuckets::Unused => Vec::new(),
+                SpeedBuckets::Used(inner) => inner.clone(),
             })
-            .collect::<Vec<Vec<(Timestamp, Capacity)>>>()
+            .collect()
     }
 
-    /// update: adjust capacity buckets, update speed buckets and TTFs
-    fn update_capacities(&mut self, capacities: Vec<Vec<(u32, u32)>>) {
-        assert_eq!(capacities.len(), self.num_arcs(), "Failed to provide a capacity bucket for each edge.");
+    pub fn add_historic_speeds(&mut self, speeds: Vec<SpeedBuckets>) {
+        debug_assert_eq!(self.num_arcs(), speeds.len());
+        self.historic_speeds = Some(speeds);
 
-        capacities.iter().enumerate().for_each(|(edge_id, capacity)| {
-            debug_assert!(
-                capacity.len() as u32 <= self.num_buckets,
-                "Invalid number of buckets detected ({}, max. allowed: {})",
-                capacity.len(),
-                self.num_buckets
-            );
-            debug_assert!((*capacity.last().unwrap_or(&(0, 0))).0 < MAX_BUCKETS, "Sentinel element must not be present!");
-
-            self.used_capacity[edge_id] = if capacity.is_empty() {
-                CapacityBuckets::Unused
-            } else {
-                CapacityBuckets::Used(capacity.clone())
-            };
+        for edge_id in 0..self.num_arcs() {
             self.rebuild_travel_time_profile(edge_id);
-        });
+        }
     }
 }
