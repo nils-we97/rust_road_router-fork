@@ -103,7 +103,7 @@ impl Indexing for MetricItem {
 }
 
 /// reduce the given metrics until only `num_metrics` remain, use a square sum approach
-pub fn reduce_metrics(data: &mut Vec<Vec<Weight>>, entries: &mut Vec<MetricEntry>, num_allowed_metrics: usize) -> usize {
+pub fn reduce_metrics(data: &mut Vec<Vec<Weight>>, entries: &mut Vec<MetricEntry>, num_allowed_metrics: usize, use_pre_merge: bool) -> usize {
     // insert all entry pairs into the priority queue
     let num_metrics = data[0].len();
     let mut queue = IndexdMinHeap::new(num_metrics * num_metrics);
@@ -144,7 +144,7 @@ pub fn reduce_metrics(data: &mut Vec<Vec<Weight>>, entries: &mut Vec<MetricEntry
                 let second_id = item.id % num_metrics;
 
                 if !metric_deactivated[first_id] && !metric_deactivated[second_id] {
-                    if item.difference == 0 {
+                    if item.difference == 0 && use_pre_merge {
                         // merge metric
                         println!("Pre-Merge of metric {} and {}", first_id, second_id);
                         metric_deactivated[second_id] = true;

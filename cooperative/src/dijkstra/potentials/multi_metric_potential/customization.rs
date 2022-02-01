@@ -140,7 +140,7 @@ impl CustomizedMultiMetrics {
         println!("Extracting all metrics took {} ms", time.as_secs_f64() * 1000.0);
 
         // 3. reduce the number of metrics by merging similar intervals
-        let (num_metrics, time) = measure(|| reduce_metrics(&mut metrics, &mut self.metric_entries, num_max_metrics));
+        let (num_metrics, time) = measure(|| reduce_metrics(&mut metrics, &mut self.metric_entries, num_max_metrics, !cooperative));
         println!("Reducing to {} metrics took {} ms", num_metrics, time.as_secs_f64() * 1000.0);
         self.num_metrics = num_metrics;
 

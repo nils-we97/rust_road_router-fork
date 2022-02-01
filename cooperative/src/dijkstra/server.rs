@@ -236,6 +236,8 @@ impl CapacityServer<CustomizedCorridorLowerbound> {
 impl CapacityServer<CustomizedMultiMetrics> {
     pub fn customize(&mut self, intervals: &Vec<(u32, u32)>, num_max_metrics: usize) {
         self.customized.customize(&self.graph, intervals, num_max_metrics);
+        self.result_valid = true;
+        self.update_valid = true;
     }
 
     pub fn customize_upper_bound(&mut self) {
