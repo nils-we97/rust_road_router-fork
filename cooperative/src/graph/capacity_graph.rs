@@ -175,6 +175,29 @@ impl CapacityGraph {
         PiecewiseLinearFunction::new(&self.departure[edge_id], &self.travel_time[edge_id])
     }
 
+    pub fn eval_history_free(&self, edge_id: EdgeId, ts: Timestamp) -> Weight {
+        let edge_id = edge_id as usize;
+
+        match &self.used_capacity[edge_id] {
+            CapacityBuckets::Unused => self.free_flow_travel_time[edge_id],
+            CapacityBuckets::Used(inner) => {
+                if self.num_buckets == 1 {
+                    self.traffic_function
+                        .travel_time(self.free_flow_travel_time[edge_id], self.max_capacity[edge_id], inner[0].1)
+                } else {
+                    match &self.used_speeds[edge_id] {
+                        SpeedBuckets::Unused => unimplemented!(),
+                        SpeedBuckets::Used(inner) => {
+                            let (departure, travel_time): (Vec<Timestamp>, Vec<Weight>) =
+                                speed_profile_to_tt_profile(inner, self.distance[edge_id]).iter().cloned().unzip();
+                            PiecewiseLinearFunction::new(&departure, &travel_time).eval(ts)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     /// estimate memory consumption
     pub fn get_mem_size(&self) -> usize {
         // static graph data: first_out, head, distance, max-capacity and freeflow time

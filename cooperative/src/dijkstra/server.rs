@@ -206,7 +206,7 @@ impl<PotCustomized> CapacityServer<PotCustomized> {
         let mut duration = 0;
 
         for edge in edge_path {
-            duration += self.graph.travel_time_function(*edge).eval(query_start + duration);
+            duration += self.graph.eval_history_free(*edge, query_start + duration);
 
             // abort if the distance exceeds infinity
             if duration > INFINITY {
