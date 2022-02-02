@@ -32,7 +32,53 @@ pub struct CustomizedCorridorLowerbound {
 }
 
 impl CustomizedCorridorLowerbound {
+    pub fn test_customization(cch: &CCH, graph: &CapacityGraph, num_intervals: u32, dbg_departure: &Vec<Vec<u32>>, dbg_travel_time: &Vec<Vec<u32>>) -> Self {
+        let mut first_ipp_of_arc = vec![0];
+        let mut departure = Vec::new();
+        let mut travel_time = Vec::new();
+
+        dbg_departure.iter().zip(dbg_travel_time.iter()).for_each(|(dep, tt)| {
+            // constant edges only have one entry (0, tt) whereas non-constant edge functions are periodic
+            if tt.iter().all(|&val| val == tt[0]) {
+                first_ipp_of_arc.push(*first_ipp_of_arc.last().unwrap() + 1);
+                departure.push(dep[0]);
+                travel_time.push(tt[0]);
+            } else {
+                first_ipp_of_arc.push(*first_ipp_of_arc.last().unwrap() + dep.len() as u32);
+                departure.extend_from_slice(dep);
+                travel_time.extend_from_slice(tt);
+            }
+        });
+
+        let td_graph = TDGraph::new(graph.first_out().to_vec(), graph.head().to_vec(), first_ipp_of_arc, departure, travel_time);
+
+        let mut ret = Self::run_customization(cch, &td_graph, num_intervals);
+        ret.customize_upper_bound(cch, graph);
+        ret
+    }
+
     pub fn new_from_capacity(cch: &CCH, graph: &CapacityGraph, num_intervals: u32) -> Self {
+        // debug: write down travel time functions
+        /*let mut dbg_ps = vec![0];
+        let mut dbg_dep = Vec::new();
+        let mut dbg_tt = Vec::new();
+
+        for dep in graph.departure() {
+            dbg_ps.push(*dbg_ps.last().unwrap() + dep.len() as u32);
+        }
+
+        graph.departure().iter().zip(graph.travel_time().iter()).for_each(|(d, t)| {
+            dbg_dep.extend_from_slice(d);
+            dbg_tt.extend_from_slice(t);
+        });
+
+        let path = Path::new("../graphs/berlin/debug");
+        dbg_ps.write_to(&path.join("prefix_sum")).unwrap();
+        dbg_dep.write_to(&path.join("departure")).unwrap();
+        dbg_tt.write_to(&path.join("travel_time")).unwrap();
+
+        println!("Temp store completed!");*/
+
         // basic workaround: convert to TD-Graph, then run PTV customization
         let mut first_ipp_of_arc = vec![0];
         let mut departure = Vec::new();
