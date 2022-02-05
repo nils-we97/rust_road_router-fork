@@ -108,7 +108,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 fn write_results(results: &Vec<EvaluateCoopStorageStatisticEntry>, path: &Path) -> Result<(), Box<dyn Error>> {
     let mut file = File::create(path)?;
 
-    let header = "num_buckets,num_queries,bucket_usage_rel,bucket_usage_abs,edge_usage_rel,edge_usage_absmemory_usage\n";
+    let header = "num_buckets,num_queries,bucket_usage_rel,bucket_usage_abs,edge_usage_rel,edge_usage_abs,memory_usage\n";
     file.write(header.as_bytes())?;
 
     for entry in results {
