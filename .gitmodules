@@ -1,9 +1,9 @@
 [submodule "lib/InertialFlowCutter"]
 	path = lib/InertialFlowCutter
 	url = https://github.com/kit-algo/InertialFlowCutter.git
-[submodule "population-grid-parser"]
-	path = population-grid-parser
+[submodule "lib/population-grid-parser"]
+	path = lib/population-grid-parser
 	url = https://github.com/nils-we97/population-grid-parser.git
-[submodule "routing-kit"]
-	path = routing-kit
+[submodule "lib/routing-kit"]
+	path = lib/routing-kit
 	url = https://github.com/nils-we97/RoutingKit_fork.git
