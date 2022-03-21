@@ -4,3 +4,6 @@
 [submodule "population-grid-parser"]
 	path = population-grid-parser
 	url = https://github.com/nils-we97/population-grid-parser.git
+[submodule "routing-kit"]
+	path = routing-kit
+	url = https://github.com/nils-we97/RoutingKit_fork.git
